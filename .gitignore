@@ -1,0 +1,9 @@
+# 秘密情報・ローカルデータ(絶対にコミットしない)
+poker.secret
+poker.db
+poker.db-*
+*.secret
+
+# 依存とOSゴミ
+node_modules/
+.DS_Store

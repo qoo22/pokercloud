@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>配牌の公正性チェッカー</title>
+<style>
+  :root {
+    --bg: #10151a; --panel: #1a2028; --panel-2: #222a34; --line: #313b47;
+    --text: #e8edf2; --muted: #8b97a5; --gold: #d9b45f; --red: #e05a5a; --green: #4dbd7a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", sans-serif;
+    font-size:14px; line-height:1.7; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); font-size: 13px; margin: 0 0 22px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; margin-bottom:16px; }
+  .panel h2 { font-size:13px; margin:0 0 12px; color:var(--gold); letter-spacing:.06em; }
+  label.f { display:block; margin-bottom:12px; }
+  label.f span { display:block; font-size:11px; color:var(--muted); margin-bottom:4px; }
+  input[type=text], input[type=number], textarea { font:inherit; width:100%; background:var(--panel-2);
+    color:var(--text); border:1px solid var(--line); border-radius:6px; padding:8px 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; }
+  textarea { min-height: 84px; resize: vertical; line-height: 1.6; }
+  button { font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel-2); color:var(--text); padding:10px 20px; }
+  button.primary { background:var(--gold); color:#201704; border-color:var(--gold); font-weight:700; }
+  button:hover { filter: brightness(1.1); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .verdict { border-radius:8px; padding:14px 16px; margin-bottom:14px; font-weight:600; }
+  .verdict.ok { background:rgba(77,189,122,.14); border:1px solid var(--green); color:var(--green); }
+  .verdict.ng { background:rgba(224,90,90,.14); border:1px solid var(--red); color:var(--red); }
+  ul.checks { list-style:none; padding:0; margin:0; }
+  ul.checks li { padding:9px 0; border-bottom:1px solid rgba(255,255,255,.06); display:flex; gap:10px; align-items:flex-start; }
+  ul.checks .mark { flex:0 0 auto; font-weight:700; }
+  ul.checks .mark.ok { color:var(--green); }
+  ul.checks .mark.ng { color:var(--red); }
+  ul.checks .body b { display:block; font-size:13px; }
+  ul.checks .body span { font-size:11px; color:var(--muted); font-family: ui-monospace, Menlo, monospace; word-break:break-all; }
+  .deck { display:flex; flex-wrap:wrap; gap:4px; margin-top:10px; }
+  .c { width:32px; height:44px; border-radius:4px; background:#fdfdfb; color:#16181c;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
+  .c.h { color:#c62828; } .c.d { color:#1565c0; } .c.c { color:#2e7d32; }
+  .c.bad { outline:2px solid var(--red); }
+  .c small { font-size:10px; font-weight:400; color:#889; }
+  ol.how { padding-left: 20px; color: var(--muted); font-size: 13px; }
+  ol.how li { margin-bottom: 8px; }
+  ol.how b { color: var(--text); }
+  .note { font-size:12px; color:var(--muted); margin-top:10px; }
+  code { background:#12171d; border:1px solid var(--line); border-radius:4px; padding:1px 5px; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>配牌の公正性チェッカー</h1>
+  <p class="lead">遊んだハンドのカードの並びが、本当に事前に決まっていたものかを、あなた自身の手元で確認できます。このページはサーバーと一切通信しません。</p>
+
+  <div class="panel">
+    <h2>ハンド情報を入力</h2>
+    <label class="f"><span>コミットメント（配牌前に公開されていたハッシュ）</span>
+      <input type="text" id="commitment" placeholder="64桁の16進数"></label>
+    <label class="f"><span>サーバーシード（ハンド終了後に開示された値）</span>
+      <input type="text" id="serverSeed" placeholder="64桁の16進数"></label>
+    <label class="f"><span>クライアントシード（全席分を合成したもの）</span>
+      <input type="text" id="clientSeed" placeholder="alice|bob|carol"></label>
+    <label class="f"><span>ハンド連番（nonce）</span>
+      <input type="number" id="nonce" value="0"></label>
+    <label class="f"><span>実際に配られたデッキ（任意・52枚。空欄なら再現結果の表示のみ行います）</span>
+      <textarea id="deck" placeholder="As Kd 7h 2c ..."></textarea></label>
+    <div class="row">
+      <button class="primary" id="run">検証する</button>
+      <button id="sample">サンプルを入れる</button>
+      <button id="clear">クリア</button>
+    </div>
+  </div>
+
+  <div id="out"></div>
+
+  <div class="panel">
+    <h2>この検証で何が分かるのか</h2>
+    <ol class="how">
+      <li><b>サーバーは後出しできない。</b> 配牌の前に <code>SHA-256(サーバーシード)</code> が公開されています。手札を見てからシードを差し替えると、このハッシュが合わなくなります。SHA-256 から元の値を逆算することは現実的に不可能です。</li>
+      <li><b>プレイヤーも狙えない。</b> クライアントシードはサーバーシードを知らないうちに提出します。しかも全席分を合成しているので、特定の 1 人が結果を操作することもできません。</li>
+      <li><b>並びは完全に決まっている。</b> デッキの順序は <code>HMAC-SHA256(サーバーシード, "クライアントシード:連番")</code> から一意に決まります。同じ入力からは必ず同じ並びが出ます。</li>
+    </ol>
+    <p class="note">つまり「コミットメントが一致し、かつ再現したデッキが実際の配牌と一致する」なら、そのハンドのカードは全員がカードを見る前に確定していたことになります。運営を信用する必要はありません。</p>
+  </div>
+</div>
+<script>"use strict";
+(() => {
+  // src/cards.ts
+  var SUIT_CHARS = ["s", "h", "d", "c"];
+  var RANK_CHARS = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+  function rankOf(card) {
+    return (card >> 2) + 2;
+  }
+  function suitOf(card) {
+    return card & 3;
+  }
+  function cardToString(card) {
+    return RANK_CHARS[rankOf(card) - 2] + SUIT_CHARS[suitOf(card)];
+  }
+  function freshDeck() {
+    const deck = new Array(52);
+    for (let i = 0; i < 52; i++) deck[i] = i;
+    return deck;
+  }
+  function shuffle(arr, rng) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = rng.randomInt(i + 1);
+      const t = arr[i];
+      arr[i] = arr[j];
+      arr[j] = t;
+    }
+    return arr;
+  }
+
+  // src/sha256.ts
+  var K = new Uint32Array([
+    1116352408,
+    1899447441,
+    3049323471,
+    3921009573,
+    961987163,
+    1508970993,
+    2453635748,
+    2870763221,
+    3624381080,
+    310598401,
+    607225278,
+    1426881987,
+    1925078388,
+    2162078206,
+    2614888103,
+    3248222580,
+    3835390401,
+    4022224774,
+    264347078,
+    604807628,
+    770255983,
+    1249150122,
+    1555081692,
+    1996064986,
+    2554220882,
+    2821834349,
+    2952996808,
+    3210313671,
+    3336571891,
+    3584528711,
+    113926993,
+    338241895,
+    666307205,
+    773529912,
+    1294757372,
+    1396182291,
+    1695183700,
+    1986661051,
+    2177026350,
+    2456956037,
+    2730485921,
+    2820302411,
+    3259730800,
+    3345764771,
+    3516065817,
+    3600352804,
+    4094571909,
+    275423344,
+    430227734,
+    506948616,
+    659060556,
+    883997877,
+    958139571,
+    1322822218,
+    1537002063,
+    1747873779,
+    1955562222,
+    2024104815,
+    2227730452,
+    2361852424,
+    2428436474,
+    2756734187,
+    3204031479,
+    3329325298
+  ]);
+  var rotr = (x, n) => (x >>> n | x << 32 - n) >>> 0;
+  function sha256(message) {
+    const h = new Uint32Array([
+      1779033703,
+      3144134277,
+      1013904242,
+      2773480762,
+      1359893119,
+      2600822924,
+      528734635,
+      1541459225
+    ]);
+    const len = message.length;
+    const bitLenHi = Math.floor(len / 536870912 | 0);
+    const bitLenLo = len << 3 >>> 0;
+    const totalLen = (len + 8 >> 6) + 1 << 6;
+    const buf = new Uint8Array(totalLen);
+    buf.set(message);
+    buf[len] = 128;
+    const dv = new DataView(buf.buffer);
+    dv.setUint32(totalLen - 8, bitLenHi, false);
+    dv.setUint32(totalLen - 4, bitLenLo, false);
+    const w = new Uint32Array(64);
+    for (let off = 0; off < totalLen; off += 64) {
+      for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4, false);
+      for (let i = 16; i < 64; i++) {
+        const s0 = (rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ w[i - 15] >>> 3) >>> 0;
+        const s1 = (rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ w[i - 2] >>> 10) >>> 0;
+        w[i] = w[i - 16] + s0 + w[i - 7] + s1 >>> 0;
+      }
+      let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+      for (let i = 0; i < 64; i++) {
+        const S1 = (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) >>> 0;
+        const ch = (e & f ^ ~e & g) >>> 0;
+        const temp1 = hh + S1 + ch + K[i] + w[i] >>> 0;
+        const S0 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) >>> 0;
+        const maj = (a & b ^ a & c ^ b & c) >>> 0;
+        const temp2 = S0 + maj >>> 0;
+        hh = g;
+        g = f;
+        f = e;
+        e = d + temp1 >>> 0;
+        d = c;
+        c = b;
+        b = a;
+        a = temp1 + temp2 >>> 0;
+      }
+      h[0] = h[0] + a >>> 0;
+      h[1] = h[1] + b >>> 0;
+      h[2] = h[2] + c >>> 0;
+      h[3] = h[3] + d >>> 0;
+      h[4] = h[4] + e >>> 0;
+      h[5] = h[5] + f >>> 0;
+      h[6] = h[6] + g >>> 0;
+      h[7] = h[7] + hh >>> 0;
+    }
+    const out = new Uint8Array(32);
+    const odv = new DataView(out.buffer);
+    for (let i = 0; i < 8; i++) odv.setUint32(i * 4, h[i], false);
+    return out;
+  }
+  var BLOCK_SIZE = 64;
+  function hmacSha256(key, message) {
+    let k = key;
+    if (k.length > BLOCK_SIZE) k = sha256(k);
+    const ipad = new Uint8Array(BLOCK_SIZE);
+    const opad = new Uint8Array(BLOCK_SIZE);
+    for (let i = 0; i < BLOCK_SIZE; i++) {
+      const b = i < k.length ? k[i] : 0;
+      ipad[i] = b ^ 54;
+      opad[i] = b ^ 92;
+    }
+    const inner = new Uint8Array(BLOCK_SIZE + message.length);
+    inner.set(ipad);
+    inner.set(message, BLOCK_SIZE);
+    const innerHash = sha256(inner);
+    const outer = new Uint8Array(BLOCK_SIZE + 32);
+    outer.set(opad);
+    outer.set(innerHash, BLOCK_SIZE);
+    return sha256(outer);
+  }
+  var HEX = "0123456789abcdef";
+  function bytesToHex(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) {
+      s += HEX[bytes[i] >> 4] + HEX[bytes[i] & 15];
+    }
+    return s;
+  }
+  function hexToBytes(hex) {
+    const h = hex.trim().toLowerCase();
+    if (h.length % 2 !== 0) throw new Error("16\u9032\u6587\u5B57\u5217\u306E\u9577\u3055\u304C\u5947\u6570\u3067\u3059");
+    if (!/^[0-9a-f]*$/.test(h)) throw new Error("16\u9032\u6587\u5B57\u5217\u306B\u4E0D\u6B63\u306A\u6587\u5B57\u304C\u542B\u307E\u308C\u3066\u3044\u307E\u3059");
+    const out = new Uint8Array(h.length / 2);
+    for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
+    return out;
+  }
+  function utf8ToBytes(s) {
+    if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s);
+    const out = [];
+    for (let i = 0; i < s.length; i++) {
+      let c = s.codePointAt(i);
+      if (c > 65535) i++;
+      if (c < 128) out.push(c);
+      else if (c < 2048) out.push(192 | c >> 6, 128 | c & 63);
+      else if (c < 65536) out.push(224 | c >> 12, 128 | c >> 6 & 63, 128 | c & 63);
+      else out.push(240 | c >> 18, 128 | c >> 12 & 63, 128 | c >> 6 & 63, 128 | c & 63);
+    }
+    return new Uint8Array(out);
+  }
+  function sha256Hex(input) {
+    const bytes = typeof input === "string" ? utf8ToBytes(input) : input;
+    return bytesToHex(sha256(bytes));
+  }
+  function timingSafeEqualHex(a, b) {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return diff === 0;
+  }
+
+  // src/fair.ts
+  function commitmentOf(serverSeed) {
+    return sha256Hex(serverSeed);
+  }
+  function createFairRng(input) {
+    const key = hexToBytes(input.serverSeed);
+    const base = `${input.clientSeed}:${input.nonce}`;
+    let counter = 0;
+    let block = new Uint8Array(0);
+    let offset = 0;
+    const next32 = () => {
+      if (offset + 4 > block.length) {
+        block = hmacSha256(key, utf8ToBytes(`${base}:${counter}`));
+        counter++;
+        offset = 0;
+      }
+      const v = (block[offset] << 24 >>> 0) + (block[offset + 1] << 16) + (block[offset + 2] << 8) + block[offset + 3];
+      offset += 4;
+      return v;
+    };
+    return {
+      randomInt(n) {
+        if (n <= 0) throw new Error("n \u306F 1 \u4EE5\u4E0A\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059");
+        if (n === 1) return 0;
+        const limit = Math.floor(4294967296 / n) * n;
+        for (; ; ) {
+          const v = next32();
+          if (v < limit) return v % n;
+        }
+      }
+    };
+  }
+  function deriveDeck(input) {
+    return shuffle(freshDeck(), createFairRng(input));
+  }
+  function verifyHand(input) {
+    const checks = [];
+    let commitmentOk = false;
+    let recomputed = "";
+    try {
+      recomputed = commitmentOf(input.serverSeed);
+      commitmentOk = timingSafeEqualHex(recomputed, input.commitment.trim().toLowerCase());
+    } catch (e) {
+      recomputed = `\u8A08\u7B97\u30A8\u30E9\u30FC: ${e.message}`;
+    }
+    checks.push({
+      label: "\u30B3\u30DF\u30C3\u30C8\u30E1\u30F3\u30C8\u306E\u4E00\u81F4",
+      passed: commitmentOk,
+      detail: commitmentOk ? `SHA-256(serverSeed) = ${recomputed}` : `\u516C\u958B\u5024 ${input.commitment} \u306B\u5BFE\u3057\u3001\u958B\u793A\u3055\u308C\u305F\u30B7\u30FC\u30C9\u306E\u30CF\u30C3\u30B7\u30E5\u306F ${recomputed}`
+    });
+    let derivedDeck = [];
+    let deckOk = false;
+    const mismatchIndexes = [];
+    try {
+      derivedDeck = deriveDeck({
+        serverSeed: input.serverSeed,
+        clientSeed: input.clientSeed,
+        nonce: input.nonce
+      }).map(cardToString);
+      if (input.deck.length !== derivedDeck.length) {
+        for (let i = 0; i < Math.max(input.deck.length, derivedDeck.length); i++) mismatchIndexes.push(i);
+      } else {
+        for (let i = 0; i < derivedDeck.length; i++) {
+          if (derivedDeck[i] !== input.deck[i]) mismatchIndexes.push(i);
+        }
+      }
+      deckOk = mismatchIndexes.length === 0;
+    } catch (e) {
+      checks.push({ label: "\u30C7\u30C3\u30AD\u306E\u518D\u73FE", passed: false, detail: `\u8A08\u7B97\u30A8\u30E9\u30FC: ${e.message}` });
+    }
+    if (derivedDeck.length > 0) {
+      checks.push({
+        label: "\u30C7\u30C3\u30AD\u306E\u4E00\u81F4",
+        passed: deckOk,
+        detail: deckOk ? `52 \u679A\u3059\u3079\u3066\u304C\u4E00\u81F4\u3057\u307E\u3057\u305F` : `${mismatchIndexes.length} \u679A\u304C\u4E0D\u4E00\u81F4\uFF08\u6700\u521D\u306E\u76F8\u9055\u306F ${mismatchIndexes[0]} \u679A\u76EE\uFF1A\u5B9F\u969B ${input.deck[mismatchIndexes[0]] ?? "\u2014"} / \u518D\u73FE ${derivedDeck[mismatchIndexes[0]] ?? "\u2014"}\uFF09`
+      });
+    }
+    const unique = new Set(derivedDeck);
+    const deckSane = derivedDeck.length === 52 && unique.size === 52;
+    checks.push({
+      label: "\u30C7\u30C3\u30AD\u306E\u5065\u5168\u6027",
+      passed: deckSane,
+      detail: deckSane ? "52 \u679A\u30FB\u91CD\u8907\u306A\u3057" : `${derivedDeck.length} \u679A / \u30E6\u30CB\u30FC\u30AF ${unique.size} \u7A2E`
+    });
+    return {
+      passed: checks.every((c) => c.passed),
+      checks,
+      derivedDeck,
+      mismatchIndexes
+    };
+  }
+
+  // demo/verify.ts
+  var $ = (id) => document.getElementById(id);
+  var SUIT_CLASS = { s: "", h: "h", d: "d", c: "c" };
+  var SUIT_SYM = { s: "\u2660", h: "\u2665", d: "\u2666", c: "\u2663" };
+  function cardHtml(code, index, bad) {
+    const r = code[0];
+    const u = code[1];
+    return `<div class="c ${SUIT_CLASS[u] ?? ""} ${bad ? "bad" : ""}" title="${index + 1} \u679A\u76EE">${r}${SUIT_SYM[u] ?? "?"}<small>${index + 1}</small></div>`;
+  }
+  function parseDeckInput(raw) {
+    return raw.trim().split(/[\s,]+/).filter((s) => s.length > 0).map((s) => s[0].toUpperCase() + s.slice(1).toLowerCase());
+  }
+  function render(result, deckGiven) {
+    const verdict = !result.passed ? '<div class="verdict ng">\u2717 \u691C\u8A3C\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002\u4E0B\u306E\u5185\u8A33\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044</div>' : deckGiven ? '<div class="verdict ok">\u2713 \u3053\u306E\u30CF\u30F3\u30C9\u306E\u914D\u724C\u306F\u3001\u30AB\u30FC\u30C9\u304C\u914D\u3089\u308C\u308B\u524D\u306B\u78BA\u5B9A\u3057\u3066\u3044\u305F\u3082\u306E\u3068\u4E00\u81F4\u3057\u307E\u3059</div>' : '<div class="verdict ok" style="background:rgba(217,180,95,.12);border-color:var(--gold);color:var(--gold)">\u30B3\u30DF\u30C3\u30C8\u30E1\u30F3\u30C8\u306F\u4E00\u81F4\u3057\u307E\u3057\u305F\u3002\u30C7\u30C3\u30AD\u672A\u5165\u529B\u306E\u305F\u3081\u3001\u914D\u724C\u306E\u7167\u5408\u306F\u884C\u3063\u3066\u3044\u307E\u305B\u3093</div>';
+    const checks = result.checks.map(
+      (c) => `<li>
+        <span class="mark ${c.passed ? "ok" : "ng"}">${c.passed ? "\u2713" : "\u2717"}</span>
+        <span class="body"><b>${c.label}</b><span>${escapeHtml(c.detail)}</span></span>
+      </li>`
+    ).join("");
+    const bad = new Set(result.mismatchIndexes);
+    const deck = result.derivedDeck.map((c, i) => cardHtml(c, i, deckGiven && bad.has(i))).join("");
+    $("out").innerHTML = `
+    <div class="panel">
+      <h2>\u691C\u8A3C\u7D50\u679C</h2>
+      ${verdict}
+      <ul class="checks">${checks}</ul>
+      <div style="margin-top:16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px">\u30B7\u30FC\u30C9\u304B\u3089\u518D\u73FE\u3057\u305F\u30C7\u30C3\u30AD\uFF08\u914D\u5E03\u9806\uFF09${deckGiven && bad.size ? " \u2014 \u8D64\u67A0\u304C\u5B9F\u969B\u306E\u914D\u724C\u3068\u98DF\u3044\u9055\u3063\u305F\u4F4D\u7F6E" : ""}</div>
+        <div class="deck">${deck}</div>
+        <div class="note" style="font-family:ui-monospace,Menlo,monospace;word-break:break-all">${result.derivedDeck.join(" ")}</div>
+      </div>
+    </div>`;
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  }
+  $("run").addEventListener("click", () => {
+    const serverSeed = $("serverSeed").value.trim();
+    const commitment = $("commitment").value.trim();
+    const clientSeed = $("clientSeed").value;
+    const nonce = +$("nonce").value;
+    const deck = parseDeckInput($("deck").value);
+    if (!serverSeed) {
+      $("out").innerHTML = '<div class="panel"><div class="verdict ng">\u30B5\u30FC\u30D0\u30FC\u30B7\u30FC\u30C9\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044</div></div>';
+      return;
+    }
+    const result = verifyHand({
+      serverSeed,
+      commitment: commitment || "\uFF08\u672A\u5165\u529B\uFF09",
+      clientSeed,
+      nonce,
+      deck: deck.length > 0 ? deck : []
+    });
+    if (deck.length === 0) {
+      result.checks = result.checks.filter((c) => c.label !== "\u30C7\u30C3\u30AD\u306E\u4E00\u81F4");
+      result.mismatchIndexes.length = 0;
+      result.passed = result.checks.every((c) => c.passed);
+    }
+    render(result, deck.length > 0);
+  });
+  $("sample").addEventListener("click", () => {
+    const serverSeed = "11".repeat(32);
+    const clientSeed = "alice|bob|carol";
+    const nonce = 3;
+    $("serverSeed").value = serverSeed;
+    $("commitment").value = commitmentOf(serverSeed);
+    $("clientSeed").value = clientSeed;
+    $("nonce").value = String(nonce);
+    $("deck").value = deriveDeck({ serverSeed, clientSeed, nonce }).map(cardToString).join(" ");
+    $("run").click();
+  });
+  $("clear").addEventListener("click", () => {
+    for (const id of ["serverSeed", "commitment", "clientSeed", "deck"]) {
+      $(id).value = "";
+    }
+    $("nonce").value = "0";
+    $("out").innerHTML = "";
+  });
+  var params = new URLSearchParams(location.search);
+  if (params.has("serverSeed")) {
+    $("serverSeed").value = params.get("serverSeed") ?? "";
+    $("commitment").value = params.get("commitment") ?? "";
+    $("clientSeed").value = params.get("clientSeed") ?? "";
+    $("nonce").value = params.get("nonce") ?? "0";
+    $("deck").value = params.get("deck") ?? "";
+    $("run").click();
+  }
+})();
+</script>
+</body>
+</html>

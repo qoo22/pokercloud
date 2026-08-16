@@ -1,0 +1,94 @@
+/**
+ * ロビー：テーブル・トーナメント・経済のとりまとめと、メッセージのルーティング
+ *
+ * トランスポート（WebSocket）から切り離してあるので、テストでは偽の送信先を差して
+ * ソケットを一切張らずにプロトコル全体を検証できる。
+ * 実際のバグの大半はソケットではなくこの層に出るので、ここを高速にテストできることが重要。
+ */
+import { type Store } from './store.js';
+import { Economy } from './economy.js';
+import { Room, type TableConfig, type Scheduler } from './room.js';
+import { Tournament, type TournamentConfig } from './tournament.js';
+import { type ClientMessage, type ServerMessage } from './protocol.js';
+export interface Transport {
+    /** セッションへ 1 通送る。切断済みなら黙って捨ててよい */
+    send(sessionId: string, msg: ServerMessage): void;
+    /** サーバー側から接続を切る */
+    close?(sessionId: string, reason: string): void;
+}
+export interface LobbyConfig {
+    tables: TableConfig[];
+    tournaments?: TournamentConfig[];
+    /** 新規ユーザーへの初期付与 */
+    signupBonus?: number;
+    signupGold?: number;
+    maxMessagesPerSecond?: number;
+    store?: Store;
+    /**
+     * 再接続トークンの署名鍵。指定すると、トークンが「userId.HMAC署名」形式になり
+     * サーバーを再起動してもログイン状態（＝残高）を引き継げる。
+     * 未指定ならプロセス限りのランダム鍵（テスト用途）。
+     */
+    authSecret?: string;
+}
+export declare class Lobby {
+    private transport;
+    private clock;
+    readonly store: Store;
+    readonly economy: Economy;
+    private rooms;
+    /** プライベート卓（ロビー一覧に出さない） */
+    private privateIds;
+    /** 卓コード → tableId */
+    private tableCodes;
+    /** 招待コードの使用履歴（メモリ上。再起動でリセットされる点は HANDOFF 参照） */
+    private redeemedCodes;
+    private tournaments;
+    /** 定期開催トーナメントの連番と、終了後の掃除予定時刻 */
+    private tourSeq;
+    private tourPruneAt;
+    private sessions;
+    private resumeTokens;
+    private cfg;
+    constructor(cfg: LobbyConfig, transport: Transport, clock?: Scheduler);
+    private bank;
+    private io;
+    /** 再接続トークンの署名鍵（cfg 未指定ならプロセス限り） */
+    private get authKey();
+    private authKeyCache;
+    private signUserId;
+    private makeResumeToken;
+    /** 署名付きトークンを検証して userId を返す。改ざん・形式不正なら null */
+    private verifyResumeToken;
+    private createTournament;
+    private startTourScheduler;
+    /** ハンド結果を受けて、永続化・ミッション・パス経験値を進める */
+    private onHandResult;
+    getRoom(tableId: string): Room | undefined;
+    listRooms(): Room[];
+    listTournaments(): Tournament[];
+    getTournament(id: string): Tournament | undefined;
+    onConnect(sessionId: string): void;
+    onDisconnect(sessionId: string): void;
+    onRaw(sessionId: string, data: string): void;
+    onMessage(sessionId: string, msg: ClientMessage): void;
+    private shopView;
+    private profileView;
+    private sendProfile;
+    private sendBalance;
+    private sendToUser;
+    private withRoom;
+    private handleHello;
+    private rateLimitOk;
+    private err;
+    /**
+     * 監視用：全ユーザーの残高 + キャッシュ卓のチップ = 発行総量 になっているはず。
+     *
+     * トーナメント卓のスタックは意図的に含めない。あれは順位を決めるための点数であって通貨ではなく、
+     * 通貨としての出入りは「参加費の徴収」と「賞金の支払い」だけで完結している。
+     * ここを混ぜると、大会が始まるたびにチップが増えたように見えてしまう。
+     */
+    totalChips(): number;
+    dispose(): void;
+    get sessionCount(): number;
+}

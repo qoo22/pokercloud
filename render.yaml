@@ -1,0 +1,21 @@
+# Render 用の設定。GitHub リポジトリをそのまま指定すれば、ここに書いた内容で自動構築されます。
+# 無料プラン（plan: free）。一定時間アクセスが無いと自動休止し、次アクセスで数十秒かけて復帰します。
+services:
+  - type: web
+    name: poker-friends
+    runtime: node
+    plan: free
+    # dist は同梱済み（ローカルで npm run build 済み）なので、実行に必要な ws だけ入れる
+    buildCommand: npm install --omit=dev
+    startCommand: node dist/src/server/main.js
+    envVars:
+      # クライアント HTML の置き場をこのフォルダ内の public に向ける
+      - key: POKER_STATIC_ROOT
+        value: public
+      # node:sqlite を使える Node 22 系を指定（使えない環境ではメモリ動作に自動で落ちます）
+      - key: NODE_VERSION
+        value: "22"
+      # 再接続トークンの署名鍵。Render が初回に自動生成し、再起動・再デプロイ後も同じ値が
+      # 保持されるため、ログイン状態（＝ユーザーの同一性）がリセットされない
+      - key: POKER_SECRET
+        generateValue: true

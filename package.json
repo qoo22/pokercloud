@@ -1,0 +1,33 @@
+{
+  "name": "poker-engine",
+  "version": "0.1.0",
+  "description": "テキサスホールデム サーバーサイドエンジン（役判定・サイドポット・ハンド進行）",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "demo": "npm run typecheck && node scripts/build-demo.mjs && node scripts/smoke-demo.mjs && node scripts/smoke-verifier.mjs",
+    "server": "npm run build && node scripts/build-client.mjs && node dist/src/server/main.js",
+    "client": "node scripts/build-client.mjs",
+    "e2e": "npm run build && node scripts/build-client.mjs && node scripts/smoke-client.mjs",
+    "verify": "npm run test && npm run demo && npm run e2e && npm run solo",
+    "assets:fetch": "node scripts/fetch-assets.mjs",
+    "assets:build": "python3 scripts/build-assets.py && npm run client",
+    "assets": "node scripts/fetch-assets.mjs --build",
+    "solo": "node scripts/build-client.mjs && node scripts/smoke-solo.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.24.0",
+    "linkedom": "^0.18.13",
+    "typescript": "^5.6.0"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}
