@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { Gateway } from './gateway.js';
 import { SqliteStore, MemoryStore } from './store.js';
-import { restoreFromGitHub, startAutoBackup, pushToGitHub } from './ghsync.js';
+import { restoreFromGitHub, startAutoBackup, pushToGitHub, bandwidthToday } from './ghsync.js';
 const here = dirname(fileURLToPath(import.meta.url));
 // クライアント HTML の置き場。
 // 既定はローカル開発向けで dist/src/server → outputs 直下。
@@ -203,6 +203,7 @@ const port = Number(process.env.PORT ?? 8787);
 const gateway = new Gateway({
     tables, tournaments, port, staticRoot, store, authSecret, dbPath,
     ghPush: () => pushToGitHub(store, dbPath),
+    bandwidthToday,
 });
 const actual = await gateway.listen();
 startAutoBackup(store, dbPath);

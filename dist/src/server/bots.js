@@ -321,9 +321,11 @@ class Bot {
                 else if (x.lastAction === 'raise' || x.lastAction === 'allin')
                     this.stat.raiseFacing++;
                 if (st.street === 'preflop') {
-                    // プリフロップの行動 → 初期レンジ信念
+                    // プリフロップの行動 → 初期レンジ信念。3ベット/4ベットポットはより強いレンジへ「昇格」させる
                     if (isAggr) {
-                        if (x.streetBet >= st.bigBlind * 7)
+                        if (x.streetBet >= st.bigBlind * 16)
+                            this.preRange.set(x.seat, VILLAIN_PRE.fourBettor);
+                        else if (x.streetBet >= st.bigBlind * 7)
                             this.preRange.set(x.seat, VILLAIN_PRE.threeBettor);
                         else {
                             const dealt = st.seats.filter((y) => y.userId && !y.sittingOut).map((y) => y.seat);
@@ -332,8 +334,14 @@ class Bot {
                                 p === 'CO' ? VILLAIN_PRE.raiserMid : VILLAIN_PRE.raiserLate);
                         }
                     }
-                    else if (x.lastAction === 'call' && !this.preRange.has(x.seat)) {
-                        this.preRange.set(x.seat, VILLAIN_PRE.caller);
+                    else if (x.lastAction === 'call') {
+                        // 3ベット/4ベットへのコールはレンジが大きく締まる → 常に上書きで昇格
+                        if (st.currentBet >= st.bigBlind * 16)
+                            this.preRange.set(x.seat, VILLAIN_PRE.fourBetCaller);
+                        else if (st.currentBet >= st.bigBlind * 7)
+                            this.preRange.set(x.seat, VILLAIN_PRE.threeBetCaller);
+                        else if (!this.preRange.has(x.seat))
+                            this.preRange.set(x.seat, VILLAIN_PRE.caller);
                     }
                     else if (x.lastAction === 'check' && !this.preRange.has(x.seat)) {
                         this.preRange.set(x.seat, VILLAIN_PRE.wide);
@@ -541,14 +549,17 @@ class Bot {
                 rnd: rndFn, aggr: Math.min(1, this.p.aggr + bigStackPressure * 2),
                 loose: (0.45 - this.p.tight) * 0.15 + bigStackPressure + preExploit,
             });
-            // 自分のレンジ信念(リバーソルバーのunsafe re-solve用)
+            // 自分のレンジ信念(リバーソルバーのunsafe re-solve用)。3/4ベットポットは昇格
             if (g.action === 'raise' || g.action === 'allin') {
-                this.myPreSpec = st.currentBet >= bb * 4.5 ? VILLAIN_PRE.threeBettor :
-                    pos === 'UTG' || pos === 'HJ' ? VILLAIN_PRE.raiserEarly :
-                        pos === 'CO' ? VILLAIN_PRE.raiserMid : VILLAIN_PRE.raiserLate;
+                this.myPreSpec = st.currentBet >= bb * 11 ? VILLAIN_PRE.fourBettor :
+                    st.currentBet >= bb * 4.5 ? VILLAIN_PRE.threeBettor :
+                        pos === 'UTG' || pos === 'HJ' ? VILLAIN_PRE.raiserEarly :
+                            pos === 'CO' ? VILLAIN_PRE.raiserMid : VILLAIN_PRE.raiserLate;
             }
             else if (g.action === 'call') {
-                this.myPreSpec = pos === 'BB' ? VILLAIN_PRE.bbDefend : VILLAIN_PRE.caller;
+                this.myPreSpec = st.currentBet >= bb * 16 ? VILLAIN_PRE.fourBetCaller :
+                    st.currentBet >= bb * 7 ? VILLAIN_PRE.threeBetCaller :
+                        pos === 'BB' ? VILLAIN_PRE.bbDefend : VILLAIN_PRE.caller;
             }
             else if (g.action === 'check') {
                 this.myPreSpec = VILLAIN_PRE.wide;

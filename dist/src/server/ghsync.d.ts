@@ -14,9 +14,15 @@
  * 未設定なら全機能が黙って無効になる(ローカル開発に影響なし)。
  */
 import type { Store } from './store.js';
+/** その日の累計送信量(管理エンドポイント表示用) */
+export declare function bandwidthToday(): {
+    day: string;
+    bytes: number;
+    pushes: number;
+};
 /** 起動時の復元。ローカルDBが既にあれば触らない(上書き事故防止) */
 export declare function restoreFromGitHub(dbPath: string): Promise<void>;
 /** スナップショットを取って GitHub へプッシュ。結果を文字列で返す(ログ/管理エンドポイント用) */
 export declare function pushToGitHub(store: Store, dbPath: string): Promise<string>;
-/** 定期バックアップ + botデータ掃除 + 終了時の駆け込みプッシュ */
+/** 定期バックアップ + データ掃除 + 終了時の駆け込みプッシュ(タイマーは常に1本) */
 export declare function startAutoBackup(store: Store, dbPath: string): void;

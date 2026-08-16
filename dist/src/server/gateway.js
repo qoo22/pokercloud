@@ -165,6 +165,18 @@ export class Gateway {
                 .catch((e) => res.writeHead(500).end(String(e)));
             return;
         }
+        // 当日の外部送信量(GitHubバックアップ)を確認する。秘密情報は含まない
+        if (path === '/admin/bandwidth' && req.method === 'GET') {
+            const fn = this.opts.bandwidthToday;
+            if (!fn) {
+                res.writeHead(500).end('bandwidth 未設定');
+                return;
+            }
+            const b = fn();
+            res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+                .end(`GitHub送信量 (${b.day} UTC): ${(b.bytes / 1024).toFixed(1)}KB / ${b.pushes}回`);
+            return;
+        }
         if (path === '/admin/restore' && req.method === 'POST') {
             const chunks = [];
             let size = 0;

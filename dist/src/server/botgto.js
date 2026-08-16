@@ -256,6 +256,12 @@ export const VILLAIN_PRE = {
     raiserMid: RFI.CO,
     raiserLate: RFI.BTN,
     threeBettor: 'TT+, AQs+, AJs, A5s-A2s, KQs, KJs, AKo, AQo:0.5, 76s:0.3, 65s:0.3',
+    // 3ベットにコールした側(A-5/CALL_3BET相当): ポケット+スーテッドブロードウェイ+AQ系
+    threeBetCaller: '22+:0.7, AQs, AJs, ATs:0.5, KQs, KJs:0.5, QJs, JTs, T9s:0.5, 98s:0.4, AQo:0.5, KQo:0.3',
+    // 4ベットした側(A-5相当): QQ+/AK + A5s系ブラフ
+    fourBettor: 'QQ+, AKs, AKo:0.7, JJ:0.35, A5s:0.6, A4s:0.4, KQs:0.25',
+    // 4ベットにコールした側: JJ/TT/AQs中心(QQ+/AKの一部はジャムに回る)
+    fourBetCaller: 'JJ, TT:0.6, QQ:0.5, AQs, KQs:0.4, AKo:0.4, AKs:0.3',
     caller: '22+, A2s+, K5s+, Q8s+, J8s+, T8s+, 97s+, 87s, 76s, 65s, 54s, ATo+, KTo+, QTo+, JTo',
     bbDefend: '22+, A2s+, K2s+, Q5s+, J7s+, T7s+, 96s+, 86s+, 75s+, 65s, 54s, A5o+, K9o+, Q9o+, J9o+, T9o, 98o',
     wide: '22+, A2s+, K2s+, Q2s+, J2s+, T4s+, 95s+, 85s+, 74s+, 64s+, 53s+, 43s, A2o+, K5o+, Q7o+, J7o+, T7o+, 97o+, 86o+, 76o, 65o',
@@ -595,6 +601,224 @@ function runBucketCfr(ctx) {
     const size = Number(lb.slice(1));
     return { action: 'raise', to: Math.round(ctx.pot * size) };
 }
+function runTwoStreetCfr(ctx) {
+    const K = ctx.K;
+    const r = ctx.rnd;
+    const heroP = ctx.heroP;
+    const R = ctx.Wr.length;
+    const spr = ctx.effStack / Math.max(1, ctx.pot);
+    const SIZES = ctx.sizes.filter((s) => s < spr * 0.85);
+    let nodeSeq = 0;
+    const mkShow = (c0, c1, wIdx) => ({ kind: 'showdown', c0, c1, wIdx });
+    const mkFold = (folder, c0, c1) => ({ kind: 'fold', folder, c0, c1 });
+    // ---- リバー層(両者の投入 c で揃った状態から)。サイズ: 75% + ジャム(近ければ) ----
+    const riverLayer = (c, wIdx) => {
+        const potU = 1 + 2 * c;
+        const rem = spr - c;
+        if (rem <= potU * 0.05)
+            return mkShow(c, c, wIdx); // 実質オールイン済み
+        const menu = [];
+        const b = 0.75 * potU;
+        if (b < rem * 0.9)
+            menu.push({ lb: 'rb', amt: b });
+        if (rem <= potU * 3 || menu.length === 0)
+            menu.push({ lb: 'rjam', amt: rem });
+        const respond = (resp, oppAmt) => ({
+            kind: 'decision', actor: resp, id: nodeSeq++, c0: c, c1: c,
+            labels: ['fold', 'call'],
+            children: [
+                resp === 0 ? mkFold(0, c, c + oppAmt) : mkFold(1, c + oppAmt, c),
+                mkShow(c + oppAmt, c + oppAmt, wIdx),
+            ],
+        });
+        const ipNode = {
+            kind: 'decision', actor: 1, id: nodeSeq++, c0: c, c1: c,
+            labels: ['check', ...menu.map((m) => m.lb)],
+            children: [mkShow(c, c, wIdx), ...menu.map((m) => respond(0, m.amt))],
+        };
+        return {
+            kind: 'decision', actor: 0, id: nodeSeq++, c0: c, c1: c,
+            labels: ['check', ...menu.map((m) => m.lb)],
+            children: [ipNode, ...menu.map((m) => respond(1, m.amt))],
+        };
+    };
+    // ベット-コール/チェック-チェックでストリートが終わったらリバーへ(チャンスノード)
+    const toRiver = (c) => ({
+        kind: 'chance', c0: c, c1: c,
+        children: Array.from({ length: R }, (_, wIdx) => riverLayer(c, wIdx)),
+    });
+    // ---- ターン層(runBucketCfrと同じ構造だが、コール後がチェックダウンでなくリバー層) ----
+    const respondTurn = (resp, oppC, oppIsJam) => {
+        const labels = ['fold', 'call'];
+        const children = [
+            resp === 0 ? mkFold(0, 0, oppC) : mkFold(1, oppC, 0),
+            oppIsJam ? mkShow(oppC, oppC, -1) : toRiver(oppC),
+        ];
+        if (!oppIsJam && spr > oppC * 2.2) {
+            labels.push('jam');
+            const after = {
+                kind: 'decision', actor: (1 - resp), id: nodeSeq++,
+                c0: resp === 0 ? spr : oppC, c1: resp === 0 ? oppC : spr,
+                labels: ['fold', 'call'],
+                children: resp === 0
+                    ? [mkFold(1, spr, oppC), mkShow(spr, spr, -1)]
+                    : [mkFold(0, oppC, spr), mkShow(spr, spr, -1)],
+            };
+            children.push(after);
+        }
+        return { kind: 'decision', actor: resp, id: nodeSeq++,
+            c0: resp === 0 ? 0 : oppC, c1: resp === 0 ? oppC : 0, labels, children };
+    };
+    const ipAfterCheck = {
+        kind: 'decision', actor: 1, id: nodeSeq++, c0: 0, c1: 0,
+        labels: ['check', ...SIZES.map((s) => `b${s}`), 'jam'],
+        children: [toRiver(0), ...SIZES.map((s) => respondTurn(0, s, false)), respondTurn(0, spr, true)],
+    };
+    const root = {
+        kind: 'decision', actor: 0, id: nodeSeq++, c0: 0, c1: 0,
+        labels: ['check', ...SIZES.map((s) => `b${s}`), 'jam'],
+        children: [ipAfterCheck, ...SIZES.map((s) => respondTurn(1, s, false)), respondTurn(1, spr, true)],
+    };
+    // ---- CFR+(チャンスノード対応のベクトル形式) ----
+    const regret = new Map();
+    const ssum = new Map();
+    const tbl = (m, id, a) => {
+        let t = m.get(id);
+        if (!t) {
+            t = new Float64Array(K * a);
+            m.set(id, t);
+        }
+        return t;
+    };
+    const walk = (node, r0, r1, t) => {
+        const u0 = new Float64Array(K), u1 = new Float64Array(K);
+        if (node.kind === 'fold') {
+            const win = 1 + node.c0 + node.c1;
+            const s1 = r1.reduce((a, b) => a + b, 0), s0 = r0.reduce((a, b) => a + b, 0);
+            for (let i = 0; i < K; i++)
+                u0[i] = s1 * (node.folder === 0 ? -node.c0 : win - node.c0);
+            for (let j = 0; j < K; j++)
+                u1[j] = s0 * (node.folder === 1 ? -node.c1 : win - node.c1);
+            return [u0, u1];
+        }
+        if (node.kind === 'showdown') {
+            const W = node.wIdx >= 0 ? ctx.Wr[node.wIdx] : ctx.Wavg;
+            const P = 1 + node.c0 + node.c1;
+            for (let i = 0; i < K; i++)
+                for (let j = 0; j < K; j++) {
+                    const w = W[i][j];
+                    u0[i] += r1[j] * (w * P - node.c0);
+                    u1[j] += r0[i] * ((1 - w) * P - node.c1);
+                }
+            return [u0, u1];
+        }
+        if (node.kind === 'chance') {
+            const p = 1 / node.children.length;
+            for (const ch of node.children) {
+                const [a, b] = walk(ch, r0, r1, t);
+                for (let i = 0; i < K; i++) {
+                    u0[i] += p * a[i];
+                    u1[i] += p * b[i];
+                }
+            }
+            return [u0, u1];
+        }
+        const A = node.children.length;
+        const reg = tbl(regret, node.id, A);
+        const ss = tbl(ssum, node.id, A);
+        const mine = node.actor === 0 ? r0 : r1;
+        const sigma = new Float64Array(K * A);
+        for (let i = 0; i < K; i++) {
+            let sum = 0;
+            for (let a = 0; a < A; a++)
+                sum += Math.max(0, reg[i * A + a]);
+            for (let a = 0; a < A; a++)
+                sigma[i * A + a] = sum > 0 ? Math.max(0, reg[i * A + a]) / sum : 1 / A;
+        }
+        const childU = [];
+        for (let a = 0; a < A; a++) {
+            const scaled = new Float64Array(K);
+            for (let i = 0; i < K; i++)
+                scaled[i] = mine[i] * sigma[i * A + a];
+            childU.push(node.actor === 0 ? walk(node.children[a], scaled, r1, t) : walk(node.children[a], r0, scaled, t));
+        }
+        const uMine = node.actor === 0 ? u0 : u1;
+        const uOpp = node.actor === 0 ? u1 : u0;
+        for (let a = 0; a < A; a++) {
+            const cu = childU[a][node.actor];
+            const co = childU[a][1 - node.actor];
+            for (let i = 0; i < K; i++)
+                uMine[i] += sigma[i * A + a] * cu[i];
+            for (let j = 0; j < K; j++)
+                uOpp[j] += co[j];
+        }
+        for (let i = 0; i < K; i++)
+            for (let a = 0; a < A; a++) {
+                reg[i * A + a] = Math.max(0, reg[i * A + a] + childU[a][node.actor][i] - uMine[i]);
+                ss[i * A + a] += t * mine[i] * sigma[i * A + a];
+            }
+        return [u0, u1];
+    };
+    const w0 = Float64Array.from(ctx.w0), w1 = Float64Array.from(ctx.w1);
+    for (let t = 1; t <= ctx.iters; t++)
+        walk(root, w0, w1, t);
+    // ---- 自分のターンノードの戦略を読む(抽出はrunBucketCfrと同じ) ----
+    const myB = Math.max(0, Math.min(K - 1, ctx.heroBucket));
+    let node = null;
+    if (ctx.facingBet <= 0)
+        node = heroP === 0 ? root : ipAfterCheck;
+    else {
+        const frac = ctx.facingBet / Math.max(1, ctx.pot);
+        const src = heroP === 0 ? ipAfterCheck : root;
+        const cands = [];
+        src.labels.forEach((lb, idx) => {
+            if (lb === 'check')
+                return;
+            const size = lb === 'jam' ? spr : Number(lb.slice(1));
+            cands.push({ node: src.children[idx], size });
+        });
+        if (!cands.length)
+            return null;
+        cands.sort((a, b) => Math.abs(a.size - frac) - Math.abs(b.size - frac));
+        node = cands[0].node;
+    }
+    if (!node || node.kind !== 'decision' || node.actor !== heroP)
+        return null;
+    const A2 = node.children.length;
+    const ss = ssum.get(node.id);
+    if (!ss)
+        return null;
+    let freqs = [];
+    let total = 0;
+    for (let a = 0; a < A2; a++) {
+        freqs.push(ss[myB * A2 + a]);
+        total += ss[myB * A2 + a];
+    }
+    if (total <= 0)
+        return null;
+    freqs = freqs.map((f) => f / total).map((f) => (f < 0.035 ? 0 : f));
+    const total2 = freqs.reduce((a, b) => a + b, 0);
+    if (total2 <= 0)
+        return null;
+    let x = r() * total2, pick = 0;
+    for (let a = 0; a < A2; a++) {
+        x -= freqs[a];
+        if (x <= 0) {
+            pick = a;
+            break;
+        }
+    }
+    const lb = node.labels[pick];
+    if (lb === 'check')
+        return { action: 'check' };
+    if (lb === 'fold')
+        return { action: 'fold' };
+    if (lb === 'call')
+        return { action: 'call' };
+    if (lb === 'jam')
+        return { action: 'allin' };
+    return { action: 'raise', to: Math.round(ctx.pot * Number(lb.slice(1))) };
+}
 /** リバーをその場で解き、自分の実ハンドの混合戦略から1アクションを引く。失敗時null */
 export function solveRiver(ctx) {
     const K = 10;
@@ -800,9 +1024,11 @@ function solveSampledStreet(ctx, R_SAMPLES, sizes) {
     const BB = bucketizeByStrength(B, ipT);
     if (!BA || !BB)
         return null;
-    // バケット間勝率行列: リバーごとに Bのバケット別スコア分布を作り、Aの各コンボから平均
+    // バケット間勝率行列: リバーごとに Bのバケット別スコア分布を作り、Aの各コンボから平均。
+    // 平均(W01)に加えて、リバーサンプル別(Wr)も保持する(ターン2ストリート解のリバー層で使う)
     const W01 = Array.from({ length: K }, () => new Array(K).fill(0.5));
     const cnt = Array.from({ length: K }, () => new Array(K).fill(0));
+    const Wr = rivers.map(() => Array.from({ length: K }, () => new Array(K).fill(0.5)));
     for (let r = 0; r < rivers.length; r++) {
         // Bのバケット別分布(byItem は orig インデックスで引く)
         const bucketPairs = Array.from({ length: K }, () => []);
@@ -823,6 +1049,7 @@ function solveSampledStreet(ctx, R_SAMPLES, sizes) {
             }
             return { scores, cum, total, byItem: new Float64Array(0) };
         });
+        const cntR = Array.from({ length: K }, () => new Array(K).fill(0));
         for (let i = 0; i < A.length; i++) {
             const s = distsA[r].byItem[A[i].orig];
             if (s < 0)
@@ -834,6 +1061,8 @@ function solveSampledStreet(ctx, R_SAMPLES, sizes) {
                 const p = winProb(s, bucketDists[j]);
                 W01[bi][j] = (W01[bi][j] * cnt[bi][j] + p * w) / (cnt[bi][j] + w);
                 cnt[bi][j] += w;
+                Wr[r][bi][j] = (Wr[r][bi][j] * cntR[bi][j] + p * w) / (cntR[bi][j] + w);
+                cntR[bi][j] += w;
             }
         }
     }
@@ -850,11 +1079,299 @@ function solveSampledStreet(ctx, R_SAMPLES, sizes) {
     let myB = 0;
     while (myB < K - 1 && heroStrength > bounds[myB])
         myB++;
+    // ターン(need=1)は2ストリート解: リバー層をチャンスノードで持ち、レバレッジを均衡に織り込む
+    if (need === 1) {
+        return runTwoStreetCfr({
+            K, Wavg: W01, Wr, w0: BA.weights, w1: BB.weights, heroP, heroBucket: myB,
+            pot: ctx.pot, effStack: ctx.effStack, facingBet: ctx.facingBet,
+            rnd, iters: ctx.iters ?? 130, sizes,
+        });
+    }
     return runBucketCfr({
         K, W01, w0: BA.weights, w1: BB.weights, heroP, heroBucket: myB,
         pot: ctx.pot, effStack: ctx.effStack, facingBet: ctx.facingBet,
         rnd, iters: ctx.iters ?? 140, sizes,
     });
+}
+export function solveRiver3(ctx) {
+    const K = 6;
+    const r = ctx.rnd ?? Math.random;
+    if (ctx.board.length !== 5)
+        return null;
+    // 各プレイヤーをスコアでバケット化
+    const R = [0, 1, 2].map((p) => bucketize(ctx.specs[p], ctx.board, ctx.tightens[p], K));
+    if (R.some((x) => !x))
+        return null;
+    const B0 = R[0], B1 = R[1], B2 = R[2];
+    // バケットdist(スコア昇順+累積重み)ヘルパ
+    const bucketRange = (b, j) => ({
+        lo: j === 0 ? 0 : b.idxBounds[j - 1] + 1, hi: b.idxBounds[j],
+    });
+    const cumW = (b, idx) => (idx < 0 ? 0 : b.sortedW[idx]);
+    const bucketW = (b, j) => {
+        const { lo, hi } = bucketRange(b, j);
+        return cumW(b, hi) - cumW(b, lo - 1);
+    };
+    const winIn = (s, b, j) => {
+        const { lo, hi } = bucketRange(b, j);
+        const bw = cumW(b, hi) - cumW(b, lo - 1);
+        if (bw <= 0)
+            return 0.5;
+        let l = lo, h = hi + 1;
+        while (l < h) {
+            const m = (l + h) >> 1;
+            if (b.sortedScores[m] < s)
+                l = m + 1;
+            else
+                h = m;
+        }
+        const below = cumW(b, l - 1) - cumW(b, lo - 1);
+        let l2 = l, h2 = hi + 1;
+        while (l2 < h2) {
+            const m = (l2 + h2) >> 1;
+            if (b.sortedScores[m] <= s)
+                l2 = m + 1;
+            else
+                h2 = m;
+        }
+        const ties = (cumW(b, l2 - 1) - cumW(b, lo - 1)) - below;
+        return (below + 0.5 * ties) / bw;
+    };
+    // ペア勝率行列 W2[p][q][i][j] = P(pのバケットi が qのバケットj に勝つ)
+    const pairW = (A, B) => {
+        const W = Array.from({ length: K }, () => new Array(K).fill(0.5));
+        for (let i = 0; i < K; i++) {
+            const { lo, hi } = bucketRange(A, i);
+            const wTot = cumW(A, hi) - cumW(A, lo - 1);
+            if (wTot <= 0)
+                continue;
+            for (let j = 0; j < K; j++) {
+                let acc = 0;
+                for (let idx = lo; idx <= hi; idx++) {
+                    const w = A.sortedW[idx] - cumW(A, idx - 1);
+                    acc += w * winIn(A.sortedScores[idx], B, j);
+                }
+                W[i][j] = acc / wTot;
+            }
+        }
+        return W;
+    };
+    const W01m = pairW(B0, B1), W02m = pairW(B0, B2), W12m = pairW(B1, B2);
+    // 3者勝率テンソル(視点別)。残差(タイ)は勝率比で配分する正規化を適用
+    const triW = (A, X, Y) => {
+        const W = Array.from({ length: K }, () => Array.from({ length: K }, () => new Array(K).fill(1 / 3)));
+        for (let i = 0; i < K; i++) {
+            const { lo, hi } = bucketRange(A, i);
+            const wTot = cumW(A, hi) - cumW(A, lo - 1);
+            if (wTot <= 0)
+                continue;
+            for (let j = 0; j < K; j++)
+                for (let k = 0; k < K; k++) {
+                    let acc = 0;
+                    for (let idx = lo; idx <= hi; idx++) {
+                        const w = A.sortedW[idx] - cumW(A, idx - 1);
+                        const s = A.sortedScores[idx];
+                        acc += w * winIn(s, X, j) * winIn(s, Y, k);
+                    }
+                    W[i][j][k] = acc / wTot;
+                }
+        }
+        return W;
+    };
+    const T0 = triW(B0, B1, B2); // P(P0が両者に勝つ | i,j,k)
+    const T1 = triW(B1, B0, B2); // 添字順: [j][i][k]
+    const T2 = triW(B2, B0, B1); // [k][i][j]
+    // ---- ツリー(1ベット・レイズなし) ----
+    const spr = 999; // リバーの1ベット66%は常に打てる前提(残スタック不足時は呼び出し側で回避)
+    void spr;
+    const BET = 0.66;
+    let nodeSeq = 0;
+    const sd = (alive, c) => {
+        const n = alive.filter(Boolean).length;
+        if (n === 1)
+            return { kind: 'win', winner: alive.indexOf(true), c };
+        return { kind: 'sd', alive, c };
+    };
+    // ベット後の応答列(順番に fold/call)。resp = 残り応答者列
+    const respChain = (bettor, resp, alive, c) => {
+        if (!resp.length)
+            return sd(alive, c);
+        const [p, ...rest] = resp;
+        const cFold = [...c];
+        const aFold = [...alive];
+        aFold[p] = false;
+        const cCall = [...c];
+        cCall[p] = c[bettor];
+        return { kind: 'd', actor: p, id: nodeSeq++, labels: ['fold', 'call'],
+            children: [respChain(bettor, rest, aFold, cFold), respChain(bettor, rest, alive, cCall)] };
+    };
+    const betNode = (bettor, resp) => {
+        const c = [0, 0, 0];
+        c[bettor] = BET;
+        return respChain(bettor, resp, [true, true, true], c);
+    };
+    const n_p2_xx = { kind: 'd', actor: 2, id: nodeSeq++, labels: ['check', 'bet'],
+        children: [sd([true, true, true], [0, 0, 0]), betNode(2, [0, 1])] };
+    const n_p1_x = { kind: 'd', actor: 1, id: nodeSeq++, labels: ['check', 'bet'],
+        children: [n_p2_xx, betNode(1, [2, 0])] };
+    const root = { kind: 'd', actor: 0, id: nodeSeq++, labels: ['check', 'bet'],
+        children: [n_p1_x, betNode(0, [1, 2])] };
+    // ---- 3人CFR+ ----
+    const regret = new Map();
+    const ssum = new Map();
+    const tbl = (m, id, a) => {
+        let t = m.get(id);
+        if (!t) {
+            t = new Float64Array(K * a);
+            m.set(id, t);
+        }
+        return t;
+    };
+    const sumOf = (v) => { let s = 0; for (let i = 0; i < K; i++)
+        s += v[i]; return s; };
+    const walk = (node, rv, t) => {
+        const u = [new Float64Array(K), new Float64Array(K), new Float64Array(K)];
+        if (node.kind === 'win') {
+            const P = 1 + node.c[0] + node.c[1] + node.c[2];
+            const sums = rv.map(sumOf);
+            for (let p = 0; p <= 2; p++) {
+                const oth = sums[(p + 1) % 3] * sums[(p + 2) % 3];
+                const gain = p === node.winner ? P - node.c[p] : -node.c[p];
+                for (let i = 0; i < K; i++)
+                    u[p][i] = oth * gain;
+            }
+            return u;
+        }
+        if (node.kind === 'sd') {
+            const P = 1 + node.c[0] + node.c[1] + node.c[2];
+            const [a0, a1, a2] = node.alive;
+            if (a0 && a1 && a2) {
+                for (let i = 0; i < K; i++)
+                    for (let j = 0; j < K; j++)
+                        for (let k = 0; k < K; k++) {
+                            const w0 = T0[i][j][k], w1 = T1[j][i][k], w2 = T2[k][i][j];
+                            const s = Math.max(1e-9, w0 + w1 + w2);
+                            u[0][i] += rv[1][j] * rv[2][k] * ((w0 / s) * P - node.c[0]);
+                            u[1][j] += rv[0][i] * rv[2][k] * ((w1 / s) * P - node.c[1]);
+                            u[2][k] += rv[0][i] * rv[1][j] * ((w2 / s) * P - node.c[2]);
+                        }
+            }
+            else {
+                // 2人ショーダウン(1人フォールド済み)
+                const pair = a0 && a1 ? [[0, 1, W01m]] : a0 && a2 ? [[0, 2, W02m]] : [[1, 2, W12m]];
+                const [pa, pb, W] = pair[0];
+                const pf = [0, 1, 2].find((x) => x !== pa && x !== pb);
+                const sf = sumOf(rv[pf]);
+                for (let i = 0; i < K; i++)
+                    for (let j = 0; j < K; j++) {
+                        const w = W[i][j];
+                        u[pa][i] += sf * rv[pb][j] * (w * P - node.c[pa]);
+                        u[pb][j] += sf * rv[pa][i] * ((1 - w) * P - node.c[pb]);
+                    }
+                const othFold = sumOf(rv[pa]) * sumOf(rv[pb]);
+                for (let i = 0; i < K; i++)
+                    u[pf][i] = othFold * (-node.c[pf]);
+            }
+            return u;
+        }
+        const A = node.children.length;
+        const reg = tbl(regret, node.id, A);
+        const ss = tbl(ssum, node.id, A);
+        const mine = rv[node.actor];
+        const sigma = new Float64Array(K * A);
+        for (let i = 0; i < K; i++) {
+            let sum = 0;
+            for (let a = 0; a < A; a++)
+                sum += Math.max(0, reg[i * A + a]);
+            for (let a = 0; a < A; a++)
+                sigma[i * A + a] = sum > 0 ? Math.max(0, reg[i * A + a]) / sum : 1 / A;
+        }
+        const childU = [];
+        for (let a = 0; a < A; a++) {
+            const scaled = new Float64Array(K);
+            for (let i = 0; i < K; i++)
+                scaled[i] = mine[i] * sigma[i * A + a];
+            const next = rv.map((v, p) => (p === node.actor ? scaled : v));
+            childU.push(walk(node.children[a], next, t));
+        }
+        for (let p = 0; p <= 2; p++) {
+            if (p === node.actor) {
+                for (let a = 0; a < A; a++)
+                    for (let i = 0; i < K; i++)
+                        u[p][i] += sigma[i * A + a] * childU[a][p][i];
+            }
+            else {
+                for (let a = 0; a < A; a++)
+                    for (let i = 0; i < K; i++)
+                        u[p][i] += childU[a][p][i];
+            }
+        }
+        for (let i = 0; i < K; i++)
+            for (let a = 0; a < A; a++) {
+                reg[i * A + a] = Math.max(0, reg[i * A + a] + childU[a][node.actor][i] - u[node.actor][i]);
+                ss[i * A + a] += t * mine[i] * sigma[i * A + a];
+            }
+        return u;
+    };
+    const iters = ctx.iters ?? 160;
+    const w = [
+        Float64Array.from(B0.weights), Float64Array.from(B1.weights), Float64Array.from(B2.weights)
+    ];
+    for (let t = 1; t <= iters; t++)
+        walk(root, w, t);
+    // ---- 自分のノードを特定して戦略を読む ----
+    const myScore = scoreBest([...ctx.heroHole, ...ctx.board]);
+    const heroB = R[ctx.heroIdx];
+    let myB = 0;
+    while (myB < K - 1 && myScore > heroB.boundaries[myB])
+        myB++;
+    let node = null;
+    if (ctx.bettorIdx === null) {
+        node = ctx.heroIdx === 0 ? root : ctx.heroIdx === 1 ? n_p1_x : n_p2_xx;
+    }
+    else {
+        // ベットに直面。中間の応答者は必ずコール済み(フォールドしていたら3人アクティブでない)
+        const start = ctx.bettorIdx === 0 ? root.children[1]
+            : ctx.bettorIdx === 1 ? n_p1_x.children[1] : n_p2_xx.children[1];
+        let cur = start;
+        while (cur.kind === 'd' && cur.actor !== ctx.heroIdx)
+            cur = cur.children[1]; // call枝を辿る
+        node = cur;
+    }
+    if (!node || node.kind !== 'd' || node.actor !== ctx.heroIdx)
+        return null;
+    const A2 = node.children.length;
+    const ss = ssum.get(node.id);
+    if (!ss)
+        return null;
+    let freqs = [];
+    let total = 0;
+    for (let a = 0; a < A2; a++) {
+        freqs.push(ss[myB * A2 + a]);
+        total += ss[myB * A2 + a];
+    }
+    if (total <= 0)
+        return null;
+    freqs = freqs.map((f) => f / total).map((f) => (f < 0.035 ? 0 : f));
+    const t2 = freqs.reduce((a, b) => a + b, 0);
+    if (t2 <= 0)
+        return null;
+    let x = r() * t2, pick = 0;
+    for (let a = 0; a < A2; a++) {
+        x -= freqs[a];
+        if (x <= 0) {
+            pick = a;
+            break;
+        }
+    }
+    const lb = node.labels[pick];
+    if (lb === 'check')
+        return { action: 'check' };
+    if (lb === 'fold')
+        return { action: 'fold' };
+    if (lb === 'call')
+        return { action: 'call' };
+    return { action: 'raise', to: Math.round(ctx.pot * BET) };
 }
 // ---------------------------------------------------------------- ポジション
 /** 参加者の席順からチャート用ポジションラベルを求める */
@@ -1184,9 +1701,11 @@ export function gtoPostflop(c) {
     const oppAggr = c.oppAggr ?? 0.5;
     const spr = c.myStack / Math.max(1, c.pot);
     // フロップ/ターン/リバーはヘッズアップならその場でCFRで解く(V2 Phase5/6)。高レート卓ほど適用率が高い。
-    // 自分がこのストリートで既に投入している(=レイズ合戦)場合は木が合わないのでヒューリスティックへ
+    // レイズ合戦(自分がこのストリートで投入済み → レイズを受けた)もサブツリー再解法で扱う:
+    // 自分の投入分をポットに組み込み、両者のレンジを1段タイト化した unsafe re-solve(Libratus式の軽量版)
+    const raisedWar = (c.heroStreetBet ?? 0) > 0 && c.toCall > 0;
     const solvable = c.nActive === 2 && c.heroSpec && c.villainSpec &&
-        !(c.heroStreetBet && c.heroStreetBet > 0);
+        (!(c.heroStreetBet && c.heroStreetBet > 0) || raisedWar);
     const wantRiverSolve = c.street === 'river' && c.board.length === 5 && r() < (0.35 + 0.65 * c.tier) * TUNE.solverGate;
     const wantTurnSolve = c.street === 'turn' && c.board.length === 4 && r() < (0.3 + 0.6 * c.tier) * TUNE.solverGate;
     const wantFlopSolve = c.street === 'flop' && c.board.length === 3 && r() < (0.25 + 0.55 * c.tier) * TUNE.solverGate;
@@ -1197,7 +1716,8 @@ export function gtoPostflop(c) {
             const g = solve({
                 heroHole: c.hole, board: c.board,
                 heroSpec: c.heroSpec, villSpec: c.villainSpec,
-                heroTighten: c.heroAggStreets ?? 0, villTighten: c.villainAggStreets ?? 0,
+                heroTighten: (c.heroAggStreets ?? 0) + (raisedWar ? 1 : 0),
+                villTighten: (c.villainAggStreets ?? 0) + (raisedWar ? 1 : 0),
                 heroIP: c.inPosition,
                 pot: potStart, effStack: c.myStack, facingBet: c.toCall, rnd: r,
             });

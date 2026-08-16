@@ -96,6 +96,26 @@ export declare function solveTurn(ctx: RiverSolveCtx): GtoAction | null;
  * レンジ対レンジの均衡からCベット頻度・ドローの継続・チェックレイズが出る。
  */
 export declare function solveFlop(ctx: RiverSolveCtx): GtoAction | null;
+/**
+ * 3人のリバーをバケットCFRで解く(マルチウェイの簡易ソルバー)。
+ * 資料第3部§3.8の通りマルチウェイは「タイト・小さいサイズ・純ブラフ激減」が均衡なので、
+ * ツリーは意図的に小さい: 1ベットサイズ(66%ポット)・レイズなし・fold/callのみ。
+ * ショーダウンは「自分のスコアが両者のバケット分布を同時に上回る確率」(CDFの積)で近似し、
+ * タイの残差は勝率比で正規化して分配する。サイドポットは扱わない(均等スタック近似)。
+ */
+export interface River3Ctx {
+    heroHole: Card[];
+    board: Card[];
+    heroIdx: 0 | 1 | 2;
+    specs: [string, string, string];
+    tightens: [number, number, number];
+    pot: number;
+    bettorIdx: number | null;
+    facingBet: number;
+    rnd?: () => number;
+    iters?: number;
+}
+export declare function solveRiver3(ctx: River3Ctx): GtoAction | null;
 /** 参加者の席順からチャート用ポジションラベルを求める */
 export declare function positionLabel(mySeat: number, buttonIndex: number, dealtSeats: number[], maxSeats: number): Pos;
 export interface PreCtx {

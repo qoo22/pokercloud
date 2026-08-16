@@ -108,6 +108,16 @@ export interface Store {
     };
     /** 一貫性のあるスナップショットを path に書き出す(SQLiteのみ)。成功で true */
     snapshotTo?(path: string): boolean;
+    /**
+     * バックアップ用の「人間データだけ」のスナップショットを path に書き出す。
+     * bot_ 行とハンド履歴(ゲームログ、残高に無関係)を除く。成功で true。
+     */
+    snapshotHumansTo?(path: string): boolean;
+    /**
+     * 人間の残高・課金・進捗を決定的にまとめた指紋(hash)。bot がいくら動いても不変で、
+     * 人間の状態が変わったときだけ変化する。バックアップの差分検知(=送るか否か)に使う。
+     */
+    humanStateFingerprint?(): string;
     /** bot_ で始まるユーザーのうち、しばらく見ていないものと関連行を削除。削除行数を返す */
     pruneBots?(olderThanMs: number): number;
     totalBalance(currency: Currency): number;
@@ -164,7 +174,9 @@ interface SqliteDb {
 }
 export declare class SqliteStore implements Store {
     private db;
-    constructor(db: SqliteDb);
+    /** バックアップ用の一時DBを同期的に開くために、コンストラクタを保持しておく */
+    private dbCtor;
+    constructor(db: SqliteDb, dbCtor?: (new (p: string) => SqliteDb) | null);
     /**
      * ファイル（または ':memory:'）を開いて Store を作る。
      * node:sqlite は同期 API なので、await 不要でそのまま使える。
@@ -175,6 +187,21 @@ export declare class SqliteStore implements Store {
      * 宛先が既存だと失敗するので呼び出し側で消してから使うこと。
      */
     snapshotTo(path: string): boolean;
+    /**
+     * バックアップ専用の「人間データだけ」のスナップショット。
+     * まず完全コピーを作り、そのコピー側で bot_ 行とハンド履歴(ゲームログ)を消して VACUUM する。
+     * 残るのは人間の users/ledger/purchases/progress のみ。人間の残高・仕訳が変わらなければ
+     * 出力ファイルは毎回バイト同一になるので、GitHubプッシュの差分検知が効いて送信が起きない。
+     * ハンド履歴は残高に無関係なゲームログなので、通信量削減のためバックアップからは除外する
+     * (ライブDBには直近ぶんを残す。UI表示や公正性検証はライブで行う)。
+     */
+    snapshotHumansTo(path: string): boolean;
+    /**
+     * 人間の状態(残高・課金・進捗)の決定的な指紋。bot と hands は含めないので、
+     * bot が動いても不変。ゲームサーバーはこれが変わったときだけバックアップを送る。
+     * セキュリティ用途ではないので軽量な FNV-1a で十分(依存追加を避ける)。
+     */
+    humanStateFingerprint(): string;
     /**
      * botのデータ掃除。botは接続ごとに使い捨ての bot_xxx ユーザーを作るため、
      * 放置するとDBが際限なく育つ。最後に見てから olderThanMs 経過した bot_ ユーザーの

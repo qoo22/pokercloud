@@ -18,6 +18,12 @@ export interface GatewayOptions extends LobbyConfig {
     dbPath?: string;
     /** GitHubへの手動バックアップ実行(/admin/ghpush)。ghsync 参照 */
     ghPush?: () => Promise<string>;
+    /** 当日の外部送信量(/admin/bandwidth)。ghsync.bandwidthToday 参照 */
+    bandwidthToday?: () => {
+        day: string;
+        bytes: number;
+        pushes: number;
+    };
     port?: number;
     /** 静的ファイルを配る場合のルート（動作確認クライアント用） */
     staticRoot?: string;
