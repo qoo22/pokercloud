@@ -1,4 +1,67 @@
 import { evaluateBest, scoreBest, HandCategory } from '../evaluator.js';
+// ---------------------------------------------------------------- 自己学習チューニング
+/**
+ * 意思決定の主要ノブ。既定値=これまで理論から較正した値。
+ * self_improve.mjs が自己対戦で最適化し、tuned_params.json 経由で本番botに反映される。
+ * 各値の意味と探索範囲は TUNING_BOUNDS を参照。
+ */
+export const TUNE = {
+    preLoose: 0, // プリフロップ全体の緩さ(±。圏外拾い/境界絞り)
+    threeBetScale: 1, // 3ベットブラフ頻度の倍率
+    bbCallBonus: 0.05, // BBのコール防御ボーナス
+    cbetAggr: 0.6, // アグレッサーのベット基本頻度
+    cbetNon: 0.3, // 非アグレッサーのスタブ/プローブ基本頻度
+    oopPenalty: 0.1, // OOPの防御閾値ペナルティ
+    smallBetDef: 0.04, // 小さいベットへの防御拡大
+    valueThr: 0.56, // フロップ/ターンのバリューベット閾値
+    valueThrRiver: 0.6, // リバーのバリューベット閾値
+    semibluffF: 0.6, // FD/OESDセミブラフ基本頻度
+    bluffBase: 0.12, // 純ブラフ基本頻度
+    xrFreq: 0.28, // セミブラフチェックレイズ頻度
+    onePairTurnCheck: 0.6, // IP1ペアのターンチェック率
+    probeBoost: 0.2, // ドロー完成ターンのプローブ増分
+    solverGate: 1, // CFRソルバー使用率の倍率
+    valueRaiseSize: 0.8, // バリューレイズの基本サイズ(ポット比)
+};
+export const TUNING_BOUNDS = {
+    preLoose: [-0.08, 0.12], threeBetScale: [0.3, 2.2], bbCallBonus: [0, 0.15],
+    cbetAggr: [0.35, 0.85], cbetNon: [0.1, 0.55], oopPenalty: [0.02, 0.2],
+    smallBetDef: [0, 0.1], valueThr: [0.46, 0.66], valueThrRiver: [0.5, 0.72],
+    semibluffF: [0.3, 0.9], bluffBase: [0.02, 0.3], xrFreq: [0.05, 0.55],
+    onePairTurnCheck: [0.2, 0.9], probeBoost: [0, 0.4], solverGate: [0.4, 1.0],
+    valueRaiseSize: [0.55, 1.2],
+};
+/** 部分更新(境界へクランプ)。トレーナーが席ごとに切り替えるのにも使う */
+export function setTuning(partial) {
+    for (const k of Object.keys(partial)) {
+        const v = partial[k];
+        if (typeof v !== 'number' || !Number.isFinite(v))
+            continue;
+        const [lo, hi] = TUNING_BOUNDS[k];
+        TUNE[k] = Math.max(lo, Math.min(hi, v));
+    }
+}
+export function getTuning() {
+    return { ...TUNE };
+}
+/**
+ * 自己学習の成果(tuned_params.json)があれば読み込む。
+ * dist/src/server/ から見て3つ上 = poker-engine/ (または poker-cloud/) 直下を探す。
+ * 無ければ既定値のまま(エラーにしない)。
+ */
+export async function loadTunedParams() {
+    try {
+        const { readFileSync } = await import('node:fs');
+        const url = new URL('../../../tuned_params.json', import.meta.url);
+        const data = JSON.parse(readFileSync(url, 'utf8'));
+        if (data && typeof data === 'object' && data.params) {
+            setTuning(data.params);
+            return decodeURIComponent(url.pathname);
+        }
+    }
+    catch { /* ファイルが無い/壊れている → 既定値 */ }
+    return null;
+}
 // ---------------------------------------------------------------- レンジ記法
 const RANKS = '23456789TJQKA';
 const rv = (c) => RANKS.indexOf(c) + 2; // '2'→2 .. 'A'→14
@@ -350,23 +413,14 @@ function winMatrix(A, B, K) {
     }
     return W;
 }
-/** リバーをその場で解き、自分の実ハンドの混合戦略から1アクションを引く。失敗時null */
-export function solveRiver(ctx) {
-    const K = 10;
-    const r = ctx.rnd ?? Math.random;
-    const heroP = ctx.heroIP ? 1 : 0;
-    const oopSpec = heroP === 0 ? ctx.heroSpec : ctx.villSpec;
-    const ipSpec = heroP === 1 ? ctx.heroSpec : ctx.villSpec;
-    const oopT = heroP === 0 ? (ctx.heroTighten ?? 0) : (ctx.villTighten ?? 0);
-    const ipT = heroP === 1 ? (ctx.heroTighten ?? 0) : (ctx.villTighten ?? 0);
-    const R0 = bucketize(oopSpec, ctx.board, oopT, K);
-    const R1 = bucketize(ipSpec, ctx.board, ipT, K);
-    if (!R0 || !R1)
-        return null;
-    const W01 = winMatrix(R0, R1, K); // P(OOP i beats IP j)
-    // ---- ツリー構築(ポット比)。サイズ: 0.5, 1.0, オールイン。レイズはジャムのみ ----
+function runBucketCfr(ctx) {
+    const K = ctx.K;
+    const r = ctx.rnd;
+    const heroP = ctx.heroP;
+    const W01 = ctx.W01;
+    // ---- ツリー構築(ポット比)。サイズメニュー + オールイン。レイズはジャムのみ ----
     const spr = ctx.effStack / Math.max(1, ctx.pot);
-    const SIZES = [0.5, 1.0].filter((s) => s < spr * 0.85);
+    const SIZES = (ctx.sizes ?? [0.5, 1.0]).filter((s) => s < spr * 0.85);
     let nodeSeq = 0;
     const mkShow = (c0, c1) => ({ actor: 0, kind: 'showdown', c0, c1 });
     const mkFold = (folder, c0, c1) => ({ actor: 0, kind: 'fold', folder, c0, c1 });
@@ -473,16 +527,12 @@ export function solveRiver(ctx) {
             }
         return [u0, u1];
     };
-    const iters = ctx.iters ?? 160;
-    const w0 = Float64Array.from(R0.weights), w1 = Float64Array.from(R1.weights);
+    const iters = ctx.iters;
+    const w0 = Float64Array.from(ctx.w0), w1 = Float64Array.from(ctx.w1);
     for (let t = 1; t <= iters; t++)
         walk(root, w0, w1, t);
     // ---- 自分の実ハンドの戦略を読む ----
-    const heroR = heroP === 0 ? R0 : R1;
-    const myScore = scoreBest([...ctx.heroHole, ...ctx.board]);
-    let myB = 0;
-    while (myB < K - 1 && myScore > heroR.boundaries[myB])
-        myB++;
+    const myB = Math.max(0, Math.min(K - 1, ctx.heroBucket));
     // 該当ノードを特定
     let node = null;
     if (ctx.facingBet <= 0)
@@ -545,6 +595,267 @@ export function solveRiver(ctx) {
     const size = Number(lb.slice(1));
     return { action: 'raise', to: Math.round(ctx.pot * size) };
 }
+/** リバーをその場で解き、自分の実ハンドの混合戦略から1アクションを引く。失敗時null */
+export function solveRiver(ctx) {
+    const K = 10;
+    const heroP = ctx.heroIP ? 1 : 0;
+    const oopSpec = heroP === 0 ? ctx.heroSpec : ctx.villSpec;
+    const ipSpec = heroP === 1 ? ctx.heroSpec : ctx.villSpec;
+    const oopT = heroP === 0 ? (ctx.heroTighten ?? 0) : (ctx.villTighten ?? 0);
+    const ipT = heroP === 1 ? (ctx.heroTighten ?? 0) : (ctx.villTighten ?? 0);
+    const R0 = bucketize(oopSpec, ctx.board, oopT, K);
+    const R1 = bucketize(ipSpec, ctx.board, ipT, K);
+    if (!R0 || !R1)
+        return null;
+    const W01 = winMatrix(R0, R1, K); // P(OOP i beats IP j)
+    // 自分の実ハンドのバケット(スコアで判定)
+    const heroR = heroP === 0 ? R0 : R1;
+    const myScore = scoreBest([...ctx.heroHole, ...ctx.board]);
+    let myB = 0;
+    while (myB < K - 1 && myScore > heroR.boundaries[myB])
+        myB++;
+    return runBucketCfr({
+        K, W01, w0: R0.weights, w1: R1.weights, heroP, heroBucket: myB,
+        pot: ctx.pot, effStack: ctx.effStack, facingBet: ctx.facingBet,
+        rnd: ctx.rnd ?? Math.random, iters: ctx.iters ?? 160,
+    });
+}
+/**
+ * ターンをその場で解く(V2 Phase6 の軽量版)。
+ *
+ * リバーとの違いは勝率の定義だけ:
+ *   リバー = 現在のスコアで確定
+ *   ターン = 「リバーを配りきってショーダウンした時の勝率」
+ * そこで残りのリバー候補から R_SAMPLES 枚をサンプリングし、各リバーで厳密に
+ * 勝敗分布を計り、その平均でコンボの強さ(=対レンジ勝率)とバケット間勝率行列を作る。
+ * ドロー(フラッシュドロー等)はリバーで完成する分だけ自然に強さへ織り込まれるので、
+ * 「今は最弱だが降りないハンド」としてセミブラフ・コール継続が均衡から出てくる。
+ * ツリーはリバーと同じ(check/50%/100%/jam)。葉はチェックダウン相当のショーダウン評価
+ * (=深さ制限探索の単純継続)なので、リバーでのさらなるベットの価値は含まない近似。
+ */
+export function solveTurn(ctx) {
+    if (ctx.board.length !== 4)
+        return null;
+    return solveSampledStreet(ctx, 10, [0.5, 1.0]);
+}
+/**
+ * フロップをその場で解く。ターンと同じ仕組みで、ランアウトが「ターン+リバーの2枚」になるだけ。
+ * サイズメニューは理論(第3部)に合わせて小さめ(33%/75%)を使う。
+ * 葉がチェックダウン相当の近似はフロップでは2ストリート分粗くなるが、
+ * レンジ対レンジの均衡からCベット頻度・ドローの継続・チェックレイズが出る。
+ */
+export function solveFlop(ctx) {
+    if (ctx.board.length !== 3)
+        return null;
+    return solveSampledStreet(ctx, 12, [0.33, 0.75]);
+}
+/** ランアウトをサンプリングして解く共通実装(ターン=1枚 / フロップ=2枚) */
+function solveSampledStreet(ctx, R_SAMPLES, sizes) {
+    const K = 8;
+    const need = 5 - ctx.board.length;
+    if (need < 1 || need > 2)
+        return null;
+    const rnd = ctx.rnd ?? Math.random;
+    const heroP = ctx.heroIP ? 1 : 0;
+    const oopSpec = heroP === 0 ? ctx.heroSpec : ctx.villSpec;
+    const ipSpec = heroP === 1 ? ctx.heroSpec : ctx.villSpec;
+    const oopT = heroP === 0 ? (ctx.heroTighten ?? 0) : (ctx.villTighten ?? 0);
+    const ipT = heroP === 1 ? (ctx.heroTighten ?? 0) : (ctx.villTighten ?? 0);
+    // 盤面とヒーローの手で死んでいる札を除いた候補から、ランアウト(need枚)をサンプル
+    const blocked = new Set([...ctx.board, ...ctx.heroHole]);
+    const deck = [];
+    for (let c = 0; c < 52; c++)
+        if (!blocked.has(c))
+            deck.push(c);
+    if (deck.length < need)
+        return null;
+    const rivers = []; // 各要素が1つのランアウト(ターン=1枚 / フロップ=2枚)
+    for (let s = 0; s < R_SAMPLES; s++) {
+        // 部分Fisher-Yatesで先頭need枚を確定
+        for (let i = 0; i < need; i++) {
+            const j = i + Math.floor(rnd() * (deck.length - i));
+            const t = deck[i];
+            deck[i] = deck[j];
+            deck[j] = t;
+        }
+        rivers.push(deck.slice(0, need));
+    }
+    if (!rivers.length)
+        return null;
+    const collect = (spec) => {
+        const out = [];
+        for (const [c1, c2, w] of combosOf(spec).combos) {
+            if (blocked.has(c1) || blocked.has(c2))
+                continue;
+            out.push({ c1, c2, w, strength: 0, bucket: 0, orig: out.length });
+        }
+        return out;
+    };
+    const A = collect(oopSpec), B = collect(ipSpec);
+    if (A.length < K * 2 || B.length < K * 2)
+        return null;
+    // 各ランアウトごとの スコア配列(昇順)+累積重み を両レンジぶん作る
+    const board5 = [...ctx.board, ...new Array(need).fill(0)];
+    const fillBoard = (runout) => {
+        for (let i = 0; i < need; i++)
+            board5[ctx.board.length + i] = runout[i];
+    };
+    const distOf = (items, runout) => {
+        fillBoard(runout);
+        const pairs = []; // [score, w, itemIdx]
+        for (let idx = 0; idx < items.length; idx++) {
+            const it = items[idx];
+            // コンボがランアウトの札を持っていたら、そのランアウトでは存在できない
+            let dead = false;
+            for (let i = 0; i < need; i++)
+                if (it.c1 === runout[i] || it.c2 === runout[i]) {
+                    dead = true;
+                    break;
+                }
+            if (dead)
+                continue;
+            pairs.push([scoreBest([it.c1, it.c2, ...board5]), it.w, idx]);
+        }
+        pairs.sort((a, b) => a[0] - b[0]);
+        const scores = [], cum = [];
+        let total = 0;
+        const byItem = new Float64Array(items.length).fill(-1);
+        for (const [s, w, idx] of pairs) {
+            total += w;
+            scores.push(s);
+            cum.push(total);
+            byItem[idx] = s;
+        }
+        return { scores, cum, total, byItem };
+    };
+    const distsA = rivers.map((rv) => distOf(A, rv));
+    const distsB = rivers.map((rv) => distOf(B, rv));
+    // score が dist の中で勝つ確率(タイ0.5)
+    const winProb = (score, d) => {
+        if (d.total <= 0)
+            return 0.5;
+        let lo = 0, hi = d.scores.length;
+        while (lo < hi) {
+            const m = (lo + hi) >> 1;
+            if (d.scores[m] < score)
+                lo = m + 1;
+            else
+                hi = m;
+        }
+        const below = lo > 0 ? d.cum[lo - 1] : 0;
+        let hi2 = d.scores.length, lo2 = lo;
+        while (lo2 < hi2) {
+            const m = (lo2 + hi2) >> 1;
+            if (d.scores[m] <= score)
+                lo2 = m + 1;
+            else
+                hi2 = m;
+        }
+        const ties = (lo2 > 0 ? d.cum[lo2 - 1] : 0) - below;
+        return (below + 0.5 * ties) / d.total;
+    };
+    // コンボの強さ = 対レンジ勝率のリバー平均(そのコンボが河でブロックされる回は除外)
+    const strengthOf = (items, myDists, oppDists) => {
+        for (let idx = 0; idx < items.length; idx++) {
+            let sum = 0, n = 0;
+            for (let r = 0; r < rivers.length; r++) {
+                const s = myDists[r].byItem[idx];
+                if (s < 0)
+                    continue; // このリバーでは存在できないコンボ
+                sum += winProb(s, oppDists[r]);
+                n++;
+            }
+            items[idx].strength = n > 0 ? sum / n : 0;
+        }
+    };
+    strengthOf(A, distsA, distsB);
+    strengthOf(B, distsB, distsA);
+    // 強さでソートして等重量Kバケットに分割(tightenで下位の重みを減らすのはリバーと同じ方針)
+    const bucketizeByStrength = (items, tighten) => {
+        items.sort((a, b) => a.strength - b.strength);
+        if (tighten > 0) {
+            const cut = Math.floor(items.length * 0.3 * Math.min(2, tighten));
+            for (let i = 0; i < cut; i++)
+                items[i].w *= 0.25;
+        }
+        const total = items.reduce((s, x) => s + x.w, 0);
+        if (total <= 0)
+            return null;
+        const weights = new Array(K).fill(0);
+        const bounds = new Array(K).fill(1);
+        let acc = 0, bi = 0;
+        for (let i = 0; i < items.length; i++) {
+            acc += items[i].w;
+            items[i].bucket = bi;
+            weights[bi] += items[i].w;
+            if (acc >= total * (bi + 1) / K && bi < K - 1) {
+                bounds[bi] = items[i].strength;
+                bi++;
+            }
+        }
+        bounds[K - 1] = 1;
+        return { weights: weights.map((w) => w / total), bounds };
+    };
+    const BA = bucketizeByStrength(A, oopT);
+    const BB = bucketizeByStrength(B, ipT);
+    if (!BA || !BB)
+        return null;
+    // バケット間勝率行列: リバーごとに Bのバケット別スコア分布を作り、Aの各コンボから平均
+    const W01 = Array.from({ length: K }, () => new Array(K).fill(0.5));
+    const cnt = Array.from({ length: K }, () => new Array(K).fill(0));
+    for (let r = 0; r < rivers.length; r++) {
+        // Bのバケット別分布(byItem は orig インデックスで引く)
+        const bucketPairs = Array.from({ length: K }, () => []);
+        for (let j = 0; j < B.length; j++) {
+            const s = distsB[r].byItem[B[j].orig];
+            if (s < 0)
+                continue;
+            bucketPairs[B[j].bucket].push([s, B[j].w]);
+        }
+        const bucketDists = bucketPairs.map((pairs) => {
+            pairs.sort((a, b) => a[0] - b[0]);
+            const scores = [], cum = [];
+            let total = 0;
+            for (const [s, w] of pairs) {
+                total += w;
+                scores.push(s);
+                cum.push(total);
+            }
+            return { scores, cum, total, byItem: new Float64Array(0) };
+        });
+        for (let i = 0; i < A.length; i++) {
+            const s = distsA[r].byItem[A[i].orig];
+            if (s < 0)
+                continue;
+            const bi = A[i].bucket, w = A[i].w;
+            for (let j = 0; j < K; j++) {
+                if (bucketDists[j].total <= 0)
+                    continue;
+                const p = winProb(s, bucketDists[j]);
+                W01[bi][j] = (W01[bi][j] * cnt[bi][j] + p * w) / (cnt[bi][j] + w);
+                cnt[bi][j] += w;
+            }
+        }
+    }
+    // 自分の実ハンドの強さ → 自陣サイドのバケットへ
+    let heroSum = 0, heroN = 0;
+    const oppDists = heroP === 0 ? distsB : distsA;
+    for (let r = 0; r < rivers.length; r++) {
+        fillBoard(rivers[r]);
+        heroSum += winProb(scoreBest([...ctx.heroHole, ...board5]), oppDists[r]);
+        heroN++;
+    }
+    const heroStrength = heroN > 0 ? heroSum / heroN : 0.5;
+    const bounds = heroP === 0 ? BA.bounds : BB.bounds;
+    let myB = 0;
+    while (myB < K - 1 && heroStrength > bounds[myB])
+        myB++;
+    return runBucketCfr({
+        K, W01, w0: BA.weights, w1: BB.weights, heroP, heroBucket: myB,
+        pot: ctx.pot, effStack: ctx.effStack, facingBet: ctx.facingBet,
+        rnd, iters: ctx.iters ?? 140, sizes,
+    });
+}
 // ---------------------------------------------------------------- ポジション
 /** 参加者の席順からチャート用ポジションラベルを求める */
 export function positionLabel(mySeat, buttonIndex, dealtSeats, maxSeats) {
@@ -573,7 +884,16 @@ export function gtoPreflop(c) {
     const type = handTypeOf(c.hole[0], c.hole[1]);
     const stackBB = (c.myStack + c.myStreetBet) / c.bb;
     const r = c.rnd;
-    const inR = (spec, bonus = 0) => r() < Math.min(1, freq(spec, type) + (freq(spec, type) > 0 ? bonus : c.loose > 0 ? c.loose : 0));
+    // loose>0: 圏外ハンドを確率looseで拾う(レンジ拡大)。loose<0: 混合頻度(0<f<1)の
+    // 境界ハンドだけタイト化する(純粋レンジのAA等は絶対に落とさない)
+    const looseAll = c.loose + TUNE.preLoose;
+    const inR = (spec, bonus = 0) => {
+        const f0 = freq(spec, type);
+        if (f0 <= 0)
+            return r() < Math.max(0, looseAll);
+        const adj = f0 < 1 ? Math.min(0, looseAll) : 0;
+        return r() < Math.min(1, Math.max(0, f0 + bonus + adj));
+    };
     const jam = { action: 'allin' };
     const openSize = (mult) => Math.round(c.bb * mult + c.limpers * c.bb);
     const late = c.openerPos === 'CO' || c.openerPos === 'BTN' || c.openerPos === 'SB';
@@ -620,6 +940,10 @@ export function gtoPreflop(c) {
         }
         const spec = c.headsUp && c.pos === 'SB' ? HU_SB_OPEN : RFI[c.pos];
         if (spec && inR(spec)) {
+            if (c.limpers > 0) {
+                // リンパーへのアイソレートはソルバー準拠で大きく(第5部§1.8: 4.3〜6.5bb。「3bb+1」は小さすぎる)
+                return { action: 'raise', to: Math.round(c.bb * (4.3 + 0.5 * (c.limpers - 1) + r() * 0.4)) };
+            }
             const mult = c.pos === 'SB' ? 3 : 2.3 + r() * 0.4;
             return { action: 'raise', to: openSize(mult) };
         }
@@ -664,21 +988,21 @@ export function gtoPreflop(c) {
         return { action: 'fold' };
     }
     if (c.pos === 'BB') {
-        if (inR(late ? BB_3BET_VS_LATE : BB_3BET_VS_EARLY, c.aggr * 0.08))
+        if (inR(late ? BB_3BET_VS_LATE : BB_3BET_VS_EARLY, c.aggr * 0.08 * TUNE.threeBetScale))
             return raiseTo(4);
-        if (inR(late ? BB_CALL_VS_LATE : BB_CALL_VS_EARLY, 0.05))
+        if (inR(late ? BB_CALL_VS_LATE : BB_CALL_VS_EARLY, TUNE.bbCallBonus))
             return { action: 'call' };
         return { action: 'fold' };
     }
     if (c.pos === 'SB') {
         // SBはほぼ3ベットorフォールド
-        if (inR(late ? THREEBET_VS_LATE : THREEBET_VS_EARLY, c.aggr * 0.1))
+        if (inR(late ? THREEBET_VS_LATE : THREEBET_VS_EARLY, c.aggr * 0.1 * TUNE.threeBetScale))
             return raiseTo(4);
         if (inR('22+:0.5, AQs:0.4, KQs:0.3, AQo:0.2'))
             return { action: 'call' };
         return { action: 'fold' };
     }
-    if (inR(late ? THREEBET_VS_LATE : THREEBET_VS_EARLY, c.aggr * 0.08))
+    if (inR(late ? THREEBET_VS_LATE : THREEBET_VS_EARLY, c.aggr * 0.08 * TUNE.threeBetScale))
         return raiseTo(3.5);
     if (inR(c.pos === 'BTN' ? COLDCALL_BTN : COLDCALL_MID))
         return { action: 'call' };
@@ -796,6 +1120,43 @@ function madeScore(hole, board) {
         }
     }
 }
+/**
+ * ターンカードの分類(第5部§3.3)。フロップ3枚に対する4枚目の性質で、
+ * バレル頻度が大きく変わる: オーバーカード/スケア=60〜80%、ブランク=約50%、
+ * ボードペア=大半チェック、ドロー完成=ナッツ+ブロッカーのみ。
+ */
+export function turnCardClass(board) {
+    if (board.length !== 4)
+        return null;
+    const t = board[3];
+    const tr = (t >> 2) + 2;
+    const franks = board.slice(0, 3).map((c) => (c >> 2) + 2);
+    if (franks.includes(tr))
+        return 'board-pair';
+    // フラッシュ完成: ターンの札を含めて同スートが3枚以上
+    let suitN = 0;
+    for (const c of board)
+        if ((c & 3) === (t & 3))
+            suitN++;
+    if (suitN >= 3)
+        return 'draw-complete';
+    // ストレート完成: ターン札を含む5幅の窓に、ボードの3ランク以上が入る
+    // (例: 9-8-2 に 7 → {7,8,9}。ホール2枚でストレートが新たに成立し得る形)
+    const rset = new Set(board.map((c) => (c >> 2) + 2));
+    if (rset.has(14))
+        rset.add(1);
+    for (let lo = Math.max(1, tr - 4); lo <= Math.min(10, tr); lo++) {
+        let n = 0;
+        for (let v = lo; v < lo + 5; v++)
+            if (rset.has(v))
+                n++;
+        if (n >= 3)
+            return 'draw-complete';
+    }
+    if (tr > Math.max(...franks))
+        return 'overcard';
+    return 'blank';
+}
 /** リバーのブロッカー情報(§23-24): ナッツスートのAブロッカー / ミスしたFD */
 function riverBlockerInfo(hole, board) {
     const cnt = new Map();
@@ -822,14 +1183,18 @@ export function gtoPostflop(c) {
     const oppFold = c.oppFold ?? 0.5;
     const oppAggr = c.oppAggr ?? 0.5;
     const spr = c.myStack / Math.max(1, c.pot);
-    // リバーはヘッズアップならその場でCFRで解く(V2 Phase5)。高レート卓ほど適用率が高い。
+    // フロップ/ターン/リバーはヘッズアップならその場でCFRで解く(V2 Phase5/6)。高レート卓ほど適用率が高い。
     // 自分がこのストリートで既に投入している(=レイズ合戦)場合は木が合わないのでヒューリスティックへ
-    if (c.street === 'river' && c.nActive === 2 && c.heroSpec && c.villainSpec &&
-        !(c.heroStreetBet && c.heroStreetBet > 0) && c.board.length === 5 &&
-        r() < 0.35 + 0.65 * c.tier) {
+    const solvable = c.nActive === 2 && c.heroSpec && c.villainSpec &&
+        !(c.heroStreetBet && c.heroStreetBet > 0);
+    const wantRiverSolve = c.street === 'river' && c.board.length === 5 && r() < (0.35 + 0.65 * c.tier) * TUNE.solverGate;
+    const wantTurnSolve = c.street === 'turn' && c.board.length === 4 && r() < (0.3 + 0.6 * c.tier) * TUNE.solverGate;
+    const wantFlopSolve = c.street === 'flop' && c.board.length === 3 && r() < (0.25 + 0.55 * c.tier) * TUNE.solverGate;
+    if (solvable && (wantRiverSolve || wantTurnSolve || wantFlopSolve)) {
         try {
             const potStart = Math.max(1, c.pot - c.toCall);
-            const g = solveRiver({
+            const solve = c.street === 'river' ? solveRiver : c.street === 'turn' ? solveTurn : solveFlop;
+            const g = solve({
                 heroHole: c.hole, board: c.board,
                 heroSpec: c.heroSpec, villSpec: c.villainSpec,
                 heroTighten: c.heroAggStreets ?? 0, villTighten: c.villainAggStreets ?? 0,
@@ -864,13 +1229,13 @@ export function gtoPostflop(c) {
         const betFrac = c.toCall / Math.max(1, c.pot - c.toCall);
         // ポジションペナルティ: IPはMDF通り、OOPはオーバーフォールド(+8〜12pt)
         let threshold = required
-            + (c.inPosition ? 0.02 : 0.1)
+            + (c.inPosition ? 0.02 : TUNE.oopPenalty)
             + multiPenalty * 0.05
             + (c.tight - 0.4) * 0.1
             + (c.tourMode && bigPressure ? 0.04 : 0) // ICM近似のリスクプレミアム
             + (bigPressure ? 0.05 : 0);
         if (betFrac <= 0.4)
-            threshold -= 0.04; // 小さいベットには広く防御
+            threshold -= TUNE.smallBetDef; // 小さいベットには広く防御
         // SPR(§19): 低SPRではワンペアの価値UP(コミット)、高SPRではワンペアでスタックオフしない(RIO)
         if (spr < 3 && s >= 0.62)
             threshold -= 0.05;
@@ -890,12 +1255,12 @@ export function gtoPostflop(c) {
         // バリューレイズ。低SPRなら強いワンペア以上で早めにコミットする
         const strongRaise = c.street === 'river' ? 0.86 : spr < 2.5 ? 0.72 : 0.8;
         if (s >= strongRaise && r() < 0.55 + c.aggr * 0.3) {
-            const to = Math.round(c.currentBet + (c.pot + c.toCall) * (0.8 + r() * 0.4));
+            const to = Math.round(c.currentBet + (c.pot + c.toCall) * (TUNE.valueRaiseSize + r() * 0.4));
             return to >= (c.myStack + c.currentBet) * 0.8 ? { action: 'allin' } : { action: 'raise', to };
         }
         // セミブラフのチェックレイズ(小さいベットに対して多め、マルチウェイでは激減)
         if (c.street !== 'river' && (d.flushDraw || d.oesd) && !bigPressure
-            && betFrac <= 0.55 && multiPenalty === 0 && r() < 0.28 * (0.5 + c.aggr)) {
+            && betFrac <= 0.55 && multiPenalty === 0 && r() < TUNE.xrFreq * (0.5 + c.aggr)) {
             return { action: 'raise', to: Math.round(c.currentBet + (c.pot + c.toCall) * 0.9) };
         }
         if (equity >= threshold || (s >= 0.55 && betFrac <= 0.4))
@@ -907,7 +1272,7 @@ export function gtoPostflop(c) {
     }
     // ======== チェックまたはベット ========
     // Cベット頻度: レンジ優位ベース + テクスチャ補正(第3部 §3.7)
-    let f = c.wasAggressor ? 0.6 : 0.3;
+    let f = c.wasAggressor ? TUNE.cbetAggr : TUNE.cbetNon;
     if (t.paired)
         f += 0.15;
     if (t.aceHigh)
@@ -921,19 +1286,49 @@ export function gtoPostflop(c) {
     f *= Math.pow(0.55, multiPenalty); // マルチウェイ: α^(1/n)の帰結でCベット半減
     // 攻めの2変数化(V2 §31): チェックレイズが多いプールにはCベット頻度を下げる(サメ対策)
     f -= ((c.oppRaisey ?? 0.5) - 0.5) * 0.2 * conf;
+    // ターンカードの分類(第5部§3.3): オーバーカード=バレル増、ボードペア/ドロー完成=激減
+    const tc = c.street === 'turn' ? turnCardClass(c.board) : null;
+    if (c.wasAggressor) {
+        if (tc === 'overcard')
+            f += 0.15;
+        else if (tc === 'board-pair')
+            f -= 0.18;
+        else if (tc === 'draw-complete')
+            f -= 0.15;
+    }
+    else if (tc === 'draw-complete') {
+        // 「Flop Checkは情報」: チェックスルー後にドローが完成すると、アグレッサーは
+        // ドローをフロップで打っていたはずなので、コーラー側がナッツ優位を得る → プローブ増。
+        // しかもプールはプローブにオーバーフォールドする(第3部§3.9 リークB)。
+        // テクスチャ側のコネクト/ウェット減点を上回るよう強めに乗せる
+        f += TUNE.probeBoost;
+    }
     f = Math.max(0.05, Math.min(0.95, f + (c.aggr - 0.5) * 0.15));
     // サイズ: ドライ/ペア33%、ウェット66-75%、ミドル動的ボードの強い手はオーバーベット
     let sizeFrac = t.paired || (!t.wet && !t.dynamicMid) ? 0.33 : 0.66;
     if (t.monotone)
         sizeFrac = 0.33;
+    // ターンのバレルは小さい⅓を使わない(第5部§3.6: チェックか66%以上の二択が基本)
+    if (tc === 'overcard' || (c.street === 'turn' && c.wasAggressor && tc === 'blank')) {
+        sizeFrac = Math.max(sizeFrac, 0.66);
+    }
+    // ドロー完成ターンのプローブはリニアで小さく(第3部§3.5「ペラペラのドアには軽い一押しで十分」)
+    if (!c.wasAggressor && tc === 'draw-complete')
+        sizeFrac = Math.min(sizeFrac, 0.5);
     if (multiPenalty > 0)
         sizeFrac = Math.min(sizeFrac, 0.5);
     const betTo = (frac) => {
         const amt = Math.max(c.bb, Math.round(c.pot * frac));
         return amt >= c.myStack * 0.9 ? { action: 'allin' } : { action: 'raise', to: amt };
     };
+    // IPのアグレッサーは1ペアをターンでバレルしない(第5部§3.10-6:
+    // 「サードペア、セカンドペア、大半のトップペアが厳密にチェック」。プールは保護名目で打ちすぎる)
+    if (c.street === 'turn' && c.wasAggressor && c.inPosition &&
+        s >= 0.46 && s < 0.7 && tc !== 'overcard' && r() < TUNE.onePairTurnCheck) {
+        return { action: 'check' };
+    }
     // バリューベット。コーリングステーション相手には薄いバリューを増やす(§41)
-    const valueThr = (c.street === 'river' ? 0.6 : 0.56) - Math.max(0, 0.5 - oppFold) * 0.1 * conf;
+    const valueThr = (c.street === 'river' ? TUNE.valueThrRiver : TUNE.valueThr) - Math.max(0, 0.5 - oppFold) * 0.1 * conf;
     if (s >= valueThr) {
         // AAトラップ: ドライなエースハイでモンスターはたまにチェック(コールレンジをブロックしすぎる)
         if (t.aceHigh && !t.wet && s >= 0.9 && r() < 0.3)
@@ -950,7 +1345,7 @@ export function gtoPostflop(c) {
     }
     // セミブラフ階層: FD/OESD > ガット > バックドア(フロップのみ)
     if (c.street !== 'river') {
-        if ((d.flushDraw || d.oesd) && r() < (0.6 + c.aggr * 0.25) * Math.pow(0.6, multiPenalty))
+        if ((d.flushDraw || d.oesd) && r() < (TUNE.semibluffF + c.aggr * 0.25) * Math.pow(0.6, multiPenalty))
             return betTo(t.wet ? 0.66 : 0.5);
         if (d.gutshot && r() < 0.32 * (0.5 + c.aggr) * Math.pow(0.5, multiPenalty))
             return betTo(sizeFrac);
@@ -961,13 +1356,16 @@ export function gtoPostflop(c) {
     if (s <= 0.4) {
         const bi = c.street === 'river' ? riverBlockerInfo(c.hole, c.board) : { nutBlocker: false, missedFD: false };
         const bluffCap = c.street === 'river' ? sizeFrac / (1 + 2 * sizeFrac) : 0.25;
-        let p = Math.min(bluffCap, 0.12 + c.bluff * 0.5) * (f / 0.6) * Math.pow(0.4, multiPenalty)
+        let p = Math.min(bluffCap, TUNE.bluffBase + c.bluff * 0.5) * (f / 0.6) * Math.pow(0.4, multiPenalty)
             * (c.wasAggressor ? 1 : 0.55)
             // Aハイ等のSDV持ちはブラフに回さない。ただしフラッシュ完成ボードのAブロッカーは
             // SDVがほぼ死んでおり最良のブラフ候補なので例外(§23-24)
             * (s >= 0.26 && !bi.nutBlocker ? 0.5 : 1);
         // 相手傾向Exploit: 降りやすいプールにはブラフ増、ステーションには絞る(§41-42)
         p *= 1 + (oppFold - 0.5) * 1.4 * conf;
+        // ドロー完成ターン/ボードペアでのブラフは規律を守って半減(第5部§3.5 諦めの条件)
+        if (tc === 'draw-complete' || tc === 'board-pair')
+            p *= 0.5;
         let bluffSize = c.street === 'river' ? 0.66 : sizeFrac;
         if (bi.nutBlocker) {
             p *= 1.8;

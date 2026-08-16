@@ -9,6 +9,40 @@
  *   セミブラフ階層(FD/OESD > ガット > バックドア)、リバーのブラフ率 s/(1+2s)。
  */
 import { type Card } from '../cards.js';
+/**
+ * 意思決定の主要ノブ。既定値=これまで理論から較正した値。
+ * self_improve.mjs が自己対戦で最適化し、tuned_params.json 経由で本番botに反映される。
+ * 各値の意味と探索範囲は TUNING_BOUNDS を参照。
+ */
+export declare const TUNE: {
+    preLoose: number;
+    threeBetScale: number;
+    bbCallBonus: number;
+    cbetAggr: number;
+    cbetNon: number;
+    oopPenalty: number;
+    smallBetDef: number;
+    valueThr: number;
+    valueThrRiver: number;
+    semibluffF: number;
+    bluffBase: number;
+    xrFreq: number;
+    onePairTurnCheck: number;
+    probeBoost: number;
+    solverGate: number;
+    valueRaiseSize: number;
+};
+export type Tuning = typeof TUNE;
+export declare const TUNING_BOUNDS: Record<keyof Tuning, [number, number]>;
+/** 部分更新(境界へクランプ)。トレーナーが席ごとに切り替えるのにも使う */
+export declare function setTuning(partial: Partial<Tuning>): void;
+export declare function getTuning(): Tuning;
+/**
+ * 自己学習の成果(tuned_params.json)があれば読み込む。
+ * dist/src/server/ から見て3つ上 = poker-engine/ (または poker-cloud/) 直下を探す。
+ * 無ければ既定値のまま(エラーにしない)。
+ */
+export declare function loadTunedParams(): Promise<string | null>;
 /** 2枚のカード → "AKs"/"AKo"/"TT" */
 export declare function handTypeOf(a: Card, b: Card): string;
 /**
@@ -41,6 +75,27 @@ export interface RiverSolveCtx {
 }
 /** リバーをその場で解き、自分の実ハンドの混合戦略から1アクションを引く。失敗時null */
 export declare function solveRiver(ctx: RiverSolveCtx): GtoAction | null;
+/**
+ * ターンをその場で解く(V2 Phase6 の軽量版)。
+ *
+ * リバーとの違いは勝率の定義だけ:
+ *   リバー = 現在のスコアで確定
+ *   ターン = 「リバーを配りきってショーダウンした時の勝率」
+ * そこで残りのリバー候補から R_SAMPLES 枚をサンプリングし、各リバーで厳密に
+ * 勝敗分布を計り、その平均でコンボの強さ(=対レンジ勝率)とバケット間勝率行列を作る。
+ * ドロー(フラッシュドロー等)はリバーで完成する分だけ自然に強さへ織り込まれるので、
+ * 「今は最弱だが降りないハンド」としてセミブラフ・コール継続が均衡から出てくる。
+ * ツリーはリバーと同じ(check/50%/100%/jam)。葉はチェックダウン相当のショーダウン評価
+ * (=深さ制限探索の単純継続)なので、リバーでのさらなるベットの価値は含まない近似。
+ */
+export declare function solveTurn(ctx: RiverSolveCtx): GtoAction | null;
+/**
+ * フロップをその場で解く。ターンと同じ仕組みで、ランアウトが「ターン+リバーの2枚」になるだけ。
+ * サイズメニューは理論(第3部)に合わせて小さめ(33%/75%)を使う。
+ * 葉がチェックダウン相当の近似はフロップでは2ストリート分粗くなるが、
+ * レンジ対レンジの均衡からCベット頻度・ドローの継続・チェックレイズが出る。
+ */
+export declare function solveFlop(ctx: RiverSolveCtx): GtoAction | null;
 /** 参加者の席順からチャート用ポジションラベルを求める */
 export declare function positionLabel(mySeat: number, buttonIndex: number, dealtSeats: number[], maxSeats: number): Pos;
 export interface PreCtx {
@@ -68,6 +123,12 @@ export interface GtoAction {
     to?: number;
 }
 export declare function gtoPreflop(c: PreCtx): GtoAction;
+/**
+ * ターンカードの分類(第5部§3.3)。フロップ3枚に対する4枚目の性質で、
+ * バレル頻度が大きく変わる: オーバーカード/スケア=60〜80%、ブランク=約50%、
+ * ボードペア=大半チェック、ドロー完成=ナッツ+ブロッカーのみ。
+ */
+export declare function turnCardClass(board: Card[]): 'overcard' | 'board-pair' | 'draw-complete' | 'blank' | null;
 export interface PostCtx {
     hole: Card[];
     board: Card[];

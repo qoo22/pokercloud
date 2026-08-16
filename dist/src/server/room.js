@@ -673,8 +673,12 @@ export class Room {
         const bank = seat?.timeBankMs ?? 0;
         this.actionBaseMs = base;
         this.actionStartedAt = this.clock.now();
-        // 切断中のプレイヤーは待たない。復帰の余地は残しつつ短くする
-        const total = seat?.disconnectedAt !== null && seat !== null ? Math.min(base, 3000) : base + bank;
+        // 切断中のプレイヤーは待たない。復帰の余地は残しつつ短くする。
+        // 円滑な進行のため、タイムバンクを含めても 1 アクションは最大 60 秒でハードキャップする
+        const HARD_CAP_MS = 60_000;
+        const total = seat?.disconnectedAt !== null && seat !== null
+            ? Math.min(base, 3000)
+            : Math.min(base + bank, HARD_CAP_MS);
         this.actionDeadline = this.clock.now() + total;
         this.schedule(() => this.onActionTimeout(), total);
     }

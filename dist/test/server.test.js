@@ -443,6 +443,25 @@ describe('アクションの権限と鮮度', () => {
         }
         h.dispose();
     });
+    test('タイムバンクが大きくても1アクション最大60秒で強制進行(ハードキャップ)', () => {
+        const T2 = { ...TABLE, tableId: 'test-cap', timeBankMs: 120000 };
+        const h = new Harness({ tables: [T2], signupBonus: 100000 });
+        const a = h.login('A');
+        const b = h.login('B');
+        for (const c of [a, b]) {
+            c.send({ t: 'table.watch', tableId: T2.tableId });
+            c.send({ t: 'table.sit', tableId: T2.tableId, buyIn: 10000 });
+        }
+        h.pump(T2.seedWindowMs + 10);
+        const st = a.state();
+        const acting = st.actingSeat;
+        assert.ok(acting !== null, 'ハンドが始まっていない');
+        // キャップが無ければ 15s + 120s = 135s 待つはず。61秒で必ず手番が進むこと
+        h.pump(61_000);
+        const after = a.state();
+        assert.ok(after.actingSeat !== acting || after.handNumber !== st.handNumber, '60秒を超えても手番が進んでいない（ハードキャップが効いていない）');
+        h.dispose();
+    });
     test('時間切れで自動的にチェックかフォールドになり、Sit Out にされる', () => {
         const h = newHarness();
         const { a, b } = startedHand(h);

@@ -12,7 +12,7 @@
  */
 import { parseCard } from '../cards.js';
 import { evaluateBest, HandCategory } from '../evaluator.js';
-import { gtoPreflop, gtoPostflop, positionLabel, VILLAIN_PRE } from './botgto.js';
+import { gtoPreflop, gtoPostflop, positionLabel, VILLAIN_PRE, loadTunedParams } from './botgto.js';
 const NAMES = [
     'マグロ半額', 'yuki_0217', 'ぽんず。', 'DarkFlame猫', 'noodle_master', 'Sio*Ramen',
     'kk_88', 'ひよこ隊長', 'Zephyr', 'たまねぎ王子', 'runa_luna', 'ガチ勢のフリ',
@@ -393,12 +393,20 @@ class Bot {
                 st.street === 'turn' ? [1000, 4000] : [1500, 6000];
         let think = (range[0] + rnd() * (range[1] - range[0])) * this.p.thinkMul;
         const toCallNow = st.legalActions.find((a) => a.type === 'call')?.amount ?? 0;
-        const bigDecision = toCallNow > Math.max(st.pot, 1) * 0.6 ||
-            toCallNow > (st.seats[st.yourSeat]?.stack ?? 1) * 0.35;
+        // 「大勝負の長考」判定。ポット比の条件はポストフロップ限定にする。
+        // プリフロップはポットが小さく(オープン2.5bbでポット4bb程度)、ポット比だと
+        // ほぼ全てのプリフロ判断が長考になってしまい、体感で異常に遅くなるため
+        // (実際にそれが原因の遅延報告があった)。プリフロはスタックを脅かすコールのみ長考。
+        const stackNow = st.seats[st.yourSeat]?.stack ?? 1;
+        const bigDecision = toCallNow > stackNow * 0.35 ||
+            (st.street !== 'preflop' && toCallNow > Math.max(st.pot, 1) * 0.6);
         if (bigDecision)
             think += 1500 + rnd() * 4500;
-        else if (rnd() < 0.05)
+        else if (st.street !== 'preflop' && rnd() < 0.05)
             think += 2000 + rnd() * 4000;
+        // プリフロップの通常判断は上限2.2秒(思考倍率が高い性格でもテンポを守る)
+        if (st.street === 'preflop' && !bigDecision)
+            think = Math.min(think, 2200);
         this.after(Math.min(think, 11000), () => {
             if (this.pendingSt !== st)
                 return;
@@ -411,9 +419,24 @@ class Bot {
         const check = legal.find((a) => a.type === 'check');
         const call = legal.find((a) => a.type === 'call');
         const raise = legal.find((a) => a.type === 'raise' || a.type === 'bet');
-        // 人間的なミス：たまに変な行動（高額卓ほどミスしない）
+        // 人間的なミス：たまに変な行動（高額卓ほどミスしない）。
+        // ただしミスも「安いミス」に限定する(第5部§0.2: 悪いコールは悪いベットの約4倍高くつく)。
+        // チェック/フォールド/安いコール/ミニレイズから選び、ランダムな大コールやジャムは絶対にしない
         if (rnd() < this.p.err * 0.3 * (1 - 0.9 * this.tier)) {
-            this.act(st, pick(legal).type, raise?.min);
+            const toCallM = call?.amount ?? 0;
+            const cheapCall = call && toCallM <= Math.max(st.bigBlind * 2, st.pot * 0.25);
+            const opts = [];
+            if (check) {
+                opts.push(['check', undefined], ['check', undefined]);
+            }
+            if (cheapCall)
+                opts.push(['call', undefined]);
+            if (!check)
+                opts.push(['fold', undefined]);
+            if (raise && rnd() < 0.35)
+                opts.push([raise.type, raise.min]);
+            const [ma, mto] = opts.length ? pick(opts) : ['fold', undefined];
+            this.act(st, ma, mto);
             return;
         }
         const hole = (st.seats[st.yourSeat].holeCards ?? []).map(fromDisplay);
@@ -504,13 +527,19 @@ class Bot {
             const maxOpp = Math.max(1, ...st.seats.filter((x) => x.userId && x.seat !== st.yourSeat && !x.sittingOut)
                 .map((x) => x.stack + x.streetBet));
             const bigStackPressure = this.mode === 'tour' && (me.stack + me.streetBet) > maxOpp * 1.8 ? 0.05 : 0;
+            // プリフロップExploit(最適行動資料): 降りやすい卓ではオープン/スチールを広げ、
+            // アグレッシブな卓では絞る。確信度が溜まるまでは無調整(GTOのまま)
+            const preSamples = this.stat.fold + this.stat.passive + this.stat.betInit + this.stat.raiseFacing;
+            const preConf = Math.min(1, preSamples / 80) * (0.3 + 0.7 * this.tier);
+            const preFoldShare = preSamples > 0 ? this.stat.fold / preSamples : 0.38;
+            const preExploit = (preFoldShare - 0.38) * 0.4 * preConf; // 降りやすい卓 → +、粘る卓 → −
             const g = gtoPreflop({
                 hole: [hole[0], hole[1]], pos, headsUp: dealt.length === 2, bb,
                 myStack: me.stack, myStreetBet: me.streetBet, toCall,
                 currentBet: st.currentBet, pot: Math.max(st.pot, bb * 2), limpers,
                 openerPos, opponentAllIn: openerAllIn, tourMode: this.mode === 'tour',
                 rnd: rndFn, aggr: Math.min(1, this.p.aggr + bigStackPressure * 2),
-                loose: (0.45 - this.p.tight) * 0.15 + bigStackPressure,
+                loose: (0.45 - this.p.tight) * 0.15 + bigStackPressure + preExploit,
             });
             // 自分のレンジ信念(リバーソルバーのunsafe re-solve用)
             if (g.action === 'raise' || g.action === 'allin') {
@@ -628,6 +657,11 @@ class Bot {
     }
 }
 export function startBots(url) {
+    // 自己学習の成果(tuned_params.json)があればbot全体に反映する
+    void loadTunedParams().then((p) => {
+        if (p)
+            console.log(`ボット: 自己学習パラメータを読み込みました (${p})`);
+    });
     // 群れ全体の規模係数。POKER_BOT_SCALE=0.5 で半分、2 で倍(既定1)
     const SCALE = Math.max(0.25, Math.min(3, Number(process.env.POKER_BOT_SCALE ?? 1) || 1));
     if (typeof WebSocket === 'undefined') {
