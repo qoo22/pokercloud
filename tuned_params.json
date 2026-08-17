@@ -1,0 +1,22 @@
+{
+  "params": {
+    "preLoose": 0,
+    "threeBetScale": 1,
+    "bbCallBonus": 0.09076891053690908,
+    "cbetAggr": 0.6,
+    "cbetNon": 0.2538365840207891,
+    "oopPenalty": 0.1,
+    "smallBetDef": 0.04,
+    "valueThr": 0.5514058127809401,
+    "valueThrRiver": 0.6,
+    "semibluffF": 0.45918006504251346,
+    "bluffBase": 0.12,
+    "xrFreq": 0.28,
+    "onePairTurnCheck": 0.6,
+    "probeBoost": 0.2,
+    "solverGate": 0.9653555893987392,
+    "valueRaiseSize": 0.8
+  },
+  "generation": 30,
+  "vsLegacyBb100": 171.3
+}
