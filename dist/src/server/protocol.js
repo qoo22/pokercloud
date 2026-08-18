@@ -151,7 +151,18 @@ export function parseClientMessage(raw) {
         case 'pass.claim':
         case 'profile.get':
         case 'slot.state':
+        case 'transfer.issue':
             return { ok: true, msg: { t } };
+        case 'transfer.redeem': {
+            // 形式の細かい検証はサーバー側(redeemTransferCode)で行う。ここは長さの上限だけ
+            const code = str('code', 32);
+            const pin = str('pin', 8);
+            if (!code)
+                return { ok: false, reason: 'code がありません' };
+            if (!pin)
+                return { ok: false, reason: 'pin がありません' };
+            return { ok: true, msg: { t: 'transfer.redeem', code, pin } };
+        }
         case 'slot.spin': {
             // 賭け金は整数のみ。使える額かどうかは経済側(SLOT_BETS)で最終判定する
             const bet = Math.floor(Number(m.bet));

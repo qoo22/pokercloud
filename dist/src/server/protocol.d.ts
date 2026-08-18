@@ -128,6 +128,12 @@ export type ClientMessage =
 } | {
     t: 'slot.spin';
     bet: number;
+} | {
+    t: 'transfer.issue';
+} | {
+    t: 'transfer.redeem';
+    code: string;
+    pin: string;
 }
 /** ニックネーム変更・ブレスレット装着（コスメ） */
  | {
@@ -438,6 +444,8 @@ export interface ProfileView {
         };
     };
     piggyBank: number;
+    /** 引き継ぎコードを発行済みか。未発行なら警告を出して発行を促す */
+    hasTransferCode: boolean;
 }
 export type ServerMessage = {
     t: 'hello.ok';
@@ -518,6 +526,20 @@ export type ServerMessage = {
 } | {
     t: 'slot.result';
     result: SlotResultView;
+}
+/** 発行結果。生の PIN が返るのはこの一度きり(サーバーは保存しない) */
+ | {
+    t: 'transfer.issued';
+    code: string;
+    pin: string;
+}
+/** 引き継ぎ成立。クライアントは resumeToken を保存し直して再読み込みする */
+ | {
+    t: 'transfer.done';
+    resumeToken: string;
+    name: string;
+    balance: number;
+    gold: number;
 };
 /** スロット画面の表示情報 */
 export interface SlotView {

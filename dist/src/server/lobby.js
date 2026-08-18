@@ -178,6 +178,77 @@ export class Lobby {
         return this.authKeyCache;
     }
     authKeyCache = null;
+    // --- 引き継ぎコード -------------------------------------------------------
+    //
+    // このアプリはログイン(メール/パスワード)を作らないゲスト方式なので、
+    // ブラウザに保存した鍵(resumeToken)が消えるとアカウントに二度と戻れない。
+    // 実際に、同一ドメインに置いた別アプリが localStorage を上書きして
+    // 1,550兆チップのアカウントに入れなくなる事故が起きた。
+    // そこで「ID + PIN を控えておけば、どの端末からでも取り戻せる」経路を用意する。
+    /** 紛らわしい文字(I/O/0/1)を除いた、口頭でも伝えられる文字集合 */
+    static CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    /** 12文字を 4-4-4 で区切ったコードを作る。32^12 ≒ 1.2×10^18 通り */
+    newTransferCode() {
+        const A = Lobby.CODE_ALPHABET;
+        const bytes = randomSeedHex(12); // 24桁の16進
+        let out = '';
+        for (let i = 0; i < 12; i++) {
+            out += A[parseInt(bytes.slice(i * 2, i * 2 + 2), 16) % A.length];
+        }
+        return `${out.slice(0, 4)}-${out.slice(4, 8)}-${out.slice(8, 12)}`;
+    }
+    /** PIN は生で保存しない。コードと混ぜて署名し、その16進を持つ */
+    hashPin(code, pin) {
+        const enc = new TextEncoder();
+        const sig = hmacSha256(enc.encode(this.authKey), enc.encode(`transfer:${code}:${pin}`));
+        return Array.from(sig).map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+    /**
+     * 引き継ぎコードを発行する。古いコードは無効化するので、常に最新の1組だけが有効。
+     * 生の PIN はこの戻り値でしか手に入らない(サーバーには残らない)。
+     */
+    issueTransferCode(userId) {
+        this.store.deleteTransferCodesOf(userId);
+        const code = this.newTransferCode();
+        // PIN は4桁。総当たりは attempts の上限で止める
+        const pin = String(Math.floor(Number(`0x${randomSeedHex(4)}`) % 10000)).padStart(4, '0');
+        this.store.setTransferCode({
+            code,
+            userId,
+            pinHash: this.hashPin(code, pin),
+            createdAt: this.clock.now(),
+            attempts: 0,
+        });
+        return { code, pin };
+    }
+    /** PIN を何回まちがえたらコードを捨てるか */
+    static MAX_PIN_ATTEMPTS = 5;
+    /**
+     * 引き継ぎコードを使ってアカウントを取り戻す。
+     * 成功したらコードは使い切りにする(漏れても使い回されないように)。
+     */
+    redeemTransferCode(codeRaw, pin) {
+        // 入力ゆれ(小文字・スペース・ハイフン無し)を吸収する
+        const norm = codeRaw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (norm.length !== 12)
+            return { ok: false, error: 'コードの形式が違います' };
+        const code = `${norm.slice(0, 4)}-${norm.slice(4, 8)}-${norm.slice(8, 12)}`;
+        const row = this.store.getTransferCode(code);
+        if (!row)
+            return { ok: false, error: 'コードが見つかりません' };
+        if (row.pinHash !== this.hashPin(code, pin.trim())) {
+            const n = this.store.bumpTransferAttempts(code);
+            if (n >= Lobby.MAX_PIN_ATTEMPTS) {
+                this.store.deleteTransferCode(code);
+                return { ok: false, error: 'PIN を間違えすぎたため、このコードは無効になりました' };
+            }
+            return { ok: false, error: `PIN が違います（あと ${Lobby.MAX_PIN_ATTEMPTS - n} 回）` };
+        }
+        if (!this.store.getUser(row.userId))
+            return { ok: false, error: 'アカウントが見つかりません' };
+        this.store.deleteTransferCode(code); // 使い切り
+        return { ok: true, userId: row.userId };
+    }
     signUserId(userId) {
         const enc = new TextEncoder();
         const sig = hmacSha256(enc.encode(this.authKey), enc.encode(userId));
@@ -621,6 +692,43 @@ export class Lobby {
                 this.sendProfile(sessionId, s.userId);
                 return;
             }
+            case 'transfer.issue': {
+                const { code, pin } = this.issueTransferCode(s.userId);
+                this.transport.send(sessionId, { t: 'transfer.issued', code, pin });
+                this.sendProfile(sessionId, s.userId);
+                return;
+            }
+            case 'transfer.redeem': {
+                const r = this.redeemTransferCode(msg.code, msg.pin);
+                if (!r.ok)
+                    return this.err(sessionId, 'ILLEGAL_ACTION', r.error ?? '引き継げませんでした');
+                const userId = r.userId;
+                // 引き継ぎ先のアカウントへこのセッションを付け替える。
+                // 卓に着いたままだと状態が食い違うので、先に全部降りてもらう
+                for (const room of this.rooms.values()) {
+                    try {
+                        room.leave(sessionId);
+                    }
+                    catch { /* 座っていなければ何もしない */ }
+                }
+                const u = this.store.getUser(userId);
+                const name = u?.name ?? `Player-${userId.slice(-4)}`;
+                const token = this.makeResumeToken(userId);
+                this.resumeTokens.set(token, { userId, name });
+                s.userId = userId;
+                s.name = name;
+                s.resumeToken = token;
+                s.authenticated = true;
+                this.store.upsertUser(userId, name);
+                this.transport.send(sessionId, {
+                    t: 'transfer.done',
+                    resumeToken: token,
+                    name,
+                    balance: this.store.balance(userId, 'chips'),
+                    gold: this.store.balance(userId, 'gold'),
+                });
+                return;
+            }
             case 'slot.state': {
                 this.transport.send(sessionId, { t: 'slot.info', slot: this.economy.slotState(s.userId) });
                 return;
@@ -765,6 +873,7 @@ export class Lobby {
                 preview: this.economy.passPurchasePreview(userId),
             },
             piggyBank: u?.piggyBank ?? 0,
+            hasTransferCode: this.store.hasTransferCode(userId),
         };
     }
     sendProfile(sessionId, userId) {

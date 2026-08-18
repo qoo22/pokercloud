@@ -958,6 +958,20 @@
   .paytable { width:100%; border-collapse:collapse; font-size:12px; margin-top:12px; }
   .paytable th, .paytable td { padding:5px 7px; border-bottom:1px solid rgba(255,255,255,.12); text-align:right; }
   .paytable th:first-child, .paytable td:first-child { text-align:left; }
+  /* ---- アカウント引き継ぎ ---- */
+  .xfer-warn { background:rgba(224,90,90,.14); border:1px solid rgba(224,90,90,.55);
+    border-radius:10px; padding:11px 13px; margin-bottom:10px; font-size:12.5px; line-height:1.6; }
+  .xfer-warn b { color:#ff9a9a; }
+  .xfer-code { background:#0e1218; border:1px solid var(--gold); border-radius:10px;
+    padding:14px; text-align:center; margin:10px 0; }
+  .xfer-code .lb { font-size:11px; opacity:.7; }
+  .xfer-code .v { font-size:26px; font-weight:800; letter-spacing:.12em; color:var(--gold);
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin:2px 0 10px; user-select:all; }
+  .xfer-code .v.pin { letter-spacing:.3em; }
+  .xfer-in { width:100%; box-sizing:border-box; background:#0e1218; color:inherit;
+    border:1px solid var(--line,rgba(255,255,255,.2)); border-radius:8px; padding:10px;
+    font-size:16px; letter-spacing:.1em; text-align:center;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin-top:6px; }
   .paytable th { opacity:.7; font-weight:600; }
   .slot-marquee { display:block; width:100%; max-width:380px; margin:0 auto 8px;
     border-radius:10px; box-shadow:0 4px 14px rgba(0,0,0,.5); }
@@ -1143,6 +1157,7 @@ var PokerOffline = (() => {
       __publicField(this, "receipts", /* @__PURE__ */ new Set());
       __publicField(this, "progress", /* @__PURE__ */ new Map());
       __publicField(this, "openSeats", /* @__PURE__ */ new Map());
+      __publicField(this, "transferCodes", /* @__PURE__ */ new Map());
       __publicField(this, "nextLedgerId", 1);
       __publicField(this, "nextPurchaseId", 1);
     }
@@ -1256,6 +1271,28 @@ var PokerOffline = (() => {
     listOpenSeats() {
       return [...this.openSeats.values()];
     }
+    setTransferCode(row) {
+      this.transferCodes.set(row.code, { ...row });
+    }
+    getTransferCode(code) {
+      return this.transferCodes.get(code) ?? null;
+    }
+    bumpTransferAttempts(code) {
+      const r = this.transferCodes.get(code);
+      if (!r) return 0;
+      r.attempts += 1;
+      return r.attempts;
+    }
+    deleteTransferCode(code) {
+      this.transferCodes.delete(code);
+    }
+    deleteTransferCodesOf(userId) {
+      for (const [c, r] of [...this.transferCodes]) if (r.userId === userId) this.transferCodes.delete(c);
+    }
+    hasTransferCode(userId) {
+      for (const r of this.transferCodes.values()) if (r.userId === userId) return true;
+      return false;
+    }
     /**
      * 状態をJSON文字列にする(オフライン版でブラウザに保存するため)。
      *
@@ -1272,6 +1309,7 @@ var PokerOffline = (() => {
         receipts: [...this.receipts],
         progress: [...this.progress.values()],
         openSeats: [...this.openSeats.values()],
+        transferCodes: [...this.transferCodes.values()],
         nextLedgerId: this.nextLedgerId,
         nextPurchaseId: this.nextPurchaseId
       });
@@ -1287,6 +1325,7 @@ var PokerOffline = (() => {
         this.receipts = new Set(d.receipts ?? []);
         this.progress = new Map((d.progress ?? []).map((p) => [`${p.userId} ${p.key}`, p]));
         this.openSeats = new Map((d.openSeats ?? []).map((o) => [`${o.userId} ${o.tableId}`, o]));
+        this.transferCodes = new Map((d.transferCodes ?? []).map((t) => [t.code, t]));
         this.nextLedgerId = d.nextLedgerId ?? this.ledger.length + 1;
         this.nextPurchaseId = d.nextPurchaseId ?? this.purchasesById.length + 1;
         return true;
@@ -5385,7 +5424,15 @@ var PokerOffline = (() => {
       case "pass.claim":
       case "profile.get":
       case "slot.state":
+      case "transfer.issue":
         return { ok: true, msg: { t } };
+      case "transfer.redeem": {
+        const code = str("code", 32);
+        const pin = str("pin", 8);
+        if (!code) return { ok: false, reason: "code \u304C\u3042\u308A\u307E\u305B\u3093" };
+        if (!pin) return { ok: false, reason: "pin \u304C\u3042\u308A\u307E\u305B\u3093" };
+        return { ok: true, msg: { t: "transfer.redeem", code, pin } };
+      }
       case "slot.spin": {
         const bet = Math.floor(Number(m.bet));
         if (!Number.isFinite(bet) || bet <= 0) return { ok: false, reason: "bet \u304C\u4E0D\u6B63\u3067\u3059" };
@@ -5476,7 +5523,7 @@ var PokerOffline = (() => {
     for (let i = 0; i < 6; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
     return s;
   }
-  var Lobby = class {
+  var _Lobby = class _Lobby {
     constructor(cfg, transport, clock = realScheduler) {
       this.transport = transport;
       this.clock = clock;
@@ -5598,6 +5645,61 @@ var PokerOffline = (() => {
         this.authKeyCache = this.cfg.authSecret && this.cfg.authSecret.length >= 16 ? this.cfg.authSecret : randomSeedHex(16);
       }
       return this.authKeyCache;
+    }
+    /** 12文字を 4-4-4 で区切ったコードを作る。32^12 ≒ 1.2×10^18 通り */
+    newTransferCode() {
+      const A = _Lobby.CODE_ALPHABET;
+      const bytes = randomSeedHex(12);
+      let out = "";
+      for (let i = 0; i < 12; i++) {
+        out += A[parseInt(bytes.slice(i * 2, i * 2 + 2), 16) % A.length];
+      }
+      return `${out.slice(0, 4)}-${out.slice(4, 8)}-${out.slice(8, 12)}`;
+    }
+    /** PIN は生で保存しない。コードと混ぜて署名し、その16進を持つ */
+    hashPin(code, pin) {
+      const enc = new TextEncoder();
+      const sig = hmacSha256(enc.encode(this.authKey), enc.encode(`transfer:${code}:${pin}`));
+      return Array.from(sig).map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+    /**
+     * 引き継ぎコードを発行する。古いコードは無効化するので、常に最新の1組だけが有効。
+     * 生の PIN はこの戻り値でしか手に入らない(サーバーには残らない)。
+     */
+    issueTransferCode(userId) {
+      this.store.deleteTransferCodesOf(userId);
+      const code = this.newTransferCode();
+      const pin = String(Math.floor(Number(`0x${randomSeedHex(4)}`) % 1e4)).padStart(4, "0");
+      this.store.setTransferCode({
+        code,
+        userId,
+        pinHash: this.hashPin(code, pin),
+        createdAt: this.clock.now(),
+        attempts: 0
+      });
+      return { code, pin };
+    }
+    /**
+     * 引き継ぎコードを使ってアカウントを取り戻す。
+     * 成功したらコードは使い切りにする(漏れても使い回されないように)。
+     */
+    redeemTransferCode(codeRaw, pin) {
+      const norm = codeRaw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (norm.length !== 12) return { ok: false, error: "\u30B3\u30FC\u30C9\u306E\u5F62\u5F0F\u304C\u9055\u3044\u307E\u3059" };
+      const code = `${norm.slice(0, 4)}-${norm.slice(4, 8)}-${norm.slice(8, 12)}`;
+      const row = this.store.getTransferCode(code);
+      if (!row) return { ok: false, error: "\u30B3\u30FC\u30C9\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093" };
+      if (row.pinHash !== this.hashPin(code, pin.trim())) {
+        const n = this.store.bumpTransferAttempts(code);
+        if (n >= _Lobby.MAX_PIN_ATTEMPTS) {
+          this.store.deleteTransferCode(code);
+          return { ok: false, error: "PIN \u3092\u9593\u9055\u3048\u3059\u304E\u305F\u305F\u3081\u3001\u3053\u306E\u30B3\u30FC\u30C9\u306F\u7121\u52B9\u306B\u306A\u308A\u307E\u3057\u305F" };
+        }
+        return { ok: false, error: `PIN \u304C\u9055\u3044\u307E\u3059\uFF08\u3042\u3068 ${_Lobby.MAX_PIN_ATTEMPTS - n} \u56DE\uFF09` };
+      }
+      if (!this.store.getUser(row.userId)) return { ok: false, error: "\u30A2\u30AB\u30A6\u30F3\u30C8\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093" };
+      this.store.deleteTransferCode(code);
+      return { ok: true, userId: row.userId };
     }
     signUserId(userId) {
       const enc = new TextEncoder();
@@ -6017,6 +6119,40 @@ var PokerOffline = (() => {
           this.sendProfile(sessionId, s.userId);
           return;
         }
+        case "transfer.issue": {
+          const { code, pin } = this.issueTransferCode(s.userId);
+          this.transport.send(sessionId, { t: "transfer.issued", code, pin });
+          this.sendProfile(sessionId, s.userId);
+          return;
+        }
+        case "transfer.redeem": {
+          const r = this.redeemTransferCode(msg.code, msg.pin);
+          if (!r.ok) return this.err(sessionId, "ILLEGAL_ACTION", r.error ?? "\u5F15\u304D\u7D99\u3052\u307E\u305B\u3093\u3067\u3057\u305F");
+          const userId = r.userId;
+          for (const room of this.rooms.values()) {
+            try {
+              room.leave(sessionId);
+            } catch {
+            }
+          }
+          const u = this.store.getUser(userId);
+          const name = u?.name ?? `Player-${userId.slice(-4)}`;
+          const token = this.makeResumeToken(userId);
+          this.resumeTokens.set(token, { userId, name });
+          s.userId = userId;
+          s.name = name;
+          s.resumeToken = token;
+          s.authenticated = true;
+          this.store.upsertUser(userId, name);
+          this.transport.send(sessionId, {
+            t: "transfer.done",
+            resumeToken: token,
+            name,
+            balance: this.store.balance(userId, "chips"),
+            gold: this.store.balance(userId, "gold")
+          });
+          return;
+        }
         case "slot.state": {
           this.transport.send(sessionId, { t: "slot.info", slot: this.economy.slotState(s.userId) });
           return;
@@ -6157,7 +6293,8 @@ var PokerOffline = (() => {
           boxChips: pass.boxChips,
           preview: this.economy.passPurchasePreview(userId)
         },
-        piggyBank: u?.piggyBank ?? 0
+        piggyBank: u?.piggyBank ?? 0,
+        hasTransferCode: this.store.hasTransferCode(userId)
       };
     }
     sendProfile(sessionId, userId) {
@@ -6267,6 +6404,18 @@ var PokerOffline = (() => {
       return this.sessions.size;
     }
   };
+  // --- 引き継ぎコード -------------------------------------------------------
+  //
+  // このアプリはログイン(メール/パスワード)を作らないゲスト方式なので、
+  // ブラウザに保存した鍵(resumeToken)が消えるとアカウントに二度と戻れない。
+  // 実際に、同一ドメインに置いた別アプリが localStorage を上書きして
+  // 1,550兆チップのアカウントに入れなくなる事故が起きた。
+  // そこで「ID + PIN を控えておけば、どの端末からでも取り戻せる」経路を用意する。
+  /** 紛らわしい文字(I/O/0/1)を除いた、口頭でも伝えられる文字集合 */
+  __publicField(_Lobby, "CODE_ALPHABET", "ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
+  /** PIN を何回まちがえたらコードを捨てるか */
+  __publicField(_Lobby, "MAX_PIN_ATTEMPTS", 5);
+  var Lobby = _Lobby;
   var ERROR_MESSAGES = {
     BAD_MESSAGE: "\u30E1\u30C3\u30BB\u30FC\u30B8\u306E\u5F62\u5F0F\u304C\u4E0D\u6B63\u3067\u3059",
     VERSION_MISMATCH: "\u30D7\u30ED\u30C8\u30B3\u30EB\u306E\u7248\u304C\u9055\u3044\u307E\u3059",
@@ -8873,6 +9022,39 @@ var PokerOffline = (() => {
   // offline/server.ts
   var SAVE_KEY = "poker.offline.save.v1";
   var SAVE_DEBOUNCE_MS = 1500;
+  function isolateStorage() {
+    const PREFIX = "offline:";
+    let raw;
+    try {
+      raw = localStorage;
+      raw.getItem("probe");
+    } catch {
+      return;
+    }
+    const shim = {
+      get length() {
+        return raw.length;
+      },
+      key: (i) => raw.key(i),
+      getItem: (k) => raw.getItem(PREFIX + k),
+      setItem: (k, v) => raw.setItem(PREFIX + k, v),
+      removeItem: (k) => raw.removeItem(PREFIX + k),
+      clear: () => {
+        const doomed = [];
+        for (let i = 0; i < raw.length; i++) {
+          const k = raw.key(i);
+          if (k && k.startsWith(PREFIX)) doomed.push(k);
+        }
+        for (const k of doomed) raw.removeItem(k);
+      }
+    };
+    try {
+      Object.defineProperty(globalThis, "localStorage", { value: shim, configurable: true });
+      Object.defineProperty(window, "localStorage", { value: shim, configurable: true });
+    } catch {
+      console.warn("[offline] localStorage \u3092\u9694\u96E2\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u540C\u4E00\u30C9\u30E1\u30A4\u30F3\u306B\u672C\u756A\u3092\u7F6E\u304B\u306A\u3044\u3053\u3068");
+    }
+  }
   function makeSaver(store) {
     let timer = null;
     return () => {
@@ -9095,6 +9277,7 @@ var PokerOffline = (() => {
     }
   ];
   function startOfflineServer() {
+    isolateStorage();
     try {
       if (define_TUNED_PARAMS_default?.params) setTuning(define_TUNED_PARAMS_default.params);
     } catch {
@@ -9170,7 +9353,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   <button class="chip" id="btn-mute">🔊 音</button>
   <button class="chip" id="btn-suits">♠ 4色</button>
   <button class="chip" id="btn-theme">🎨 クラシック</button>
-  <a class="chip" id="mode-link" rel="noopener"></a>
   <button class="chip" id="btn-lobby">ロビーへ</button>
 </header>
 
@@ -10125,7 +10307,37 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       }
     }
   };
+  // URL パラメータでの復旧(携帯向け)。connect の最初に一度だけ走る
+  var __pokerUrlRecoveryDone = false;
+  var __pendingRedeem = null;
+  function __pokerUrlRecovery() {
+    if (__pokerUrlRecoveryDone) return;
+    __pokerUrlRecoveryDone = true;
+    try {
+      var q = new URLSearchParams(location.search);
+      var resume = q.get("resume");
+      var code = q.get("code");
+      var pin = q.get("pin");
+      if (resume || (code && pin)) {
+        // 履歴からパラメータを消す(鍵を残さない)
+        try { history.replaceState(null, "", location.pathname); } catch (e) {}
+      }
+      if (resume) {
+        // 鍵をそのまま保存して読み込み直す。次の hello で本人として認証される
+        store.set("poker.resume", resume);
+        store.remove && store.remove("poker.name");
+        location.replace(location.pathname);
+        return;
+      }
+      if (code && pin) {
+        // 接続できたら引き継ぎコードで移行する(onHello 後に送る)
+        __pendingRedeem = { code: code, pin: pin };
+      }
+    } catch (e) {}
+  }
+
   function connect() {
+    __pokerUrlRecovery();
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const url = `${proto}://${location.host}`;
     ws = new WebSocket(url);
@@ -10168,6 +10380,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     switch (msg.t) {
       case "hello.ok":
         store.set("poker.resume", msg.resumeToken);
+        if (__pendingRedeem) { const pr = __pendingRedeem; __pendingRedeem = null; send({ t: "transfer.redeem", code: pr.code, pin: pr.pin }); }
         store.set("poker.name", msg.name);
         balance = msg.balance;
         goldBalance = msg.gold;
@@ -10232,6 +10445,26 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         }
         break;
       }
+      case "transfer.issued":
+        showTransferIssued(msg.code, msg.pin);
+        break;
+      case "transfer.done":
+        // 新しいアカウントの鍵を保存し、画面を作り直す
+        store.set("poker.resume", msg.resumeToken);
+        store.set("poker.name", msg.name);
+        modal(`<h3 style="text-align:center">引き継ぎ完了</h3>
+          <div style="text-align:center;font-size:15px;margin:10px 0">
+            ${escapeHtml(msg.name)} として引き継ぎました
+          </div>
+          <div style="text-align:center;font-size:24px;font-weight:700;color:var(--gold)">
+            💰 ${fmt(msg.balance)}
+          </div>
+          <div class="note" style="text-align:center;margin-top:8px">
+            安全のため、この端末で新しい引き継ぎコードを発行しておいてください。
+          </div>
+          <div class="row"><button class="primary" id="xd-ok">はじめる</button></div>`,
+          (close) => { document.getElementById("xd-ok").onclick = () => { close(); location.reload(); }; });
+        break;
       case "slot.info":
         slotView = msg.slot;
         renderSlot();
@@ -12108,6 +12341,24 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (p.weekly?.length) html += `<div class="sec"><h3>\u30A6\u30A3\u30FC\u30AF\u30EA\u30FC\u30DF\u30C3\u30B7\u30E7\u30F3</h3>${bpMissionList(p.weekly)}</div>`;
     if (p.seasonal?.length) html += `<div class="sec"><h3>\u30B7\u30FC\u30BA\u30F3\u30DF\u30C3\u30B7\u30E7\u30F3</h3>${bpMissionList(p.seasonal)}</div>`;
     {
+    {
+      // 引き継ぎ: 鍵が消えるとアカウントごと失うので、未発行なら強く促す
+      const issued = p.hasTransferCode;
+      html += `<div class="sec"><h3>アカウントの引き継ぎ</h3>
+        ${issued
+          ? '<div class="note">引き継ぎコードは発行済みです。機種変更のときは、控えた ID と PIN で移せます。紛失した場合は再発行してください（古いコードは使えなくなります）。</div>'
+          : `<div class="xfer-warn">
+               <b>⚠ このままだとアカウントを失うことがあります</b><br>
+               いまの残高やコレクションは、このブラウザの中の鍵だけで守られています。
+               履歴やサイトデータを消したり、機種変更をすると<b>戻せなくなります</b>。
+               引き継ぎコードを発行して、スクリーンショットで残しておいてください。
+             </div>`}
+        <div class="btnrow">
+          <button class="chip ${issued ? '' : 'primary'} " id="btn-transfer-issue">${issued ? '引き継ぎコードを再発行' : '引き継ぎコードを発行'}</button>
+          <button class="chip" id="btn-transfer-redeem">別の端末から引き継ぐ</button>
+        </div>
+      </div>`;
+    }
       const pv = p.pass;
       const doneXp = pv.completeXp || (pv.nextTierXp ?? pv.xp) || 1;
       const donePct = Math.min(100, Math.round(pv.xp / doneXp * 100));
@@ -12137,6 +12388,19 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (daily) daily.onclick = () => send({ t: "daily.claim" });
     const pass = document.getElementById("btn-pass");
     if (pass) pass.onclick = () => send({ t: "pass.claim" });
+    const xIssue = document.getElementById("btn-transfer-issue");
+    if (xIssue) xIssue.onclick = () => {
+      const again = profile?.hasTransferCode;
+      const go = () => send({ t: "transfer.issue" });
+      if (!again) return go();
+      // 再発行は古いコードを無効にするので、取り違えないよう一度確認する
+      modal(`<h3>引き継ぎコードを再発行しますか？</h3>
+        <p style="font-size:13px;opacity:.8">いま控えてある古いコードは使えなくなります。</p>
+        <div class="row"><button id="xr-no">やめる</button><button class="primary" id="xr-yes">再発行する</button></div>`,
+        (close) => { $("xr-no").onclick = close; $("xr-yes").onclick = () => { close(); go(); }; });
+    };
+    const xRedeem = document.getElementById("btn-transfer-redeem");
+    if (xRedeem) xRedeem.onclick = () => showTransferRedeem();
     each("[data-mission]", (b) => {
       b.onclick = () => send({ t: "mission.claim", missionId: b.dataset.mission });
     });
@@ -12308,6 +12572,57 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       stepSelect();
     });
   }
+  // 発行結果。控えてもらうのが目的なので、閉じにくく・コピーしやすくする
+  function showTransferIssued(code, pin) {
+    modal(`<h3 style="text-align:center">引き継ぎコード</h3>
+      <div class="xfer-code">
+        <div class="lb">ID</div><div class="v" id="xf-code">${escapeHtml(code)}</div>
+        <div class="lb">PIN</div><div class="v pin" id="xf-pin">${escapeHtml(pin)}</div>
+      </div>
+      <div class="xfer-warn">この画面は<b>二度と表示されません</b>。
+        スクリーンショットを撮るか、書き留めてから閉じてください。
+        PIN は他人に教えないでください（アカウントを乗っ取られます）。</div>
+      <div class="row">
+        <button id="xf-copy">コピー</button>
+        <button class="primary" id="xf-ok">控えました</button>
+      </div>`,
+      (close) => {
+        const copy = document.getElementById("xf-copy");
+        if (copy) copy.onclick = () => {
+          const text = "ポーカー 引き継ぎコード\nID: " + code + "\nPIN: " + pin;
+          try {
+            navigator.clipboard.writeText(text);
+            copy.textContent = "コピーしました";
+          } catch (e) { copy.textContent = "コピーできません"; }
+        };
+        document.getElementById("xf-ok").onclick = close;
+      });
+  }
+
+  function showTransferRedeem() {
+    modal(`<h3>別の端末から引き継ぐ</h3>
+      <p style="font-size:13px;opacity:.8">元の端末で発行した ID と PIN を入れてください。
+        いまのこの端末のデータは置き換わります。</p>
+      <label>ID</label>
+      <input class="xfer-in" id="xr-code" placeholder="XXXX-XXXX-XXXX" maxlength="14" autocapitalize="characters" autocomplete="off">
+      <label style="margin-top:8px;display:block">PIN</label>
+      <input class="xfer-in" id="xr-pin" placeholder="0000" maxlength="4" inputmode="numeric" autocomplete="off">
+      <div class="row">
+        <button id="xr-cancel">やめる</button>
+        <button class="primary" id="xr-go">引き継ぐ</button>
+      </div>`,
+      (close) => {
+        document.getElementById("xr-cancel").onclick = close;
+        document.getElementById("xr-go").onclick = () => {
+          const code = document.getElementById("xr-code").value.trim();
+          const pin = document.getElementById("xr-pin").value.trim();
+          if (!code || !pin) return;
+          send({ t: "transfer.redeem", code, pin });
+          close();
+        };
+      });
+  }
+
   function showReward(title, chips, gold, detail) {
     modal(
       `<h3 style="text-align:center">${escapeHtml(title)}</h3>
@@ -12346,25 +12661,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
 })();
 </script>
 
-<script>
-(function () {
-  // Render 本番の場所。オフライン版から戻るときの行き先
-  var ONLINE_URL = 'https://poker-friends-x9o6.onrender.com/poker-client.html';
-  var el = document.getElementById('mode-link');
-  if (!el) return;
-  // オフラインのブラウザ内サーバーが起動していれば __offlineSave が生えている
-  var isOffline = !!window.__offlineSave;
-  if (isOffline) {
-    el.textContent = '\uD83C\uDF10 オンライン版';
-    el.title = '友達と対戦できる本編へ（通信が必要です）';
-    el.href = ONLINE_URL;
-  } else {
-    el.textContent = '\uD83D\uDCF4 オフライン版';
-    el.title = '通信なしで遊べる版へ（サーバーが混んでいる・眠っているときに）';
-    el.href = './poker-offline.html';
-  }
-})();
-</script>
 <div id="offline-badge">オフライン版</div>
 </body>
 </html>

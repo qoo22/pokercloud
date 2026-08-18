@@ -80,6 +80,18 @@ export interface ProgressRow {
     day: string | null;
     updatedAt: number;
 }
+/**
+ * 引き継ぎコード。端末を変えたときにアカウントを持ち出すための控え。
+ * PIN は生のまま持たず、ハッシュだけを保存する。
+ */
+export interface TransferCodeRow {
+    code: string;
+    userId: string;
+    pinHash: string;
+    createdAt: number;
+    /** PIN の失敗回数。増えすぎたら無効化して総当たりを防ぐ */
+    attempts: number;
+}
 /** 着席中のスタック(未精算)。サーバーが落ちてもここから払い戻せる */
 export interface OpenSeatRow {
     userId: string;
@@ -114,6 +126,16 @@ export interface Store {
     getProgress(userId: string, key: string): ProgressRow | null;
     setProgress(userId: string, key: string, value: number, day?: string | null): void;
     listProgress(userId: string, prefix: string): ProgressRow[];
+    /** 引き継ぎコードを保存する。同じユーザーの古いコードは呼び出し側で消すこと */
+    setTransferCode(row: TransferCodeRow): void;
+    getTransferCode(code: string): TransferCodeRow | null;
+    /** PIN 失敗を数える。増えた後の回数を返す */
+    bumpTransferAttempts(code: string): number;
+    deleteTransferCode(code: string): void;
+    /** 再発行時に、そのユーザーの古いコードを全部無効化する */
+    deleteTransferCodesOf(userId: string): void;
+    /** そのユーザーが引き継ぎコードを発行済みか(未発行なら警告を出すため) */
+    hasTransferCode(userId: string): boolean;
     /** 着席中スタックを記録/更新する(再起動時の払い戻しに使う) */
     setOpenSeat(userId: string, tableId: string, stack: number): void;
     /** 精算済みとして着席記録を消す */
@@ -150,6 +172,7 @@ export declare class MemoryStore implements Store {
     private receipts;
     private progress;
     private openSeats;
+    private transferCodes;
     private nextLedgerId;
     private nextPurchaseId;
     getUser(userId: string): UserRow | null;
@@ -176,6 +199,22 @@ export declare class MemoryStore implements Store {
     setOpenSeat(userId: string, tableId: string, stack: number): void;
     clearOpenSeat(userId: string, tableId: string): void;
     listOpenSeats(): OpenSeatRow[];
+    setTransferCode(row: TransferCodeRow): void;
+    getTransferCode(code: string): TransferCodeRow | null;
+    bumpTransferAttempts(code: string): number;
+    deleteTransferCode(code: string): void;
+    deleteTransferCodesOf(userId: string): void;
+    hasTransferCode(userId: string): boolean;
+    /**
+     * 状態をJSON文字列にする(オフライン版でブラウザに保存するため)。
+     *
+     * ハンド履歴(hands)は意図的に含めない。残高とは無関係なゲームログで、
+     * 際限なく増えて localStorage(数MB)を食い潰すため。
+     * 1つのJSONにまとめてあるので、そのままエクスポート/インポートにも使える。
+     */
+    serialize(): string;
+    /** serialize() の出力から状態を復元する。壊れていれば何もしない(初期状態のまま) */
+    restore(json: string): boolean;
     audit(): {
         ok: boolean;
         problems: string[];
@@ -253,6 +292,12 @@ export declare class SqliteStore implements Store {
     getProgress(userId: string, key: string): ProgressRow | null;
     setProgress(userId: string, key: string, value: number, day?: string | null): void;
     listProgress(userId: string, prefix: string): ProgressRow[];
+    setTransferCode(row: TransferCodeRow): void;
+    getTransferCode(code: string): TransferCodeRow | null;
+    bumpTransferAttempts(code: string): number;
+    deleteTransferCode(code: string): void;
+    deleteTransferCodesOf(userId: string): void;
+    hasTransferCode(userId: string): boolean;
     setOpenSeat(userId: string, tableId: string, stack: number): void;
     clearOpenSeat(userId: string, tableId: string): void;
     listOpenSeats(): OpenSeatRow[];

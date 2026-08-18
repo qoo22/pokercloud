@@ -81,6 +81,31 @@ export declare class Lobby {
     /** 再接続トークンの署名鍵（cfg 未指定ならプロセス限り） */
     private get authKey();
     private authKeyCache;
+    /** 紛らわしい文字(I/O/0/1)を除いた、口頭でも伝えられる文字集合 */
+    private static readonly CODE_ALPHABET;
+    /** 12文字を 4-4-4 で区切ったコードを作る。32^12 ≒ 1.2×10^18 通り */
+    private newTransferCode;
+    /** PIN は生で保存しない。コードと混ぜて署名し、その16進を持つ */
+    private hashPin;
+    /**
+     * 引き継ぎコードを発行する。古いコードは無効化するので、常に最新の1組だけが有効。
+     * 生の PIN はこの戻り値でしか手に入らない(サーバーには残らない)。
+     */
+    issueTransferCode(userId: string): {
+        code: string;
+        pin: string;
+    };
+    /** PIN を何回まちがえたらコードを捨てるか */
+    private static readonly MAX_PIN_ATTEMPTS;
+    /**
+     * 引き継ぎコードを使ってアカウントを取り戻す。
+     * 成功したらコードは使い切りにする(漏れても使い回されないように)。
+     */
+    redeemTransferCode(codeRaw: string, pin: string): {
+        ok: boolean;
+        userId?: string;
+        error?: string;
+    };
     private signUserId;
     private makeResumeToken;
     /** 署名付きトークンを検証して userId を返す。改ざん・形式不正なら null */
