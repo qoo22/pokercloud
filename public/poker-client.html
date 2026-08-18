@@ -1038,6 +1038,7 @@
   <button class="chip" id="btn-mute">🔊 音</button>
   <button class="chip" id="btn-suits">♠ 4色</button>
   <button class="chip" id="btn-theme">🎨 クラシック</button>
+  <a class="chip" id="mode-link" rel="noopener"></a>
   <button class="chip" id="btn-lobby">ロビーへ</button>
 </header>
 
@@ -4210,6 +4211,26 @@
   document.getElementById('fab-lobby').onclick = function(){ closeSide(); document.getElementById('btn-lobby').click(); };
   document.getElementById('side-close').onclick = closeSide;
   backdrop.onclick = closeSide;
+})();
+</script>
+
+<script>
+(function () {
+  // Render 本番の場所。オフライン版から戻るときの行き先
+  var ONLINE_URL = 'https://poker-friends-x9o6.onrender.com/poker-client.html';
+  var el = document.getElementById('mode-link');
+  if (!el) return;
+  // オフラインのブラウザ内サーバーが起動していれば __offlineSave が生えている
+  var isOffline = !!window.__offlineSave;
+  if (isOffline) {
+    el.textContent = '\uD83C\uDF10 オンライン版';
+    el.title = '友達と対戦できる本編へ（通信が必要です）';
+    el.href = ONLINE_URL;
+  } else {
+    el.textContent = '\uD83D\uDCF4 オフライン版';
+    el.title = '通信なしで遊べる版へ（サーバーが混んでいる・眠っているときに）';
+    el.href = './poker-offline.html';
+  }
 })();
 </script>
 </body>

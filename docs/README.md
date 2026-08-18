@@ -1,12 +1,26 @@
-# サーバー不要のソロ版（GitHub Pages 用）
+# サーバー不要版（GitHub Pages 用）
 
-`index.html` は CPU 対戦のソロ版ポーカー。完全に自己完結しており、サーバー無しでブラウザだけで動く。
+Render がスリープ中・停止中でも遊べる受け皿。どちらもサーバー不要で、ブラウザだけで完結する。
+
+| ファイル | 中身 |
+|---|---|
+| `index.html` | **オフライン版**（約4.6MB）。あり版のサーバーロジックをブラウザ内で動かすので、リッチ画面・GTOボット群・キャッシュ卓・トーナメント・経済（デイリー/ミッション/パス/スロット/ショップ）まで入っている。対人対戦だけ不可。 |
+| `solo.html` | 軽量ソロ版（約190KB）。CPU 対戦のみ。すぐ開きたいとき用。 |
 
 ## 公開手順（一度だけ）
-GitHub のリポジトリ設定 → Pages → Source を「Deploy from a branch」、
-Branch を `main` / フォルダを `/docs` にして保存。
-数分後に `https://<ユーザー名>.github.io/<リポジトリ名>/` で遊べる。
+リポジトリの Settings → Pages → Source を「Deploy from a branch」、
+Branch `main` / フォルダ `/docs` にして保存。数分で
+`https://<ユーザー名>.github.io/<リポジトリ名>/` から遊べる。
 
-- 残高・戦績はブラウザの localStorage に保存（端末ごと）
-- マルチプレイ版（Render の poker-friends）とは独立。こちらはスリープも帯域消費も無い
-- 更新するときは outputs/poker-solo.html をここへコピーし直す
+## 仕組み（オフライン版）
+`poker-client.html`（リッチ版）の head に、ブラウザ内サーバーのバンドルを 1 本差し込んだだけ。
+そのバンドルがグローバルの `WebSocket` をループバック実装へ差し替えるので、
+クライアントも bots.ts も「サーバーがある」つもりのまま 1 行も変えずに動く。
+→ **あり版を改良すると、作り直すだけでオフライン版にも反映される**（二重管理にならない）。
+
+## 注意
+- セーブは端末の localStorage（キー `poker.offline.save.v1`）。JSON 1 塊なので引き継ぎに使える。
+  `window.__offlineSave.export() / .import(json) / .reset()` で取り出し・書き戻し可。
+- サーバーが権威ではないので、その気になれば残高を書き換えられる。オフライン専用なので実害は無いが、
+  ここでランキング等の競争要素は作らないこと。
+- 作り直しは `cd poker-engine && node scripts/build-offline.mjs`、検証は `node scripts/smoke-offline.mjs`。
