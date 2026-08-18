@@ -43,6 +43,66 @@ export declare function getTuning(): Tuning;
  * 無ければ既定値のまま(エラーにしない)。
  */
 export declare function loadTunedParams(): Promise<string | null>;
+/**
+ * ブループリント表の形式バージョン。
+ * v1 = `flopClass|role` + face 1種類 / v2 = potType・sprBand を加え、face をサイズ別に持つ。
+ * 形式を変えたら必ず上げること(古い表を読み込んで挙動が混ざるのを防ぐ)。
+ */
+export declare const BLUEPRINT_VERSION = 2;
+export type BpDist = Partial<Record<string, number>>;
+export interface BpNode {
+    firstIn: BpDist;
+    faceS: BpDist;
+    faceB: BpDist;
+    faceJam: BpDist;
+}
+export interface BlueprintTable {
+    version: number;
+    sizes: {
+        betS: number;
+        betB: number;
+    };
+    nodes: Record<string, Record<string, BpNode>>;
+}
+/**
+ * ポットの種類。3ベットポットはレンジ構成もSPRもSRPと別物なので分けて持つ。
+ * 判定はプリフロップのレンジ記述(heroSpec/villainSpec)が3ベット系かどうかで行う——
+ * bots 側が実際の行動から割り当てたレンジなので、これがそのまま局面の種類になる。
+ */
+export declare function flopPotType(heroSpec?: string | null, villSpec?: string | null): string;
+/**
+ * SPR(スタック/ポット比)の帯。低SPRではコミット判断が別物になるので分けて解く。
+ * 境界は 3 と 8。3ベットポットは概ね low、SRPは mid〜high に落ちる。
+ */
+export declare function flopSprBand(spr: number): string;
+/** 表のキーを組み立てる(オフライン生成と実行時参照で必ず同じ関数を使う) */
+export declare function blueprintKey(flopCls: string, role: string, potType: string, sprBand: string): string;
+export declare function setBlueprint(bp: BlueprintTable | null): void;
+export declare function getBlueprint(): BlueprintTable | null;
+/**
+ * フロップのテクスチャを少数の戦略クラスへ写す(スート同型を吸収)。
+ * ペア/モノトーン/ハイカード階層 × ウェット(2トーン or コネクト)で ~11 クラス。
+ */
+export declare function flopClass(board: Card[]): string;
+/** ポジション×プリフロップアグレッサーの役割ラベル(4種) */
+export declare function flopRole(inPosition: boolean, wasAggressor: boolean): string;
+/**
+ * ハンドをフロップ上で決定的な強さバケットへ写す(madeScore + ドローのアウツ)。
+ * オフライン蒸留と実行時ルックアップで完全に一致する(サンプリング非依存)。
+ */
+export declare function flopHandBucket(hole: Card[], board: Card[]): string;
+/**
+ * ブループリントを引いてアクションをサンプルする。表に無ければ null(→通常経路へ)。
+ *
+ * ベットに直面しているときは、相手のベットサイズ(ポット比)に一番近い応答分布を選ぶ。
+ * 小さいベットには広く受け、大きいベットには絞る——という MDF の効き方を表で再現するため。
+ */
+export declare function blueprintAction(c: PostCtx): GtoAction | null;
+/**
+ * ブループリント(flop_blueprint.json)があれば読み込む。tuned_params.json と同じ場所を探す。
+ * 無ければ null(エラーにしない)。読み込めた場合はファイルパスを返す。
+ */
+export declare function loadBlueprint(): Promise<string | null>;
 /** 2枚のカード → "AKs"/"AKo"/"TT" */
 export declare function handTypeOf(a: Card, b: Card): string;
 /**
@@ -72,6 +132,25 @@ export interface RiverSolveCtx {
     facingBet: number;
     rnd?: () => number;
     iters?: number;
+    /**
+     * ブループリント蒸留の出力チャネル(フロップ need===2 のみ)。指定すると、CFRを1回解いて
+     * 全バケットの firstIn/faceS/faceB/faceJam 分布と、
+     * 自陣コンボの (solverバケット, 決定的handBucket, 重み) を書き込む。
+     * これで「1回の解でその盤面・役割の全ハンドの戦略」を取り出せる(蒸留を高速化)。
+     */
+    bpOut?: {
+        firstIn: BpDist[];
+        faceS: BpDist[];
+        faceB: BpDist[];
+        faceJam: BpDist[];
+        items: Array<{
+            bucket: number;
+            hb: string;
+            w: number;
+        }>;
+    };
+    /** DCFR で解く(オフライン蒸留用) */
+    discount?: boolean;
 }
 /** リバーをその場で解き、自分の実ハンドの混合戦略から1アクションを引く。失敗時null */
 export declare function solveRiver(ctx: RiverSolveCtx): GtoAction | null;
@@ -96,6 +175,13 @@ export declare function solveTurn(ctx: RiverSolveCtx): GtoAction | null;
  * レンジ対レンジの均衡からCベット頻度・ドローの継続・チェックレイズが出る。
  */
 export declare function solveFlop(ctx: RiverSolveCtx): GtoAction | null;
+/**
+ * ブループリント蒸留用: 1つのフロップ・役割(ヒーローのレンジ/ポジション)についてCFRを1回解き、
+ * 決定的handBucketごとの firstIn / face 戦略分布を返す。build_blueprint.mjs から呼ぶ。
+ * 通常のプレイには使わない(重い代わりに全ハンドを一括で取り出す)。
+ * heroHole はダミー(ソルバー内部のバケット割当を邪魔しない盤外の1枚組を渡す想定)。
+ */
+export declare function solveFlopBlueprint(ctx: RiverSolveCtx): Record<string, BpNode> | null;
 /**
  * 3人のリバーをバケットCFRで解く(マルチウェイの簡易ソルバー)。
  * 資料第3部§3.8の通りマルチウェイは「タイト・小さいサイズ・純ブラフ激減」が均衡なので、
@@ -182,6 +268,14 @@ export interface PostCtx {
     heroAggStreets?: number;
     /** このストリートで自分が既に入れた額(>0ならレイズを受けた状態 → ソルバー適用外) */
     heroStreetBet?: number;
+    /** 3人残りリバー用: アクション順(先に打つ順)の全員のレンジ。3件なら3wayソルバーを使う */
+    multiwaySpecs?: string[];
+    /** 上の並びでの自分のindex(0..2) */
+    heroOrder?: number;
+    /** 上の並びでのベット者のindex。まだ誰も打っていなければ null */
+    bettorOrder?: number | null;
+    /** 上の並びでの各人のポストフロップ攻撃回数(レンジを上位へ寄せる) */
+    multiwayTightens?: number[];
 }
 export declare function gtoPostflop(c: PostCtx): GtoAction;
 export {};

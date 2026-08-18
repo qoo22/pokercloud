@@ -62,6 +62,197 @@ export async function loadTunedParams() {
     catch { /* ファイルが無い/壊れている → 既定値 */ }
     return null;
 }
+// ---------------------------------------------------------------- フロップ・ブループリント(第4部フェーズ3)
+//
+// 頻出フロップの均衡戦略を「事前に」CFRで解き、コンパクトな表(flop_blueprint.json)に蒸留しておく。
+// 実行時はその場でソルバーを回さず、表を引いて頻度どおりにアクションをサンプルするだけ——
+//   ・毎手のCFRを省けるので高速(ソルバー適用率を実質100%へ引き上げられる)
+//   ・同じ局面は常に同じ戦略分布 → ブレない
+//   ・「どのハンドをどう打つか」という戦略の構造そのものを持てる(学習成果の可搬な資産)
+// 表は起動時に一度だけローカルから読むだけ(tuned_params.json と同じ)。外部送信はゼロ。
+//
+// キー = `${flopClass}|${role}|${potType}|${sprBand}` の下に、ハンドバケットごとの分布を持つ:
+//   firstIn(先手)     : {check, betS(小), betB(大)}
+//   faceS/faceB/faceJam: 小ベット/大ベット/ジャムに直面 {fold, call, raise}
+// flopClass / role / potType / sprBand / handBucket は、オフラインでも実行時でも
+// 同一に再現できる決定的な関数で作る(ここがズレると表を引けなくなる)。
+//
+// ベットサイズごとに応答を分けているのは、MDF(最低防御頻度)がサイズで大きく変わるため。
+// 以前は最小サイズの応答だけを持ち、75%にもジャムにも同じ分布を使っていて、
+// 大きいベットに対して降り過ぎ／small betに対して守り過ぎになっていた。
+// DCFR(Discounted CFR)の割引パラメータ。原論文の推奨値。
+// 正のリグレットは緩やかに、負のリグレットは強く減衰させ、平均戦略は後半を重く見る。
+const DCFR_ALPHA = 1.5;
+const DCFR_BETA = 0;
+const DCFR_GAMMA = 2;
+/**
+ * ブループリント表の形式バージョン。
+ * v1 = `flopClass|role` + face 1種類 / v2 = potType・sprBand を加え、face をサイズ別に持つ。
+ * 形式を変えたら必ず上げること(古い表を読み込んで挙動が混ざるのを防ぐ)。
+ */
+export const BLUEPRINT_VERSION = 2;
+/**
+ * ポットの種類。3ベットポットはレンジ構成もSPRもSRPと別物なので分けて持つ。
+ * 判定はプリフロップのレンジ記述(heroSpec/villainSpec)が3ベット系かどうかで行う——
+ * bots 側が実際の行動から割り当てたレンジなので、これがそのまま局面の種類になる。
+ */
+export function flopPotType(heroSpec, villSpec) {
+    const threeBet = new Set([
+        VILLAIN_PRE.threeBettor, VILLAIN_PRE.threeBetCaller,
+        VILLAIN_PRE.fourBettor, VILLAIN_PRE.fourBetCaller,
+    ]);
+    return threeBet.has(heroSpec ?? '') || threeBet.has(villSpec ?? '') ? '3bet' : 'srp';
+}
+/**
+ * SPR(スタック/ポット比)の帯。低SPRではコミット判断が別物になるので分けて解く。
+ * 境界は 3 と 8。3ベットポットは概ね low、SRPは mid〜high に落ちる。
+ */
+export function flopSprBand(spr) {
+    return spr <= 3 ? 'low' : spr <= 8 ? 'mid' : 'high';
+}
+/** 表のキーを組み立てる(オフライン生成と実行時参照で必ず同じ関数を使う) */
+export function blueprintKey(flopCls, role, potType, sprBand) {
+    return `${flopCls}|${role}|${potType}|${sprBand}`;
+}
+let BLUEPRINT = null;
+export function setBlueprint(bp) { BLUEPRINT = bp; }
+export function getBlueprint() { return BLUEPRINT; }
+/**
+ * フロップのテクスチャを少数の戦略クラスへ写す(スート同型を吸収)。
+ * ペア/モノトーン/ハイカード階層 × ウェット(2トーン or コネクト)で ~11 クラス。
+ */
+export function flopClass(board) {
+    if (board.length !== 3)
+        return 'other';
+    const t = classifyTexture(board);
+    const ranks = board.map((c) => (c >> 2) + 2).sort((a, b) => b - a);
+    const hi = ranks[0];
+    if (t.paired)
+        return hi >= 10 ? 'paired-hi' : 'paired-lo';
+    if (t.monotone)
+        return 'mono';
+    const wet = t.twoTone || t.connected ? 'wet' : 'dry';
+    const level = hi === 14 ? 'A' : hi >= 11 ? 'B' : hi >= 9 ? 'M' : 'L'; // A / ブロードウェイ / ミドル / ロー
+    return `${level}-${wet}`;
+}
+/** ポジション×プリフロップアグレッサーの役割ラベル(4種) */
+export function flopRole(inPosition, wasAggressor) {
+    return `${inPosition ? 'ip' : 'oop'}-${wasAggressor ? 'agg' : 'def'}`;
+}
+/**
+ * ハンドをフロップ上で決定的な強さバケットへ写す(madeScore + ドローのアウツ)。
+ * オフライン蒸留と実行時ルックアップで完全に一致する(サンプリング非依存)。
+ */
+export function flopHandBucket(hole, board) {
+    const s = madeScore(hole, board);
+    if (s >= 0.9)
+        return 'monster'; // ストレート+/セット/フラッシュ
+    if (s >= 0.78)
+        return 'strong'; // ツーペア/弱いセット
+    if (s >= 0.62)
+        return 'toppair'; // オーバーペア/トップペア good
+    if (s >= 0.5)
+        return 'midpair'; // 弱いトップペア/上位ポケット
+    const d = drawFeatures(hole, board);
+    // 大きいドローはペアより先に見る(ペア+FDはブラフキャッチではなく攻めの手)
+    if (d.outs >= 8)
+        return 'bigdraw';
+    // セカンドペア/ボトムペア/下位ポケット。ショーダウンバリューがありエアとは別物
+    // (ブラフキャッチャーとして振る舞うので、エアに混ぜると降り過ぎ・打ち過ぎになる)
+    if (s >= 0.34)
+        return 'weakpair';
+    if (d.outs >= 4)
+        return 'weakdraw';
+    return 'air';
+}
+/**
+ * ブループリントを引いてアクションをサンプルする。表に無ければ null(→通常経路へ)。
+ *
+ * ベットに直面しているときは、相手のベットサイズ(ポット比)に一番近い応答分布を選ぶ。
+ * 小さいベットには広く受け、大きいベットには絞る——という MDF の効き方を表で再現するため。
+ */
+export function blueprintAction(c) {
+    const bp = BLUEPRINT;
+    if (!bp || c.street !== 'flop' || c.board.length !== 3)
+        return null;
+    // ストリート開始時点のポット(＝相手のベットを除いたポット)でSPRとベット比を測る
+    const potStart0 = Math.max(1, c.pot - c.toCall);
+    const key = blueprintKey(flopClass(c.board), flopRole(c.inPosition, c.wasAggressor), flopPotType(c.heroSpec, c.villainSpec), flopSprBand(c.myStack / potStart0));
+    const byBucket = bp.nodes[key];
+    if (!byBucket)
+        return null;
+    const node = byBucket[flopHandBucket(c.hole, c.board)];
+    if (!node)
+        return null;
+    let dist;
+    if (c.toCall <= 0) {
+        dist = node.firstIn;
+    }
+    else {
+        // 実際のベット比に近い方を使う。スタックを脅かす額はジャム扱い
+        const frac = c.toCall / potStart0;
+        const jamLike = c.toCall >= c.myStack * 0.6;
+        const mid = (bp.sizes.betS + bp.sizes.betB) / 2;
+        dist = jamLike ? node.faceJam : frac <= mid ? node.faceS : node.faceB;
+        // 空(そのサイズを解いていない)なら隣のサイズで代替する
+        if (!dist || Object.keys(dist).length === 0)
+            dist = node.faceB ?? node.faceS;
+        if (!dist || Object.keys(dist).length === 0)
+            dist = node.faceS;
+    }
+    if (!dist)
+        return null;
+    const entries = Object.entries(dist).filter(([, v]) => (v ?? 0) > 0);
+    let total = 0;
+    for (const [, v] of entries)
+        total += v ?? 0;
+    if (total <= 0)
+        return null;
+    let x = c.rnd() * total;
+    let label = entries[entries.length - 1][0];
+    for (const [k, v] of entries) {
+        x -= v ?? 0;
+        if (x <= 0) {
+            label = k;
+            break;
+        }
+    }
+    const potStart = potStart0;
+    switch (label) {
+        case 'check': return c.toCall > 0 ? { action: 'call' } : { action: 'check' };
+        case 'fold': return c.toCall > 0 ? { action: 'fold' } : { action: 'check' };
+        case 'call': return c.toCall > 0 ? { action: 'call' } : { action: 'check' };
+        case 'betS': return { action: 'raise', to: Math.round(c.currentBet + (potStart + c.toCall) * bp.sizes.betS) };
+        case 'betB': return { action: 'raise', to: Math.round(c.currentBet + (potStart + c.toCall) * bp.sizes.betB) };
+        case 'raise': return { action: 'raise', to: Math.round(c.currentBet + (potStart + c.toCall) * bp.sizes.betB) };
+        default: return null;
+    }
+}
+/**
+ * ブループリント(flop_blueprint.json)があれば読み込む。tuned_params.json と同じ場所を探す。
+ * 無ければ null(エラーにしない)。読み込めた場合はファイルパスを返す。
+ */
+export async function loadBlueprint() {
+    try {
+        const { readFileSync } = await import('node:fs');
+        const url = new URL('../../../flop_blueprint.json', import.meta.url);
+        const data = JSON.parse(readFileSync(url, 'utf8'));
+        if (data && data.nodes && data.sizes && Object.keys(data.nodes).length > 0) {
+            // 古い形式(v1: キーに potType/sprBand が無く、face がサイズ別でない)は読み込まない。
+            // 中途半端に読むと「先手だけ表・被弾はソルバー」という分かりにくい状態になるため、
+            // 作り直しを促してソルバーにフォールバックさせる
+            if (data.version !== BLUEPRINT_VERSION) {
+                console.warn(`フロップ・ブループリントの形式が古いため読み込みません ` +
+                    `(v${data.version} → 要 v${BLUEPRINT_VERSION})。node build_blueprint.mjs で作り直してください`);
+                return null;
+            }
+            setBlueprint(data);
+            return decodeURIComponent(url.pathname);
+        }
+    }
+    catch { /* 無い/壊れている → ブループリント無しで動作 */ }
+    return null;
+}
 // ---------------------------------------------------------------- レンジ記法
 const RANKS = '23456789TJQKA';
 const rv = (c) => RANKS.indexOf(c) + 2; // '2'→2 .. 'A'→14
@@ -525,18 +716,94 @@ function runBucketCfr(ctx) {
             for (let j = 0; j < K; j++)
                 uOpp[j] += co[j];
         }
-        // CFR+更新 + 線形加重平均戦略
-        for (let i = 0; i < K; i++)
-            for (let a = 0; a < A; a++) {
-                reg[i * A + a] = Math.max(0, reg[i * A + a] + childU[a][node.actor][i] - uMine[i]);
-                ss[i * A + a] += t * mine[i] * sigma[i * A + a];
-            }
+        if (ctx.discount) {
+            // ---- DCFR (Brown & Sandholm 2019) ----
+            // 正のリグレットは t^α/(t^α+1)、負は t^β/(t^β+1) で割り引き、
+            // 平均戦略は (t/(t+1))^γ で重みづける。CFR+ と違って負のリグレットを捨てない代わりに
+            // 強く減衰させるので、序盤の誤った確信から抜け出しやすく、同じ反復数でも解が良くなる。
+            const ta = Math.pow(t, DCFR_ALPHA);
+            const dPos = ta / (ta + 1);
+            const tb = Math.pow(t, DCFR_BETA);
+            const dNeg = tb / (tb + 1);
+            const dStrat = Math.pow(t / (t + 1), DCFR_GAMMA);
+            for (let i = 0; i < K; i++)
+                for (let a = 0; a < A; a++) {
+                    const idx = i * A + a;
+                    const r = reg[idx] + childU[a][node.actor][i] - uMine[i];
+                    reg[idx] = r > 0 ? r * dPos : r * dNeg;
+                    ss[idx] = ss[idx] * dStrat + mine[i] * sigma[idx];
+                }
+        }
+        else {
+            // CFR+更新 + 線形加重平均戦略(ライブ解法の既定。挙動を変えないためこちらを残す)
+            for (let i = 0; i < K; i++)
+                for (let a = 0; a < A; a++) {
+                    reg[i * A + a] = Math.max(0, reg[i * A + a] + childU[a][node.actor][i] - uMine[i]);
+                    ss[i * A + a] += t * mine[i] * sigma[i * A + a];
+                }
+        }
         return [u0, u1];
     };
     const iters = ctx.iters;
     const w0 = Float64Array.from(ctx.w0), w1 = Float64Array.from(ctx.w1);
     for (let t = 1; t <= iters; t++)
         walk(root, w0, w1, t);
+    // ---- ブループリント蒸留: 全バケットの平均戦略を畳んで返す ----
+    if (ctx.capture) {
+        const small = SIZES.length ? SIZES[0] : 0.33;
+        // 指定ノードのバケット別分布を、ブループリント表記へ写して返す
+        const readNode = (nd, face) => {
+            const out = Array.from({ length: K }, () => ({}));
+            if (!nd || nd.kind !== 'decision')
+                return out;
+            const A2 = nd.children.length;
+            const ss2 = ssum.get(nd.id);
+            if (!ss2)
+                return out;
+            for (let i = 0; i < K; i++) {
+                let tot = 0;
+                for (let a = 0; a < A2; a++)
+                    tot += ss2[i * A2 + a];
+                if (tot <= 0)
+                    continue;
+                for (let a = 0; a < A2; a++) {
+                    const f = ss2[i * A2 + a] / tot;
+                    if (f <= 0)
+                        continue;
+                    const lb = nd.labels[a];
+                    let key;
+                    if (face)
+                        key = lb === 'fold' ? 'fold' : lb === 'call' ? 'call' : 'raise';
+                    else if (lb === 'check')
+                        key = 'check';
+                    else if (lb === 'jam')
+                        key = 'betB';
+                    else
+                        key = Number(lb.slice(1)) <= small + 1e-9 ? 'betS' : 'betB';
+                    out[i][key] = (out[i][key] ?? 0) + f;
+                }
+            }
+            return out;
+        };
+        const firstNode = heroP === 0 ? root : ipAfterCheck;
+        // 相手のベット枝ごとに応答を読む。サイズで MDF が変わるので分けて持つ必要がある
+        // (以前は最小サイズの応答だけを表に入れていて、75%やジャムにも同じ分布を使っていた)
+        const src = heroP === 0 ? ipAfterCheck : root;
+        let smallNode = null, bigNode = null, jamNode = null;
+        src.labels.forEach((lb, idx) => {
+            if (lb === 'check')
+                return;
+            const child = src.children[idx];
+            if (lb === 'jam')
+                jamNode = child;
+            else if (Number(lb.slice(1)) <= small + 1e-9)
+                smallNode = child;
+            else
+                bigNode = child;
+        });
+        // そのサイズが木に無い(SPRが浅くて刈られた)ときは、隣のサイズで代替する
+        ctx.capture(readNode(firstNode, false), readNode(smallNode ?? bigNode, true), readNode(bigNode ?? smallNode, true), readNode(jamNode ?? bigNode ?? smallNode, true));
+    }
     // ---- 自分の実ハンドの戦略を読む ----
     const myB = Math.max(0, Math.min(K - 1, ctx.heroBucket));
     // 該当ノードを特定
@@ -873,6 +1140,55 @@ export function solveFlop(ctx) {
         return null;
     return solveSampledStreet(ctx, 12, [0.33, 0.75]);
 }
+/**
+ * ブループリント蒸留用: 1つのフロップ・役割(ヒーローのレンジ/ポジション)についてCFRを1回解き、
+ * 決定的handBucketごとの firstIn / face 戦略分布を返す。build_blueprint.mjs から呼ぶ。
+ * 通常のプレイには使わない(重い代わりに全ハンドを一括で取り出す)。
+ * heroHole はダミー(ソルバー内部のバケット割当を邪魔しない盤外の1枚組を渡す想定)。
+ */
+export function solveFlopBlueprint(ctx) {
+    if (ctx.board.length !== 3)
+        return null;
+    const bpOut = { firstIn: [], faceS: [], faceB: [], faceJam: [], items: [] };
+    solveSampledStreet({ ...ctx, bpOut }, 12, [0.33, 0.75]);
+    if (!bpOut.items.length || !bpOut.firstIn.length)
+        return null;
+    // 決定的handBucketごとに、コンボ重みで各分布を集計
+    const acc = {};
+    const add = (dst, src, w) => {
+        for (const k of Object.keys(src))
+            dst[k] = (dst[k] ?? 0) + (src[k] ?? 0) * w;
+    };
+    for (const it of bpOut.items) {
+        const a = (acc[it.hb] ??= { first: {}, fS: {}, fB: {}, fJ: {}, w: 0 });
+        add(a.first, bpOut.firstIn[it.bucket] ?? {}, it.w);
+        add(a.fS, bpOut.faceS[it.bucket] ?? {}, it.w);
+        add(a.fB, bpOut.faceB[it.bucket] ?? {}, it.w);
+        add(a.fJ, bpOut.faceJam[it.bucket] ?? {}, it.w);
+        a.w += it.w;
+    }
+    const norm = (d) => {
+        let t = 0;
+        for (const k of Object.keys(d))
+            t += d[k] ?? 0;
+        if (t <= 0)
+            return {};
+        const o = {};
+        for (const k of Object.keys(d))
+            o[k] = Math.round(((d[k] ?? 0) / t) * 1000) / 1000;
+        return o;
+    };
+    const out = {};
+    for (const hb of Object.keys(acc)) {
+        out[hb] = {
+            firstIn: norm(acc[hb].first),
+            faceS: norm(acc[hb].fS),
+            faceB: norm(acc[hb].fB),
+            faceJam: norm(acc[hb].fJ),
+        };
+    }
+    return out;
+}
 /** ランアウトをサンプリングして解く共通実装(ターン=1枚 / フロップ=2枚) */
 function solveSampledStreet(ctx, R_SAMPLES, sizes) {
     const K = 8;
@@ -1087,10 +1403,25 @@ function solveSampledStreet(ctx, R_SAMPLES, sizes) {
             rnd, iters: ctx.iters ?? 130, sizes,
         });
     }
+    // ブループリント蒸留: 自陣コンボの (solverバケット, 決定的handBucket, 重み) を書き出し、
+    // capture で全バケットの firstIn/faceS/faceB/faceJam 分布を受け取る(1回の解で全ハンドを蒸留)
+    let capture;
+    if (ctx.bpOut) {
+        const heroItems = heroP === 0 ? A : B;
+        ctx.bpOut.items = heroItems.map((it) => ({
+            bucket: it.bucket, w: it.w, hb: flopHandBucket([it.c1, it.c2], ctx.board),
+        }));
+        capture = (firstIn, faceS, faceB, faceJam) => {
+            ctx.bpOut.firstIn = firstIn;
+            ctx.bpOut.faceS = faceS;
+            ctx.bpOut.faceB = faceB;
+            ctx.bpOut.faceJam = faceJam;
+        };
+    }
     return runBucketCfr({
         K, W01, w0: BA.weights, w1: BB.weights, heroP, heroBucket: myB,
         pot: ctx.pot, effStack: ctx.effStack, facingBet: ctx.facingBet,
-        rnd, iters: ctx.iters ?? 140, sizes,
+        rnd, iters: ctx.iters ?? 140, sizes, capture, discount: ctx.discount,
     });
 }
 export function solveRiver3(ctx) {
@@ -1700,6 +2031,38 @@ export function gtoPostflop(c) {
     const oppFold = c.oppFold ?? 0.5;
     const oppAggr = c.oppAggr ?? 0.5;
     const spr = c.myStack / Math.max(1, c.pot);
+    // 3人残りリバーは専用の3wayソルバーで解く(V2 Phase5のマルチウェイ版)。
+    // レンジ情報が揃っていて自分がこのストリート未投入のときだけ(レイズ合戦は木が合わない)。
+    if (c.street === 'river' && c.nActive === 3 && c.board.length === 5 &&
+        c.multiwaySpecs && c.multiwaySpecs.length === 3 && typeof c.heroOrder === 'number' &&
+        !(c.heroStreetBet && c.heroStreetBet > 0) && r() < (0.3 + 0.6 * c.tier) * TUNE.solverGate) {
+        try {
+            const g = solveRiver3({
+                heroHole: c.hole, board: c.board,
+                heroIdx: c.heroOrder,
+                specs: c.multiwaySpecs,
+                tightens: (c.multiwayTightens ?? [0, 0, 0]),
+                pot: Math.max(1, c.pot - c.toCall),
+                bettorIdx: c.bettorOrder ?? null,
+                facingBet: c.toCall, rnd: r,
+            });
+            if (g) {
+                if (g.action === 'fold' && c.toCall <= 0)
+                    return { action: 'check' };
+                return g;
+            }
+        }
+        catch { /* ヒューリスティックへ */ }
+    }
+    // フロップ・ブループリント(第4部フェーズ3): 事前計算した頻出フロップの均衡表があれば、
+    // その場でCFRを回さず表を引く。HU・SRP(このストリート未投入)の局面が対象。
+    // ソルバーより桁違いに速いので高ティアでは適用率を高く取る(表に無ければ通常経路へ)。
+    if (BLUEPRINT && c.street === 'flop' && c.nActive === 2 && c.board.length === 3 &&
+        !(c.heroStreetBet && c.heroStreetBet > 0) && r() < (0.5 + 0.5 * c.tier) * TUNE.solverGate) {
+        const g = blueprintAction(c);
+        if (g)
+            return g;
+    }
     // フロップ/ターン/リバーはヘッズアップならその場でCFRで解く(V2 Phase5/6)。高レート卓ほど適用率が高い。
     // レイズ合戦(自分がこのストリートで投入済み → レイズを受けた)もサブツリー再解法で扱う:
     // 自分の投入分をポットに組み込み、両者のレンジを1段タイト化した unsafe re-solve(Libratus式の軽量版)

@@ -151,6 +151,12 @@ function handle(msg) {
         case 'shop.state':
             shop = msg.shop;
             renderShop();
+            // マイページ等から購入を待っていたら、ここで確認ダイアログを開く
+            if (pendingBuySku) {
+                const s = pendingBuySku;
+                pendingBuySku = null;
+                showPurchaseDialog(s);
+            }
             break;
         case 'profile':
             profile = msg.profile;
@@ -161,6 +167,16 @@ function handle(msg) {
         case 'reward':
             showReward(msg.title, msg.chips, msg.gold, msg.detail);
             send({ t: 'profile.get' });
+            // 購入直後は履歴と所有状態が変わるので、ショップも取り直す
+            if (activeTab === 'shop')
+                send({ t: 'shop.list' });
+            break;
+        case 'slot.info':
+            slot = msg.slot;
+            renderSlot();
+            break;
+        case 'slot.result':
+            onSlotResult(msg.result);
             break;
         case 'table.state': {
             const prev = state;
@@ -376,14 +392,20 @@ function renderTable() {
             (s.allIn ? '<span class="badge allin">ALL IN</span>' : '') +
             (s.sittingOut ? '<span class="badge out">休憩</span>' : '') +
             (winners.has(i) ? '<span class="badge win">WIN</span>' : '');
-        const timerPct = s.timeLeftMs !== null && st.actingSeat === i ? Math.max(0, Math.min(100, (s.timeLeftMs / 15000) * 100)) : 0;
+        // 残り時間バー。分母はサーバーが送る総時間(既定60秒)。固定値にするとズレる
+        const totalMs = st.actionTotalMs && st.actionTotalMs > 0 ? st.actionTotalMs : 60_000;
+        const acting = st.actingSeat === i && s.timeLeftMs !== null && s.timeLeftMs !== undefined;
+        const timerPct = acting ? Math.max(0, Math.min(100, (s.timeLeftMs / totalMs) * 100)) : 0;
+        const timerLevel = timerPct <= 16.7 ? 'crit' : timerPct <= 33.3 ? 'warn' : 'ok';
+        const timerSec = acting ? Math.ceil(s.timeLeftMs / 1000) : 0;
         html += `<div class="seat ${st.actingSeat === i ? 'acting' : ''} ${s.folded ? 'folded' : ''}"
         data-seat="${i}" style="left:${x}%;top:${y}%">
       <div class="cards">${cards}</div>
       <div class="box">
         <div class="nm">${escapeHtml(s.name ?? '')}${badges}</div>
         <div class="st">${fmt(s.stack)}</div>
-        ${timerPct > 0 ? `<div class="timer" style="width:${timerPct}%"></div>` : ''}
+        ${acting ? `<div class="timer-sec">${timerSec}</div>` : ''}
+        ${acting ? `<div class="timer" data-level="${timerLevel}" style="width:${timerPct}%"></div>` : ''}
       </div>
       <div class="bet">${s.streetBet > 0 ? `▸ ${fmt(s.streetBet)}` : ''}</div>
     </div>`;
@@ -708,17 +730,123 @@ setInterval(() => {
             send({ t: 'lobby.list' });
     }
 }, 5000);
-// 残り時間バーを滑らかに動かす（サーバーからの状態更新を待たずに減らす）
-setInterval(() => {
-    if (!state || state.actingSeat === null)
+// ---------------------------------------------------------------- 効果音
+// 音声ファイルは持たず WebAudio で合成する（アセット追加なし・読み込み待ちなし）。
+// ブラウザは操作前の再生を禁じるので、最初のクリック/キー入力で AudioContext を起こす。
+let audioCtx = null;
+let soundOn = store.get('poker.sound') !== 'off';
+function initAudio() {
+    if (audioCtx)
         return;
+    try {
+        const w = window;
+        const Ctor = w.AudioContext ?? w.webkitAudioContext;
+        if (Ctor)
+            audioCtx = new Ctor();
+    }
+    catch { /* 音が出せない環境でも動作は続ける */ }
+}
+// 仮想DOM(E2E)には window.addEventListener が無いことがあるので存在確認してから登録する
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('pointerdown', initAudio, { once: true });
+    window.addEventListener('keydown', initAudio, { once: true });
+}
+/** 短いビープ。freq=高さ, ms=長さ, gain=音量 */
+function beep(freq, ms, gain = 0.14) {
+    if (!soundOn)
+        return;
+    initAudio();
+    const ctx = audioCtx;
+    if (!ctx)
+        return;
+    if (ctx.state === 'suspended')
+        void ctx.resume();
+    const t0 = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    // 立ち上がり/減衰をつけないとプチッというクリックノイズが乗る
+    amp.gain.setValueAtTime(0, t0);
+    amp.gain.linearRampToValueAtTime(gain, t0 + 0.012);
+    amp.gain.exponentialRampToValueAtTime(0.0001, t0 + ms / 1000);
+    osc.connect(amp).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + ms / 1000 + 0.02);
+}
+/** 手番が回ってきた合図（上がる2音） */
+function soundYourTurn() { beep(660, 110); setTimeout(() => beep(880, 130), 120); }
+/** 残り30秒（落ち着いた単音） */
+function soundWarn30() { beep(560, 160); }
+/** 残り15秒（強めの2連打） */
+function soundWarn15() { beep(760, 130); setTimeout(() => beep(760, 160), 190); }
+/** 残り5秒からの毎秒カウント（短く鋭い） */
+function soundTick() { beep(980, 70, 0.1); }
+export function setSoundEnabled(on) {
+    soundOn = on;
+    store.set('poker.sound', on ? 'on' : 'off');
+    if (on) {
+        initAudio();
+        beep(880, 120);
+    } // オンにした手応えを返す
+}
+export function isSoundEnabled() { return soundOn; }
+// ---------------------------------------------------------------- 残り時間バー
+// サーバーの状態更新を待たずローカルで減らし、60秒の残りを視覚と音で伝える。
+// 分母は必ずサーバーが送る actionTotalMs を使う（固定値だと切断中の席などでズレる）。
+/** 直前に鳴らした警告のしきい値。同じ秒で鳴り続けないための記録 */
+let lastWarnAt = -1;
+/** 手番開始音を鳴らした対象。手番が変わるまで一度だけ鳴らす */
+let turnSoundFor = null;
+setInterval(() => {
+    if (!state || state.actingSeat === null) {
+        lastWarnAt = -1;
+        turnSoundFor = null;
+        return;
+    }
     const seat = state.seats[state.actingSeat];
     if (seat?.timeLeftMs === null || seat?.timeLeftMs === undefined)
         return;
     seat.timeLeftMs = Math.max(0, seat.timeLeftMs - 200);
+    const total = state.actionTotalMs && state.actionTotalMs > 0 ? state.actionTotalMs : 60_000;
+    const pct = Math.max(0, Math.min(100, (seat.timeLeftMs / total) * 100));
     const bar = document.querySelector('.seat.acting .timer');
-    if (bar)
-        bar.style.width = `${Math.max(0, Math.min(100, (seat.timeLeftMs / 15000) * 100))}%`;
+    if (bar) {
+        bar.style.width = `${pct}%`;
+        // 残り 1/3 で黄、1/6 で赤。色でも残量が分かるようにする
+        bar.dataset.level = pct <= 16.7 ? 'crit' : pct <= 33.3 ? 'warn' : 'ok';
+    }
+    const label = document.querySelector('.seat.acting .timer-sec');
+    if (label)
+        label.textContent = `${Math.ceil(seat.timeLeftMs / 1000)}`;
+    // 音は自分の手番のときだけ。他人の手番で鳴ると煩わしい
+    const myTurn = state.yourSeat !== null && state.yourSeat === state.actingSeat;
+    if (!myTurn) {
+        lastWarnAt = -1;
+        turnSoundFor = null;
+        return;
+    }
+    const key = `${state.handNumber ?? 0}:${state.actingSeat}:${Math.round(total)}`;
+    if (turnSoundFor !== key) {
+        turnSoundFor = key;
+        lastWarnAt = -1;
+        soundYourTurn();
+    }
+    const sec = Math.ceil(seat.timeLeftMs / 1000);
+    if (sec === lastWarnAt)
+        return;
+    if (sec === 30) {
+        lastWarnAt = sec;
+        soundWarn30();
+    }
+    else if (sec === 15) {
+        lastWarnAt = sec;
+        soundWarn15();
+    }
+    else if (sec <= 5 && sec >= 1) {
+        lastWarnAt = sec;
+        soundTick();
+    }
 }, 200);
 // visuals.ts のスタイルを流し込む。テンプレート HTML 側に重複を持たせないため
 const styleEl = document.createElement('style');
@@ -750,6 +878,19 @@ applySuits(store.get('poker.suits') ?? 'four');
 const suitsBtn = document.getElementById('btn-suits');
 if (suitsBtn)
     suitsBtn.onclick = () => applySuits(document.documentElement.getAttribute('data-suits') === 'four' ? 'two' : 'four');
+// 効果音のオン/オフ。設定は localStorage に残す
+function applySoundBtn() {
+    const btn = document.getElementById('sound-toggle');
+    if (!btn)
+        return;
+    const on = isSoundEnabled();
+    btn.textContent = on ? '🔊 音' : '🔇 音';
+    btn.classList.toggle('off', !on);
+}
+applySoundBtn();
+const soundBtn = document.getElementById('sound-toggle');
+if (soundBtn)
+    soundBtn.onclick = () => { setSoundEnabled(!isSoundEnabled()); applySoundBtn(); };
 connect();
 let tournaments = [];
 let tourView = null;
@@ -769,6 +910,123 @@ function switchTab(tab) {
         send({ t: 'shop.list' });
     if (tab === 'me')
         send({ t: 'profile.get' });
+    if (tab === 'slot')
+        send({ t: 'slot.state' });
+}
+// ---------------------------------------------------------------- ゴールドスロット
+/** 絵柄キー → 表示する絵文字 */
+const SLOT_ICON = {
+    chip: '🪙', club: '♣️', diamond: '♦️', heart: '♥️', spade: '♠️', crown: '👑', seven: '7️⃣',
+};
+let slot = null;
+let slotBet = 1;
+let slotSpinning = false;
+/** 直前の結果（表示用に保持する） */
+let slotLast = null;
+function renderSlot() {
+    const el = document.getElementById('slot');
+    if (!el)
+        return;
+    if (!slot) {
+        el.innerHTML = '<p class="note">読み込み中…</p>';
+        return;
+    }
+    const s = slot;
+    const reels = slotLast?.reels ?? ['chip', 'club', 'diamond'];
+    const canSpin = !slotSpinning && s.gold >= slotBet && s.spinsLeft > 0;
+    // 当たりの大きさで見せ方を変える（ジャックポットは別格に）
+    let winCls = '', winText = '';
+    if (slotLast && !slotSpinning) {
+        if (slotLast.kind === 'jackpot') {
+            winCls = 'jackpot';
+            winText = `🎉 ジャックポット！ +${fmt(slotLast.won)}`;
+        }
+        else if (slotLast.kind === 'three') {
+            winCls = 'big';
+            winText = `3つ揃い！ +${fmt(slotLast.won)}`;
+        }
+        else if (slotLast.kind === 'two') {
+            winText = `+${fmt(slotLast.won)}`;
+        }
+        else {
+            winText = 'ハズレ';
+        }
+    }
+    el.innerHTML = `<div class="slot-wrap">
+    <div class="slot-machine">
+      <div style="font-size:13px;color:var(--muted)">ゴールドを賭けてチップを狙う</div>
+      <div class="reels">
+        ${reels.map((k) => `<div class="reel ${slotSpinning ? 'spinning' : ''}">${SLOT_ICON[k] ?? '❓'}</div>`).join('')}
+      </div>
+      <div class="slot-win ${winCls}">${escapeHtml(winText)}</div>
+      <div class="bet-row">
+        ${s.bets.map((b) => `<button class="bet-btn ${b === slotBet ? 'sel' : ''}" data-bet="${b}">🪙 ${b}</button>`).join('')}
+      </div>
+      <button class="spin-btn" id="slot-spin" ${canSpin ? '' : 'disabled'}>
+        ${slotSpinning ? '回転中…' : s.spinsLeft <= 0 ? '本日は終了' : s.gold < slotBet ? 'ゴールド不足' : 'まわす'}
+      </button>
+      <div class="note" style="margin-top:9px;font-size:12px">
+        所持 🪙 ${fmt(s.gold)} ／ 本日あと ${s.spinsLeft} 回
+      </div>
+    </div>
+
+    <div class="mult-box">
+      <div style="color:var(--muted);margin-bottom:5px">払い出し倍率の内訳</div>
+      <div class="row"><span>VIPランク（${escapeHtml(s.vipTierName)}）</span><b>×${s.vipPart}</b></div>
+      <div class="row"><span>連続ログイン ${s.streak} 日</span><b>×${s.streakPart}</b></div>
+      <div class="row total"><span>現在の倍率</span><b>×${s.multiplier}</b></div>
+      <div class="note" style="margin-top:7px;font-size:11px">
+        ランクを上げるほど、毎日ログインするほど倍率が上がります（連続は14日で頭打ち）。
+      </div>
+    </div>
+
+    <table class="paytable">
+      <tr><th>絵柄</th><th>3つ揃い</th><th>2つ揃い</th></tr>
+      ${s.symbols.map((sym) => `<tr>
+        <td>${SLOT_ICON[sym.key] ?? ''} ${escapeHtml(sym.name)}</td>
+        <td>${fmt(Math.round(sym.payout3 * slotBet * s.chipsPerGold * s.multiplier))}</td>
+        <td>${fmt(Math.round(sym.payout2 * slotBet * s.chipsPerGold * s.multiplier))}</td>
+      </tr>`).join('')}
+    </table>
+    <p class="note" style="font-size:11px">表の金額は現在の賭け金（🪙${slotBet}）と倍率での払い出しです。</p>
+  </div>`;
+    each('[data-bet]', (b) => {
+        b.onclick = () => { slotBet = Number(b.dataset.bet); renderSlot(); };
+    });
+    const spinBtn = document.getElementById('slot-spin');
+    if (spinBtn)
+        spinBtn.onclick = () => {
+            if (slotSpinning || !slot || slot.gold < slotBet || slot.spinsLeft <= 0)
+                return;
+            slotSpinning = true;
+            slotLast = null;
+            renderSlot();
+            send({ t: 'slot.spin', bet: slotBet });
+        };
+}
+/** スロットの結果が届いたら、少し回してから止める（演出） */
+function onSlotResult(r) {
+    slotLast = r;
+    if (slot) {
+        slot.gold = r.goldLeft;
+        slot.spinsLeft = r.spinsLeft;
+    }
+    // 即座に確定させると回転が一瞬で終わって手応えが無いので、少しだけ見せる
+    setTimeout(() => {
+        slotSpinning = false;
+        renderSlot();
+        if (r.kind === 'jackpot') {
+            beep(880, 140);
+            setTimeout(() => beep(1174, 160), 150);
+            setTimeout(() => beep(1568, 260), 320);
+        }
+        else if (r.kind === 'three') {
+            beep(784, 130);
+            setTimeout(() => beep(1046, 190), 140);
+        }
+        else if (r.kind === 'two')
+            beep(660, 110);
+    }, 700);
 }
 function renderTournaments() {
     const el = document.getElementById('tournaments');
@@ -902,12 +1160,79 @@ function renderShop() {
     html += `<div class="sec"><h3>チャレンジパス</h3><div class="packs">${shop.passPremium.owned
         ? '<div class="pack"><div class="amt">購入済み</div><div class="per">プレミアム報酬が解放されています</div></div>'
         : packHtml(shop.passPremium.sku, shop.passPremium.name, 'プレミアム', '到達済みティアの報酬もさかのぼって受け取れます', shop.passPremium.priceJpy, true, 'PASS')}</div></div>`;
+    if (shop.recentPurchases?.length) {
+        html += `<div class="sec"><h3>購入履歴</h3>
+      <table class="paytable">
+        <tr><th>商品</th><th>金額</th><th>日時</th></tr>
+        ${shop.recentPurchases.map((p) => `<tr>
+          <td>${escapeHtml(p.name)}</td>
+          <td>¥${fmt(p.priceJpy)}</td>
+          <td>${new Date(p.at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        </tr>`).join('')}
+      </table></div>`;
+    }
     html += `<p class="note">決済はモックです。実際には課金されません。ボタンを押すとサーバー側でレシート検証が走り、二重付与が防がれることを確認できます。</p>`;
     el.innerHTML = html;
     each('[data-buy]', (b) => {
-        b.onclick = () => {
-            b.disabled = true;
-            send({ t: 'shop.purchase', sku: b.dataset.buy, receipt: mockReceipt() });
+        b.onclick = () => showPurchaseDialog(b.dataset.buy);
+    });
+}
+/**
+ * 購入前の確認ダイアログ。
+ *
+ * 以前は押した瞬間に購入が確定していたが、金額のやり取りは必ず一度確認を挟むべきなので、
+ * 「何にいくら払い、何を受け取るか」を明示してから支払う流れにした。
+ * 決済はモックだが、実決済を差し込むときはこの confirm → 決済 → 付与 の境目に入れる。
+ */
+function showPurchaseDialog(sku) {
+    if (!shop)
+        return;
+    let item = null;
+    const offer = shop.offers.find((o) => o.sku === sku);
+    if (offer)
+        item = { name: offer.name, priceJpy: offer.priceJpy, detail: offer.description, tag: offer.reason };
+    const cp = shop.chipPacks.find((p) => p.sku === sku);
+    if (cp)
+        item = { name: cp.name, priceJpy: cp.priceJpy, detail: `チップ ${fmt(cp.chips)}` };
+    const gp = shop.goldPacks.find((p) => p.sku === sku);
+    if (gp)
+        item = { name: gp.name, priceJpy: gp.priceJpy, detail: `ゴールド 🪙 ${fmt(gp.gold)}` };
+    if (shop.passPremium.sku === sku) {
+        item = {
+            name: shop.passPremium.name,
+            priceJpy: shop.passPremium.priceJpy,
+            detail: 'プレミアム報酬トラックが解放され、到達済みティアの報酬もさかのぼって受け取れます',
+        };
+    }
+    if (!item)
+        return;
+    const vipBonus = shop.vipPurchaseBonus ?? 0;
+    modal(`<h3>購入の確認</h3>
+     <div style="background:var(--panel-2);border-radius:10px;padding:12px;margin:10px 0">
+       <div style="font-size:15px;font-weight:700">${escapeHtml(item.name)}</div>
+       <div class="note" style="margin-top:4px">${escapeHtml(item.detail)}</div>
+       ${item.tag ? `<div class="note" style="color:var(--gold)">${escapeHtml(item.tag)}</div>` : ''}
+       ${vipBonus > 0 ? `<div class="note" style="color:var(--gold)">VIP特典で +${Math.round(vipBonus * 100)}% 増量されます</div>` : ''}
+     </div>
+     <div style="display:flex;justify-content:space-between;align-items:baseline;margin:12px 0">
+       <span class="note">お支払い金額</span>
+       <b style="font-size:26px">¥${fmt(item.priceJpy)}</b>
+     </div>
+     <p class="note" style="font-size:11px">
+       これはモック決済です。実際の請求は発生しません。
+     </p>
+     <div class="row">
+       <button id="pay-cancel">やめる</button>
+       <button class="primary" id="pay-ok">¥${fmt(item.priceJpy)} を支払う</button>
+     </div>`, (close) => {
+        $('pay-cancel').onclick = close;
+        $('pay-ok').onclick = () => {
+            const btn = $('pay-ok');
+            btn.disabled = true;
+            btn.textContent = '処理中…';
+            // レシートは毎回新しく作る。サーバー側で使い回しを弾いて二重付与を防いでいる
+            send({ t: 'shop.purchase', sku, receipt: mockReceipt() });
+            close();
         };
     });
 }
@@ -947,28 +1272,57 @@ function renderProfile() {
            <button data-buy="offer_piggy_bank">回収する</button></div>`
         : ''}
   </div>`;
-    html += `<div class="sec"><h3>デイリーミッション</h3>${p.missions
+    /** ミッション一覧の共通描画。デイリー/ウィークリー/シーズンで同じ形 */
+    const missionList = (list) => list
         .map((m) => `<div class="mission">
         <div class="grow">
           <div class="nm">${escapeHtml(m.name)}</div>
-          <div class="bar"><div style="width:${Math.round((m.progress / m.target) * 100)}%"></div></div>
-          <div class="pg">${m.progress} / ${m.target}　報酬 ${fmt(m.rewardChips)}</div>
+          <div class="bar"><div style="width:${Math.min(100, Math.round((m.progress / m.target) * 100))}%"></div></div>
+          <div class="pg">${fmt(m.progress)} / ${fmt(m.target)}　報酬 ${fmt(m.rewardChips)}・XP +${m.rewardXp}</div>
         </div>
         <button data-mission="${m.id}" ${m.claimed || m.progress < m.target ? 'disabled' : ''}>
           ${m.claimed ? '受取済' : '受け取る'}
         </button>
       </div>`)
-        .join('')}</div>`;
-    html += `<div class="sec"><h3>チャレンジパス（${escapeHtml(p.pass.seasonId)}）</h3>
+        .join('');
+    html += `<div class="sec"><h3>デイリーミッション</h3>
+    ${missionList(p.missions)}
+    <div class="note">未消化のデイリーは 7 日ぶん残ります。毎日ログインできなくても追いつけます。</div>
+  </div>`;
+    if (p.weekly?.length) {
+        html += `<div class="sec"><h3>ウィークリーミッション</h3>${missionList(p.weekly)}</div>`;
+    }
+    if (p.seasonal?.length) {
+        html += `<div class="sec"><h3>シーズンミッション</h3>${missionList(p.seasonal)}</div>`;
+    }
+    // パスの進捗は「完走まであとどれくらいか」が一目で分かるようにする
+    const pv = p.pass;
+    const donePct = Math.min(100, Math.round((pv.xp / (pv.completeXp || 1)) * 100));
+    html += `<div class="sec"><h3>チャレンジパス（${escapeHtml(pv.seasonId)}）</h3>
     <div class="mission">
       <div class="grow">
-        <div class="nm">ティア ${p.pass.tier}${p.pass.premium ? '（プレミアム）' : ''}</div>
-        <div class="bar"><div style="width:${p.pass.nextTierXp ? Math.round((p.pass.xp / p.pass.nextTierXp) * 100) : 100}%"></div></div>
-        <div class="pg">経験値 ${fmt(p.pass.xp)}${p.pass.nextTierXp ? ` / 次のティアまで ${fmt(p.pass.nextTierXp)}` : ''}</div>
+        <div class="nm">ティア ${pv.tier} / ${pv.tierCount}${pv.premium ? '（プレミアム）' : ''}</div>
+        <div class="bar"><div style="width:${donePct}%"></div></div>
+        <div class="pg">
+          経験値 ${fmt(pv.xp)} / ${fmt(pv.completeXp)}（完走 ${donePct}%）
+          ${pv.nextTierXp ? `・次のティアまで ${fmt(Math.max(0, pv.nextTierXp - pv.xp))}` : ''}
+        </div>
+        <div class="pg">残り ${pv.daysLeft} 日${pv.finalWeek ? '・最終週は獲得経験値アップ中' : ''}</div>
       </div>
-      <button class="primary" id="btn-pass" ${p.pass.claimable ? '' : 'disabled'}>報酬を受け取る</button>
+      <button class="primary" id="btn-pass" ${pv.claimable ? '' : 'disabled'}>報酬を受け取る</button>
     </div>
-    ${p.pass.premium ? '' : '<div class="note">プレミアムパスを購入すると、到達済みティアの報酬もさかのぼって受け取れます。</div>'}
+    ${pv.boxesEarned > pv.boxesClaimed
+        ? `<div class="note" style="color:var(--gold)">完走ボーナス箱 ${pv.boxesEarned - pv.boxesClaimed} 個（各 ${fmt(pv.boxChips)}）を受け取れます</div>`
+        : pv.tier >= pv.tierCount
+            ? `<div class="note">完走済み。以降は 200XP ごとにボーナス箱（最大 5 個）</div>`
+            : ''}
+    ${pv.premium
+        ? ''
+        : `<div class="note">
+             プレミアムパスを買うと、<b style="color:var(--gold)">いま ${fmt(pv.preview.chips)} チップ${pv.preview.gold ? ` と 🪙 ${fmt(pv.preview.gold)}` : ''}</b>
+             （到達済み ${pv.preview.tiers} ティア分）をその場で受け取れます。
+           </div>
+           <div class="btnrow"><button class="chip primary" data-buy="pass_premium">プレミアムパスを見る</button></div>`}
   </div>`;
     el.innerHTML = html;
     const daily = document.getElementById('btn-daily');
@@ -980,10 +1334,22 @@ function renderProfile() {
     each('[data-mission]', (b) => {
         b.onclick = () => send({ t: 'mission.claim', missionId: b.dataset.mission });
     });
+    // マイページからの購入もショップと同じ確認ダイアログを通す。
+    // ショップ情報がまだ無ければ取りに行き、届いてから開く
     each('[data-buy]', (b) => {
-        b.onclick = () => send({ t: 'shop.purchase', sku: b.dataset.buy, receipt: mockReceipt() });
+        b.onclick = () => {
+            const sku = b.dataset.buy;
+            if (shop)
+                showPurchaseDialog(sku);
+            else {
+                pendingBuySku = sku;
+                send({ t: 'shop.list' });
+            }
+        };
     });
 }
+/** ショップ情報の到着を待っている購入。届いたら確認ダイアログを開く */
+let pendingBuySku = null;
 function showReward(title, chips, gold, detail) {
     modal(`<h3 style="text-align:center">${escapeHtml(title)}</h3>
      <div style="text-align:center;font-size:28px;font-weight:700;color:var(--gold);margin:12px 0">

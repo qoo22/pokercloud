@@ -123,6 +123,11 @@ export type ClientMessage =
     t: 'pass.claim';
 } | {
     t: 'profile.get';
+} | {
+    t: 'slot.state';
+} | {
+    t: 'slot.spin';
+    bet: number;
 }
 /** ニックネーム変更・ブレスレット装着（コスメ） */
  | {
@@ -205,8 +210,13 @@ export interface TableStateView {
     yourHand?: string | null;
     /** 自分の現在の勝率(0..1)。未知の相手へのモンテカルロ推定。ハンド中のみ */
     yourEquity?: number | null;
-    /** 現在の手番の基本持ち時間(ms)。これを超えるとタイムバンク消費 */
+    /** 現在の手番の基本持ち時間(ms)。全卓一律60秒(ACTION_MS) */
     baseActionMs?: number;
+    /**
+     * 現在の手番に実際に与えられた総時間(ms)。残り時間バーの分母はこれを使う。
+     * 通常は baseActionMs と同じだが、切断中の席(3秒)やタイムバンク付与時は変わる。
+     */
+    actionTotalMs?: number;
 }
 /** オールイン公開中に見せる、席ごとの勝率とアウツ */
 export interface RevealStat {
@@ -359,6 +369,15 @@ export interface ShopView {
         priceJpy: number;
         owned: boolean;
     };
+    /** 現在の VIP ティアによる購入増量率(0.03 なら +3%)。購入確認画面での明示に使う */
+    vipPurchaseBonus: number;
+    /** 直近の購入履歴(新しい順)。「ちゃんと買えた」ことを見せるため */
+    recentPurchases: Array<{
+        sku: string;
+        name: string;
+        priceJpy: number;
+        at: number;
+    }>;
 }
 export interface ProfileView {
     userId: string;
@@ -388,6 +407,10 @@ export interface ProfileView {
         rewardXp: number;
         claimed: boolean;
     }>;
+    /** ウィークリーミッション(週ごとにリセット) */
+    weekly: ProfileView['missions'];
+    /** シーズンミッション(28日通しの長期目標) */
+    seasonal: ProfileView['missions'];
     pass: {
         seasonId: string;
         xp: number;
@@ -395,6 +418,24 @@ export interface ProfileView {
         premium: boolean;
         nextTierXp: number | null;
         claimable: boolean;
+        /** 段階数と完走に必要な経験値 */
+        tierCount: number;
+        completeXp: number;
+        /** シーズンの残り日数と終了時刻 */
+        daysLeft: number;
+        endsAt: number;
+        /** 最終週(獲得経験値が増える) */
+        finalWeek: boolean;
+        /** 完走後の周回報酬 */
+        boxesEarned: number;
+        boxesClaimed: number;
+        boxChips: number;
+        /** 今プレミアムを買うと即時受け取れる内容(未購入のときだけ意味がある) */
+        preview: {
+            chips: number;
+            gold: number;
+            tiers: number;
+        };
     };
     piggyBank: number;
 }
@@ -471,7 +512,43 @@ export type ServerMessage = {
     chips: number;
     gold: number;
     detail?: string;
+} | {
+    t: 'slot.info';
+    slot: SlotView;
+} | {
+    t: 'slot.result';
+    result: SlotResultView;
 };
+/** スロット画面の表示情報 */
+export interface SlotView {
+    gold: number;
+    bets: number[];
+    symbols: Array<{
+        key: string;
+        name: string;
+        payout3: number;
+        payout2: number;
+    }>;
+    /** 現在の払い出し倍率(VIPランク×連続ログイン) */
+    multiplier: number;
+    vipTierName: string;
+    vipPart: number;
+    streak: number;
+    streakPart: number;
+    chipsPerGold: number;
+    spinsLeft: number;
+    dailySpins: number;
+}
+/** スロット 1 回分の結果 */
+export interface SlotResultView {
+    reels: string[];
+    bet: number;
+    won: number;
+    multiplier: number;
+    kind: 'none' | 'two' | 'three' | 'jackpot';
+    goldLeft: number;
+    spinsLeft: number;
+}
 export type ErrorCode = 'BAD_MESSAGE' | 'VERSION_MISMATCH' | 'NOT_AUTHENTICATED' | 'RATE_LIMITED' | 'NO_SUCH_TABLE' | 'SEAT_TAKEN' | 'ALREADY_SEATED' | 'NOT_SEATED' | 'INVALID_BUYIN' | 'INSUFFICIENT_FUNDS' | 'NOT_YOUR_TURN' | 'ILLEGAL_ACTION' | 'STALE_HAND' | 'SEED_WINDOW_CLOSED' | 'INTERNAL';
 /**
  * 受信メッセージを検証する。

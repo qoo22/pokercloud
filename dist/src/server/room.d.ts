@@ -18,6 +18,11 @@ export interface Scheduler {
     clearTimeout(handle: unknown): void;
 }
 export declare const realScheduler: Scheduler;
+/**
+ * 1アクションの持ち時間(ミリ秒)。全ストリート・全卓で共通。
+ * ここを変えるだけで全卓のアクション制限が変わる(卓ごとの上書きはしない方針)。
+ */
+export declare const ACTION_MS = 60000;
 export interface TableConfig {
     tableId: string;
     name: string;
@@ -29,9 +34,13 @@ export interface TableConfig {
     maxBuyInBB?: number;
     rakePercent?: number;
     rakeCapBB?: number;
-    /** 1 アクションあたりの持ち時間 */
+    /** 1 アクションあたりの持ち時間。既定は全卓共通の ACTION_MS(60秒) */
     actionTimeoutMs?: number;
-    /** タイムバンクの初期値 */
+    /**
+     * タイムバンク(基本時間を超えて使える予備)の初期値。
+     * 現在は全卓 60 秒一律に統一したため既定 0(＝未使用)。
+     * トーナメントの特典などで一時的に延長したい場合にだけ使う。
+     */
     timeBankMs?: number;
     /** クライアントシードの受付時間 */
     seedWindowMs?: number;
@@ -87,6 +96,13 @@ export interface RoomBank {
     /** テーブルからの持ち出し */
     deposit(userId: string, amount: number, ref: string): void;
     balanceOf(userId: string): number;
+    /**
+     * 着席中スタックの記録/抹消。座席はメモリ上のオブジェクトなので、これが無いと
+     * サーバーが落ちたときに卓上のチップが消える(バイインは引き済み=純粋な損失)。
+     * 記録しておけば次の起動時に払い戻せる(main.ts の recoverOpenSeats)。
+     */
+    noteSeat?(userId: string, tableId: string, stack: number): void;
+    clearSeat?(userId: string, tableId: string): void;
 }
 type Phase = 'waiting' | 'seed_window' | 'hand' | 'settling';
 export declare class Room {
@@ -108,8 +124,10 @@ export declare class Room {
     private seedSubmitted;
     private lastReveal;
     private actionDeadline;
-    /** 現在の手番の基本持ち時間(Triton Tempo: ストリートで変わる) */
+    /** 現在の手番の基本持ち時間 */
     private actionBaseMs;
+    /** 現在の手番に実際に与えられた総時間(クライアントの残り時間バーの分母) */
+    private actionTotalMs;
     private actionStartedAt;
     private timers;
     private eventCursor;
@@ -137,6 +155,22 @@ export declare class Room {
     /** 接続は生きているがユーザーが明示的に卓を降りる */
     stand(sessionId: string): ErrorCode | null;
     private cashOut;
+    /**
+     * 着席中スタックを永続化する。ハンドごと・着席ごとに呼ぶ。
+     * ここに書いておけば、サーバーが落ちても次の起動で残高へ払い戻せる。
+     * トーナメントのスタックは現金ではない(賞金は別途配分される)ので対象外。
+     */
+    private noteSeats;
+    /** 精算(bank.deposit)と着席記録の抹消をまとめて行う */
+    private payOutSeat;
+    /** 全員をその場で精算して席を空ける(サーバー終了時の駆け込み精算) */
+    cashOutAll(): void;
+    /**
+     * 切断猶予を過ぎた席を精算する。ハンド終了時(settle)だけに任せると、
+     * 以後ハンドが始まらない卓(全員退出など)でチップが永久に戻らないため、
+     * 定期チェックからも呼んでいる。
+     */
+    sweepExpiredSeats(): void;
     sit(sessionId: string, seatIndex: number | undefined, buyIn: number): ErrorCode | null;
     rebuy(sessionId: string, amount: number): ErrorCode | null;
     setSitOut(sessionId: string, sitOut: boolean): ErrorCode | null;
@@ -205,13 +239,17 @@ export declare class Room {
     /** いま公開されている場札での、勝負がついていない席の勝率・アウツを計算する */
     private computeRevealStats;
     /**
-     * Triton Tempo 方式の基本持ち時間。ストリートが深いほど判断が重いので長くする。
-     * cfg.actionTimeoutMs を既定値(15000)から変えている卓は、その値を全ストリートに使う。
+     * 1アクションの持ち時間。全ストリート・全卓で一律 ACTION_MS(60秒)。
+     *
+     * 以前は Triton Tempo 方式(プリフロップ15秒〜リバー30秒)＋タイムバンク(卓ごとに2〜6分)で、
+     * 「合計60秒ハードキャップ」という分かりにくい積み上げになっていた。
+     * 卓の設定に残っていた 360_000 等は"予備の貯金"であってアクション制限ではなかったが、
+     * 表示にも仕様にも出てこないため誤解のもとだったので、単純な一律60秒に統一した。
      */
     private tempoBaseMs;
     /** タイムバンクを全席に加算する(トーナメントの FT 到達ボーナス等) */
     grantTimeBank(ms: number): void;
-    /** 手番のタイマーを張り直す。基本時間を使い切ると、タイムバンクを1秒単位で消費する(Tempo方式) */
+    /** 手番のタイマーを張り直す。持ち時間は一律 60 秒(切断中の席だけ短くする) */
     private armActionTimer;
     private onActionTimeout;
     private finishHand;

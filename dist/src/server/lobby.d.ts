@@ -53,6 +53,31 @@ export declare class Lobby {
     constructor(cfg: LobbyConfig, transport: Transport, clock?: Scheduler);
     private bank;
     private io;
+    /**
+     * 前回のプロセスが精算せずに落ちた席のチップを残高へ払い戻す(起動時に一度)。
+     *
+     * 座席はメモリ上のオブジェクトなので、再起動すると卓上のチップは消える。
+     * バイインは永続残高から引き済みなので、放置するとプレイヤーの純損失になる
+     * (「立ち上げたら残高が減っている」の原因)。open_seats に記録しておいた額をここで返す。
+     * このプロセスで作った席はまだ1つも無いので、残っている行は全て前回ぶんと判断してよい。
+     */
+    private recoverOpenSeats;
+    /**
+     * 切断猶予を過ぎた席を定期的に精算する。
+     * ハンド終了時(settle)だけに任せると、以後ハンドが始まらない卓
+     * (相手が全員抜けた等)でチップが永久に戻らないため。
+     */
+    private startSeatSweeper;
+    private sweepTimer;
+    /**
+     * 掃除タイマーを1本張る。
+     * unref しておかないと、この繰り返しタイマーだけでイベントループが生き続け、
+     * Lobby を dispose しないコード(テスト等)でプロセスが終われなくなる
+     * (Gateway のハートビートが unref しているのと同じ理由)。
+     */
+    private arm;
+    /** サーバー終了時に全卓を精算する(再デプロイでチップを卓に置き去りにしない) */
+    cashOutAllTables(): void;
     /** 再接続トークンの署名鍵（cfg 未指定ならプロセス限り） */
     private get authKey();
     private authKeyCache;

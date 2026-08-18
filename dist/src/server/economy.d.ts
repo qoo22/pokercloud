@@ -56,6 +56,72 @@ export interface VipTier {
 export declare const VIP_TIERS: VipTier[];
 export declare function tierOf(points: number): VipTier;
 export declare function nextTier(points: number): VipTier | null;
+/** これ以下の残高までは素直に DAILY_RATE を掛ける(初中級者の体感を落とさない) */
+export declare const DAILY_KNEE = 2000000;
+/** 少額帯の支給率 */
+export declare const DAILY_RATE = 0.03;
+/** どれだけ持っていても、倍率を掛ける前の基礎額はここで頭打ち */
+export declare const DAILY_BASE_CAP = 1000000;
+/** 無一文でも最低これだけは配る(復帰支援) */
+export declare const DAILY_FLOOR = 5000;
+/**
+ * 所持チップから、デイリーボーナスの基礎額を求める(倍率を掛ける前の値)。
+ *
+ * DAILY_KNEE までは線形、その先は平方根で逓減させ、最後に絶対上限で止める。
+ * 平方根にするのは、残高が 100 倍になっても基礎額は 10 倍にしかならないため
+ * 「持っている人ほど得をする」度合いを大きく削れるから。
+ * 継ぎ目(chips = DAILY_KNEE)で値が飛ばないよう連続になっている。
+ */
+export declare function dailyBonusBase(chips: number): number;
+/** リールの絵柄。weight が大きいほど出やすい */
+export interface SlotSymbol {
+    key: string;
+    name: string;
+    weight: number;
+    /** 3 つ揃ったときの配当(賭けゴールド1あたりのチップ)。ベース倍率に掛かる */
+    payout3: number;
+    /** 2 つ揃ったときの配当 */
+    payout2: number;
+}
+/**
+ * 絵柄表(重みの合計は100)。
+ *
+ * 設計の狙い:
+ *   - 総当たり率 約48% … 半分近く何か当たるので回していて退屈しない
+ *   - 3つ揃い 約4.1%    … 「おっ」となる当たりが数十回に一度
+ *   - セブン揃い 約1/15,600 … 到達しうる頻度のジャックポット
+ *     (最初は 1/1,000,000 にしていたが、一生出ない当たりは表示する意味がないので緩めた)
+ *   - 期待配当 約0.70 … 賭け1ゴールドあたり約 14,000 チップ(倍率1.0のとき)
+ * 揃いにくい絵柄ほど配当が跳ねるので、当たりの手応えを残しつつ長期の払い出しは一定に保てる。
+ */
+export declare const SLOT_SYMBOLS: SlotSymbol[];
+/** 賭けられるゴールドの単位 */
+export declare const SLOT_BETS: readonly [1, 5, 10, 50];
+/** 賭け1ゴールドあたりの基準チップ(倍率1.0のときの目安払い出し) */
+export declare const SLOT_CHIPS_PER_GOLD = 20000;
+/** 1日に回せる上限(ゴールド量ではなく回数。無限回しの防止) */
+export declare const SLOT_DAILY_SPINS = 100;
+/**
+ * 払い出し倍率。VIPランクと連続ログイン日数で上がる(ユーザー要望の中核)。
+ *   VIP: ブロンズ1.0 → 最上位で +0.5 程度
+ *   連続ログイン: 1日ごと +4%、14日で頭打ち(+56%)
+ * 上限を設けているのは、倍率が青天井だと期待値がプラスに振れて無限にチップを産めるため。
+ */
+export declare function slotMultiplier(vipPoints: number, loginStreak: number): number;
+export interface SlotSpinResult {
+    ok: boolean;
+    error?: string;
+    /** 出目(絵柄キー3つ) */
+    reels?: string[];
+    bet?: number;
+    /** 獲得チップ(0 ならハズレ) */
+    won?: number;
+    multiplier?: number;
+    goldLeft?: number;
+    spinsLeft?: number;
+    /** 当たりの種類。演出の出し分けに使う */
+    kind?: 'none' | 'two' | 'three' | 'jackpot';
+}
 export interface MissionDef {
     id: string;
     name: string;
@@ -64,7 +130,31 @@ export interface MissionDef {
     /** パスの経験値 */
     rewardXp: number;
 }
+/**
+ * デイリーミッション。合計 60XP/日（28日で 1,680XP）になるよう配分してある。
+ *
+ * 意図的に採用していない条件（調査資料 §7 の「避けるべきミッション」）:
+ *   オールイン回数 / ベット総額 / 勝利チップ額 / 高レート強制 / 特定役の完成 /
+ *   連敗後の勝利 / ブラフ成功 / フレンドへのチップ送付 / 課金
+ * これらは不合理なプレイや過度なリスク、チップの付け替えを誘発し、
+ * 資金量の多い人ほど有利になってポーカーの戦略自体を壊すため。
+ * 逆に「フォールドを無効扱いにする」条件も置かない（正しいフォールドは戦略の一部）。
+ */
 export declare const DAILY_MISSIONS: MissionDef[];
+/**
+ * ウィークリーミッション。1 週あたり 500XP（4 週で 2,000XP）。
+ * デイリーより長い時間軸の目標を置くことで、毎日ログインできない人でも積み上がるようにする。
+ */
+export declare const WEEKLY_MISSIONS: MissionDef[];
+/**
+ * シーズンミッション（28日通しの長期目標）。合計 800XP。
+ * デイリー1,680 + ウィークリー2,000 + シーズン800 = 4,480、
+ * これに最終週のキャッチアップ増分（約320）を足して、獲得可能 約4,800XP になる。
+ * 完走に必要なのは 4,000 なので、4〜5日遊べない日があっても完走できる。
+ */
+export declare const SEASON_MISSIONS: MissionDef[];
+/** 未消化のデイリーを保持する日数。毎日ログインできなくても追いつけるようにする */
+export declare const MISSION_CARRY_DAYS = 7;
 export interface PassTier {
     tier: number;
     xpRequired: number;
@@ -78,8 +168,49 @@ export interface PassTier {
     };
 }
 export declare const PASS_PREMIUM_SKU: Sku;
-/** 30 ティア。無料トラックだけでも進むが、プレミアムは約 4 倍の総量になる */
+/** シーズンの長さ。短すぎず長すぎない 28 日（Zynga と同じ） */
+export declare const PASS_SEASON_DAYS = 28;
+/** 段階数 */
+export declare const PASS_TIER_COUNT = 40;
+/** 1 段階に必要な経験値 */
+export declare const PASS_XP_PER_TIER = 100;
+/** 完走に必要な経験値 */
+export declare const PASS_COMPLETE_XP: number;
+/**
+ * シーズン中に獲得しうる経験値の目安。完走に必要な 4,000 より多めにして、
+ * 4〜5 日遊べない日があっても完走できるようにする（必要消化率 約83%）。
+ */
+export declare const PASS_OBTAINABLE_XP = 4800;
+/** 完走後の周回報酬: この経験値ごとに 1 箱 */
+export declare const PASS_BONUS_BOX_XP = 200;
+/** 周回報酬の上限。チップのインフレを防ぐため頭打ちにする */
+export declare const PASS_BONUS_BOX_MAX = 5;
+/** 周回報酬 1 箱の中身 */
+export declare const PASS_BONUS_BOX_CHIPS = 120000;
+/** 指定時刻が属するシーズン ID */
+export declare function seasonIdAt(now: number): string;
+/** シーズンの期間・経過日数・残り日数・最終週かどうか */
+export declare function seasonWindowAt(now: number): {
+    id: string;
+    startsAt: number;
+    endsAt: number;
+    dayIndex: number;
+    daysLeft: number;
+    finalWeek: boolean;
+};
+/**
+ * 40 ティアの報酬表。
+ *
+ * 調査資料の配分（チップ 40〜45% / 限定コスメ 20〜25% / プレミアム通貨 5〜10%）に寄せてある。
+ * 意図的にこうしている点:
+ *   - 無料トラックは毎段階ではなく間隔を空ける（序盤だけは短い間隔で手応えを出す）
+ *   - プレミアムは原則毎段階に置く（買った瞬間から常に何かが起きる）
+ *   - 最終段階の目玉はチップではなく限定コスメ（チップは消えるが、コスメは残り続ける）
+ *   - プレミアムのゴールド総量は約 180（パス価格 980 円の 2〜3 割相当）で、
+ *     次のシーズンのパス購入やショップに還元できるようにする
+ */
 export declare const PASS_TIERS: PassTier[];
+/** 後方互換のための別名。現在は日付から決まるので seasonIdAt を使うこと */
 export declare const PASS_SEASON_ID = "S1";
 export interface GrantResult {
     chips: number;
@@ -141,6 +272,14 @@ export declare class Economy {
      * ログインボーナス。
      * 「残高が少ない人ほど相対的に多くもらえる」設計にして、
      * 破産からの復帰を助けつつ、上位者のインフレを抑える。
+     *
+     * 以前は所持チップの 3% を上限なしで配っていたため、ハイローラーほど桁違いに増えた
+     * (10億チップ×最上位ティアで 1 日 2 億超)。復帰支援という目的から外れ、
+     * 高額卓の経済も壊すので、下記の3段構えに変えた:
+     *   1. 少額帯はこれまで通り 3%(体感を落とさない)
+     *   2. 一定額(DAILY_KNEE)から上は平方根で逓減させる
+     *   3. さらに絶対上限(DAILY_BASE_CAP)で頭を打たせる
+     * 連続ログインと VIP の倍率はそのまま掛かるので、課金・継続の価値は保つ。
      */
     claimDailyBonus(userId: string): {
         ok: boolean;
@@ -149,9 +288,53 @@ export declare class Economy {
         error?: string;
     };
     dailyBonusAvailable(userId: string): boolean;
-    /** ハンド終了時などに進捗を進める。日付が変わっていれば自動でリセットする */
+    /** 現在のシーズン ID（日付から決まる。28日ごとに切り替わる） */
+    seasonId(): string;
+    /** 現在のシーズンの期間情報 */
+    season(): {
+        id: string;
+        startsAt: number;
+        endsAt: number;
+        dayIndex: number;
+        daysLeft: number;
+        finalWeek: boolean;
+    };
+    /** その週のキー（ウィークリーミッションのリセット単位。シーズン内の第何週か） */
+    private weekKey;
+    /**
+     * デイリーの「有効な日付」。
+     *
+     * 未消化のデイリーは MISSION_CARRY_DAYS 日ぶん保持する（調査資料 §4-1）。
+     * 毎日ログインしないと完走できない設計は義務感を生んで離脱につながるため、
+     * 「昨日の分が残っていれば今日でも進められる」ようにしている。
+     * 実装は「進捗の日付が保持期間内なら引き継ぐ」だけで足りる。
+     */
+    private carriedDay;
+    /** ハンド終了時などに進捗を進める。デイリーとウィークリーの両方を進める */
     advanceMission(userId: string, missionId: string, by?: number): void;
+    /** ウィークリーの進捗を進める（週が変わったら自動リセット） */
+    advanceWeekly(userId: string, missionId: string, by?: number): void;
+    /** シーズンミッションの進捗を進める（シーズンが変わったら自動リセット） */
+    advanceSeasonal(userId: string, missionId: string, by?: number): void;
+    seasonalStatus(userId: string): {
+        id: string;
+        name: string;
+        target: number;
+        progress: number;
+        rewardChips: number;
+        rewardXp: number;
+        claimed: boolean;
+    }[];
     missionStatus(userId: string): {
+        id: string;
+        name: string;
+        target: number;
+        progress: number;
+        rewardChips: number;
+        rewardXp: number;
+        claimed: boolean;
+    }[];
+    weeklyStatus(userId: string): {
         id: string;
         name: string;
         target: number;
@@ -166,6 +349,33 @@ export declare class Economy {
         xp?: number;
         error?: string;
     };
+    /** スロット画面に出す現在の状態(倍率の内訳・残り回数・絵柄表) */
+    slotState(userId: string): {
+        gold: number;
+        bets: (1 | 5 | 10 | 50)[];
+        symbols: {
+            key: string;
+            name: string;
+            payout3: number;
+            payout2: number;
+        }[];
+        multiplier: number;
+        vipTierName: string;
+        vipPart: number;
+        streak: number;
+        streakPart: number;
+        chipsPerGold: number;
+        spinsLeft: number;
+        dailySpins: number;
+    };
+    /** 重み付き抽選で 1 つの絵柄を引く */
+    private drawSymbol;
+    /**
+     * スロットを 1 回まわす。ゴールドを消費してチップを払い出す。
+     * 3 つ揃い > 2 つ揃い > ハズレ。倍率は VIP ランクと連続ログインで上がる。
+     * rnd を差し替えられるようにしてあるのはテストで出目を固定するため。
+     */
+    spinSlot(userId: string, bet: number, rnd?: () => number): SlotSpinResult;
     addPassXp(userId: string, xp: number): void;
     passStatus(userId: string): {
         seasonId: string;
@@ -173,6 +383,14 @@ export declare class Economy {
         tier: number;
         premium: boolean;
         nextTierXp: number | null;
+        daysLeft: number;
+        endsAt: number;
+        finalWeek: boolean;
+        completeXp: number;
+        obtainableXp: number;
+        boxesEarned: number;
+        boxesClaimed: number;
+        boxChips: number;
         tiers: {
             tier: number;
             xpRequired: number;
@@ -190,6 +408,18 @@ export declare class Economy {
         }[];
     };
     /**
+     * 「今プレミアムパスを買ったら、いますぐ受け取れる内容」を計算する（購入前の表示用）。
+     *
+     * 調査資料 §11 のとおり、「最大◯倍お得」より「実際にいま受け取れる中身」を出す方が信頼される。
+     * すでに到達済みのティアぶんが遡って解放されるので、シーズン後半ほどこの数字は大きくなり、
+     * 「もう遅いから買わない」という離脱を防げる。
+     */
+    passPurchasePreview(userId: string): {
+        chips: number;
+        gold: number;
+        tiers: number;
+    };
+    /**
      * 到達済みティアの報酬をまとめて受け取る。
      * プレミアムを後から買っても、それまでのティア分がさかのぼって受け取れる
      * （後半で買う障壁を下げるための設計）。
@@ -198,6 +428,7 @@ export declare class Economy {
         chips: number;
         gold: number;
         tiers: number[];
+        boxes: number;
     };
     /**
      * ハンドが終わるたびに呼ぶ。ミッション、パス経験値、貯金箱、VIP を一括で進める。
@@ -209,4 +440,9 @@ export declare class Economy {
         rakeContributed: number;
     }): void;
     onTournamentEntered(userId: string): void;
+    /**
+     * 経験値を加算する。最終週は取得量を増やして、出遅れた人・復帰した人が追いつけるようにする
+     * （調査資料 §12「最終週に獲得XPを増やす」）。
+     */
+    private catchUpRate;
 }

@@ -8,4 +8,5 @@
  * 唯一クライアントが計算するのが Provably Fair の検証。
  * これはサーバーを疑うための機能なので、サーバーの言うことを信じては意味がない。
  */
-export {};
+export declare function setSoundEnabled(on: boolean): void;
+export declare function isSoundEnabled(): boolean;

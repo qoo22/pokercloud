@@ -306,8 +306,8 @@ export class Tournament {
                 const l = this.currentLevel();
                 return { smallBlind: l.smallBlind, bigBlind: l.bigBlind, ante: l.ante };
             },
-            actionTimeoutMs: 15000,
-            timeBankMs: 150000, // Tempo方式: 150秒を秒単位で消費。FT到達で+90秒
+            // アクション時間はキャッシュ卓と同じ一律60秒(ACTION_MS)。
+            // ファイナルテーブル到達時だけ grantTimeBank で予備時間を配る
             seedWindowMs: 800,
             handIntervalMs: 1800,
         };

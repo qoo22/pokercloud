@@ -6,7 +6,7 @@
  * 実際のバグの大半はソケットではなくこの層に出るので、ここを高速にテストできることが重要。
  */
 import { MemoryStore } from './store.js';
-import { Economy, CHIP_PACKS, GOLD_PACKS, PASS_PREMIUM_SKU } from './economy.js';
+import { Economy, CHIP_PACKS, GOLD_PACKS, PASS_PREMIUM_SKU, PASS_TIERS } from './economy.js';
 import { Room, realScheduler } from './room.js';
 import { Tournament } from './tournament.js';
 import { PROTOCOL_VERSION, parseClientMessage, } from './protocol.js';
@@ -82,6 +82,9 @@ export class Lobby {
                 this.store.post(userId, 'chips', amount, 'table_cashout', ref);
             },
             balanceOf: (userId) => this.store.balance(userId, 'chips'),
+            // 卓の上にあるチップを台帳に記録しておく。サーバーが落ちても次の起動で払い戻せる
+            noteSeat: (userId, tableId, stack) => this.store.setOpenSeat(userId, tableId, stack),
+            clearSeat: (userId, tableId) => this.store.clearOpenSeat(userId, tableId),
         };
         this.bank = bank;
         this.io = io;
@@ -93,9 +96,80 @@ export class Lobby {
         for (const t of this.cfg.tournaments)
             this.createTournament(t);
         this.startTourScheduler();
+        this.recoverOpenSeats();
+        this.startSeatSweeper();
     }
     bank;
     io;
+    /**
+     * 前回のプロセスが精算せずに落ちた席のチップを残高へ払い戻す(起動時に一度)。
+     *
+     * 座席はメモリ上のオブジェクトなので、再起動すると卓上のチップは消える。
+     * バイインは永続残高から引き済みなので、放置するとプレイヤーの純損失になる
+     * (「立ち上げたら残高が減っている」の原因)。open_seats に記録しておいた額をここで返す。
+     * このプロセスで作った席はまだ1つも無いので、残っている行は全て前回ぶんと判断してよい。
+     */
+    recoverOpenSeats() {
+        let rows;
+        try {
+            rows = this.store.listOpenSeats();
+        }
+        catch {
+            return; // 旧DB(テーブル未作成)など。復旧できなくても起動は妨げない
+        }
+        if (!rows.length)
+            return;
+        let users = 0, total = 0;
+        for (const r of rows) {
+            if (r.stack > 0) {
+                this.store.post(r.userId, 'chips', r.stack, 'table_recover', `${r.tableId}:recover`);
+                users++;
+                total += r.stack;
+            }
+            this.store.clearOpenSeat(r.userId, r.tableId);
+        }
+        if (users > 0) {
+            console.log(`未精算だった卓上チップを払い戻しました: ${users}人 / ${total.toLocaleString()}チップ`);
+        }
+    }
+    /**
+     * 切断猶予を過ぎた席を定期的に精算する。
+     * ハンド終了時(settle)だけに任せると、以後ハンドが始まらない卓
+     * (相手が全員抜けた等)でチップが永久に戻らないため。
+     */
+    startSeatSweeper() {
+        const tick = () => {
+            for (const room of this.rooms.values()) {
+                try {
+                    room.sweepExpiredSeats();
+                }
+                catch { /* 1卓の失敗で全体を止めない */ }
+            }
+            this.sweepTimer = this.arm(tick);
+        };
+        this.sweepTimer = this.arm(tick);
+    }
+    sweepTimer = null;
+    /**
+     * 掃除タイマーを1本張る。
+     * unref しておかないと、この繰り返しタイマーだけでイベントループが生き続け、
+     * Lobby を dispose しないコード(テスト等)でプロセスが終われなくなる
+     * (Gateway のハートビートが unref しているのと同じ理由)。
+     */
+    arm(fn) {
+        const h = this.clock.setTimeout(fn, 15_000);
+        h?.unref?.();
+        return h;
+    }
+    /** サーバー終了時に全卓を精算する(再デプロイでチップを卓に置き去りにしない) */
+    cashOutAllTables() {
+        for (const room of this.rooms.values()) {
+            try {
+                room.cashOutAll();
+            }
+            catch { /* noop */ }
+        }
+    }
     /** 再接続トークンの署名鍵（cfg 未指定ならプロセス限り） */
     get authKey() {
         if (!this.authKeyCache) {
@@ -217,7 +291,9 @@ export class Lobby {
             }
         };
         tick();
-        setInterval(tick, 20_000);
+        // unref しないとこのインターバルだけでイベントループが生き続け、
+        // Lobby を dispose しないコード(テスト等)がプロセスを終了できなくなる
+        setInterval(tick, 20_000).unref?.();
     }
     /** ハンド結果を受けて、永続化・ミッション・パス経験値を進める */
     onHandResult(room, summary, seats) {
@@ -428,7 +504,7 @@ export class Lobby {
                     bigBlind: bb,
                     maxSeats: msg.maxSeats,
                     rakePercent: 0,
-                    timeBankMs: bb >= 1_000_000_000 ? 300_000 : bb >= 10_000_000 ? 240_000 : 180_000,
+                    // アクション時間は公開卓と同じ一律60秒(ACTION_MS)。タイムバンクの名残は置かない
                 };
                 const room = new Room(cfg, this.io, this.bank, this.clock);
                 room.hooks.onHandResult = (r, summary, seats) => this.onHandResult(r, summary, seats);
@@ -454,6 +530,7 @@ export class Lobby {
                         clearInterval(timer);
                     }
                 }, 120000);
+                timer.unref?.(); // 掃除タイマーだけでプロセスが終われなくならないように
                 this.transport.send(sessionId, { t: 'table.created', code, table: room.lobbyInfo() });
                 return;
             }
@@ -544,6 +621,24 @@ export class Lobby {
                 this.sendProfile(sessionId, s.userId);
                 return;
             }
+            case 'slot.state': {
+                this.transport.send(sessionId, { t: 'slot.info', slot: this.economy.slotState(s.userId) });
+                return;
+            }
+            case 'slot.spin': {
+                const r = this.economy.spinSlot(s.userId, msg.bet);
+                if (!r.ok)
+                    return this.err(sessionId, 'ILLEGAL_ACTION', r.error ?? '回せませんでした');
+                this.sendBalance(s.userId);
+                this.transport.send(sessionId, {
+                    t: 'slot.result',
+                    result: {
+                        reels: r.reels, bet: r.bet, won: r.won, multiplier: r.multiplier,
+                        kind: r.kind, goldLeft: r.goldLeft, spinsLeft: r.spinsLeft,
+                    },
+                });
+                return;
+            }
             case 'mission.claim': {
                 const r = this.economy.claimMission(s.userId, msg.missionId);
                 if (!r.ok)
@@ -561,14 +656,16 @@ export class Lobby {
             }
             case 'pass.claim': {
                 const r = this.economy.claimPassRewards(s.userId);
-                if (r.tiers.length === 0)
+                if (r.tiers.length === 0 && r.boxes === 0) {
                     return this.err(sessionId, 'ILLEGAL_ACTION', '受け取れる報酬がありません');
+                }
                 this.sendBalance(s.userId);
                 this.transport.send(sessionId, {
                     t: 'reward',
-                    title: `パス報酬（${r.tiers.length} ティア分）`,
+                    title: r.tiers.length ? `パス報酬（${r.tiers.length} ティア分）` : '完走ボーナス',
                     chips: r.chips,
                     gold: r.gold,
+                    detail: r.boxes > 0 ? `完走ボーナス箱 ${r.boxes} 個を含みます` : undefined,
                 });
                 this.sendProfile(sessionId, s.userId);
                 return;
@@ -627,12 +724,19 @@ export class Lobby {
                 priceJpy: PASS_PREMIUM_SKU.priceJpy,
                 owned: premiumOwned,
             },
+            vipPurchaseBonus: this.economy.vipStatus(userId).purchaseBonus,
+            recentPurchases: this.store.purchases(userId, 10).map((p) => ({
+                sku: p.sku,
+                name: this.economy.findSku(p.sku)?.name ?? p.sku,
+                priceJpy: p.priceJpy,
+                at: p.at,
+            })),
         };
     }
     profileView(userId) {
         const u = this.store.getUser(userId);
         const pass = this.economy.passStatus(userId);
-        const claimable = pass.tiers.some((t) => t.unlocked && (!t.claimedFree || (pass.premium && !t.claimedPremium)));
+        const claimable = pass.tiers.some((t) => t.unlocked && (!t.claimedFree || (pass.premium && !t.claimedPremium))) || pass.boxesEarned > pass.boxesClaimed;
         return {
             userId,
             name: u?.name ?? userId,
@@ -641,6 +745,8 @@ export class Lobby {
             vip: this.economy.vipStatus(userId),
             daily: { available: this.economy.dailyBonusAvailable(userId), streak: u?.loginStreak ?? 0 },
             missions: this.economy.missionStatus(userId),
+            weekly: this.economy.weeklyStatus(userId),
+            seasonal: this.economy.seasonalStatus(userId),
             pass: {
                 seasonId: pass.seasonId,
                 xp: pass.xp,
@@ -648,6 +754,15 @@ export class Lobby {
                 premium: pass.premium,
                 nextTierXp: pass.nextTierXp,
                 claimable,
+                tierCount: PASS_TIERS.length,
+                completeXp: pass.completeXp,
+                daysLeft: pass.daysLeft,
+                endsAt: pass.endsAt,
+                finalWeek: pass.finalWeek,
+                boxesEarned: pass.boxesEarned,
+                boxesClaimed: pass.boxesClaimed,
+                boxChips: pass.boxChips,
+                preview: this.economy.passPurchasePreview(userId),
             },
             piggyBank: u?.piggyBank ?? 0,
         };
@@ -759,6 +874,9 @@ export class Lobby {
         return sum;
     }
     dispose() {
+        if (this.sweepTimer !== null)
+            this.clock.clearTimeout(this.sweepTimer);
+        this.sweepTimer = null;
         for (const r of this.rooms.values())
             r.dispose();
         for (const t of this.tournaments.values())

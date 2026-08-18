@@ -150,7 +150,15 @@ export function parseClientMessage(raw) {
         case 'daily.claim':
         case 'pass.claim':
         case 'profile.get':
+        case 'slot.state':
             return { ok: true, msg: { t } };
+        case 'slot.spin': {
+            // 賭け金は整数のみ。使える額かどうかは経済側(SLOT_BETS)で最終判定する
+            const bet = Math.floor(Number(m.bet));
+            if (!Number.isFinite(bet) || bet <= 0)
+                return { ok: false, reason: 'bet が不正です' };
+            return { ok: true, msg: { t: 'slot.spin', bet } };
+        }
         case 'user.style': {
             // どちらも任意。bracelet は null（外す）を許可し、それ以外は b1〜b6 のみ
             const name = str('name', 24) ?? undefined;

@@ -1,8 +1,10 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryStore, SqliteStore } from '../src/server/store.js';
-import { Economy, CHIP_PACKS, GOLD_PACKS, VIP_TIERS, PASS_TIERS, PASS_PREMIUM_SKU, DAILY_MISSIONS, tierOf, nextTier, } from '../src/server/economy.js';
-const setup = (store, now = () => Date.UTC(2026, 7, 10, 12)) => {
+import { Economy, CHIP_PACKS, GOLD_PACKS, VIP_TIERS, PASS_TIERS, PASS_PREMIUM_SKU, DAILY_MISSIONS, tierOf, nextTier, dailyBonusBase, DAILY_KNEE, DAILY_RATE, DAILY_BASE_CAP, DAILY_FLOOR, SLOT_SYMBOLS, SLOT_BETS, SLOT_DAILY_SPINS, SLOT_CHIPS_PER_GOLD, slotMultiplier, } from '../src/server/economy.js';
+// 既定の「今」は、シーズンの最終週に当たらない日を選んである。
+// 最終週は経験値が 1.25 倍になる（キャッチアップ）ので、そこを踏むと期待値がズレる。
+const setup = (store, now = () => Date.UTC(2026, 7, 5, 12)) => {
     const s = store ?? new MemoryStore();
     s.createUser('u1', 'Alice');
     const e = new Economy(s, now);
@@ -244,17 +246,58 @@ describe('ミッション', () => {
             e.advanceMission('u1', 'win_hands');
         assert.equal(e.missionStatus('u1').find((m) => m.id === 'win_hands').progress, 5);
     });
-    test('日付が変わるとリセットされる', () => {
+    // 未消化のデイリーは 7 日ぶん持ち越す（調査資料 §4-1）。
+    // 毎日ログインしないと完走できない設計は義務感を生んで離脱につながるため、
+    // 「昨日の途中まで」が翌日以降も生きているようにしてある。
+    test('未消化のデイリーは 7 日以内なら引き継がれる', () => {
         const s = new MemoryStore();
         s.createUser('u1', 'A');
         let day = 0;
-        const e = new Economy(s, () => Date.UTC(2026, 7, 10 + day, 12));
-        for (let i = 0; i < 5; i++)
+        const e = new Economy(s, () => Date.UTC(2026, 7, 5 + day, 12));
+        for (let i = 0; i < 3; i++)
+            e.advanceMission('u1', 'win_hands');
+        assert.equal(e.missionStatus('u1').find((m) => m.id === 'win_hands').progress, 3);
+        day = 1;
+        assert.equal(e.missionStatus('u1').find((m) => m.id === 'win_hands').progress, 3, '翌日に進捗が消えている（持ち越しが効いていない）');
+        // 翌日に続きから進めて達成できる
+        for (let i = 0; i < 2; i++)
             e.advanceMission('u1', 'win_hands');
         assert.equal(e.missionStatus('u1').find((m) => m.id === 'win_hands').progress, 5);
-        day = 1;
-        assert.equal(e.missionStatus('u1').find((m) => m.id === 'win_hands').progress, 0, '翌日にリセットされていない');
+        assert.equal(e.claimMission('u1', 'win_hands').ok, true, '持ち越した進捗で受け取れない');
+    });
+    test('保持期間を過ぎたデイリーはリセットされる', () => {
+        const s = new MemoryStore();
+        s.createUser('u1', 'A');
+        let day = 0;
+        const e = new Economy(s, () => Date.UTC(2026, 7, 5 + day, 12));
+        for (let i = 0; i < 5; i++)
+            e.advanceMission('u1', 'win_hands');
+        day = 7; // MISSION_CARRY_DAYS を過ぎる
+        assert.equal(e.missionStatus('u1').find((m) => m.id === 'win_hands').progress, 0, '保持期間を過ぎても残っている（無期限に貯められてしまう）');
         assert.equal(e.claimMission('u1', 'win_hands').ok, false);
+    });
+    test('一度受け取ったデイリーは持ち越しで二重取りできない', () => {
+        const s = new MemoryStore();
+        s.createUser('u1', 'A');
+        let day = 0;
+        const e = new Economy(s, () => Date.UTC(2026, 7, 5 + day, 12));
+        for (let i = 0; i < 5; i++)
+            e.advanceMission('u1', 'win_hands');
+        assert.equal(e.claimMission('u1', 'win_hands').ok, true);
+        day = 1;
+        assert.equal(e.claimMission('u1', 'win_hands').ok, false, '翌日に同じ達成を再度受け取れてしまう');
+    });
+    test('ウィークリー・シーズンのミッションも進んで受け取れる', () => {
+        const { s, e } = setup();
+        for (let i = 0; i < 3; i++)
+            e.onTournamentEntered('u1');
+        const w = e.weeklyStatus('u1').find((m) => m.id === 'w_tournament');
+        assert.equal(w.progress, 3);
+        assert.equal(e.claimMission('u1', 'w_tournament').ok, true, 'ウィークリーを受け取れない');
+        assert.equal(e.claimMission('u1', 'w_tournament').ok, false, '二重に受け取れてしまう');
+        // シーズン側も同じ行動で進む
+        assert.equal(e.seasonalStatus('u1').find((m) => m.id === 's_tournament').progress, 3);
+        assert.ok(s.balance('u1', 'chips') > 0);
     });
 });
 describe('チャレンジパス', () => {
@@ -305,7 +348,7 @@ describe('ハンド終了時のフック', () => {
         assert.equal(st.find((m) => m.id === 'play_hands').progress, 5);
         assert.equal(st.find((m) => m.id === 'win_hands').progress, 5);
         assert.equal(st.find((m) => m.id === 'showdown_win').progress, 2, '目標値で頭打ちになるはず');
-        assert.equal(e.passStatus('u1').xp, 30);
+        assert.equal(e.passStatus('u1').xp, 10, 'ハンドあたりの経験値は控えめ(勝ち2/負け1)にしてある');
         assert.equal(s.getUser('u1').piggyBank, 10_000, 'レーキの半分が貯金箱に積まれるはず');
         assert.equal(s.getUser('u1').vipPoints, 20, 'プレイでも VIP ポイントが貯まるはず');
     });
@@ -390,7 +433,7 @@ describe('永続化（SQLite）', () => {
     test('進捗（ミッション・パス）が保存される', async () => {
         const s = await SqliteStore.open(':memory:');
         s.createUser('u1', 'A');
-        const e = new Economy(s);
+        const e = new Economy(s, () => Date.UTC(2026, 7, 5, 12));
         e.addPassXp('u1', 250);
         e.advanceMission('u1', 'play_hands', 5);
         assert.equal(e.passStatus('u1').tier, 2);
@@ -416,6 +459,184 @@ describe('永続化（SQLite）', () => {
             store.close();
         }
         assert.equal(results[0], results[1], `実装によって結果が違う:\n${results[0]}\n${results[1]}`);
+    });
+});
+// ---------------------------------------------------------------------------
+// デイリーボーナスの逓減
+//
+// 事件: 所持チップの 3% を上限なしで配っていたため、ハイローラーほど桁違いに増えた
+// (10億チップ×最上位ティアで 1 日 2 億超)。復帰支援という趣旨から外れ、高額卓の経済も壊す。
+// ここでは「初中級者の体感は据え置き」「上位帯は強く逓減」の両立を固定する。
+// ---------------------------------------------------------------------------
+describe('デイリーボーナスの逓減', () => {
+    test('無一文でも最低額はもらえる（復帰支援）', () => {
+        assert.equal(dailyBonusBase(0), DAILY_FLOOR);
+        assert.equal(dailyBonusBase(50_000), DAILY_FLOOR, '少額帯は最低額が効く');
+    });
+    test('KNEE までは従来どおりの率で、体感が落ちない', () => {
+        for (const chips of [200_000, 1_000_000, DAILY_KNEE]) {
+            assert.equal(dailyBonusBase(chips), Math.round(chips * DAILY_RATE), `${chips} チップの支給額が従来と変わっている`);
+        }
+    });
+    test('継ぎ目で額が飛ばない（連続している）', () => {
+        const below = dailyBonusBase(DAILY_KNEE - 1);
+        const at = dailyBonusBase(DAILY_KNEE);
+        const above = dailyBonusBase(DAILY_KNEE + 1);
+        assert.ok(Math.abs(at - below) <= 1, `継ぎ目の手前で飛んでいる: ${below} → ${at}`);
+        assert.ok(Math.abs(above - at) <= 1, `継ぎ目の直後で飛んでいる: ${at} → ${above}`);
+    });
+    test('KNEE より上は逓減する（残高100倍でも支給は10倍まで）', () => {
+        const a = dailyBonusBase(DAILY_KNEE * 4);
+        const b = dailyBonusBase(DAILY_KNEE);
+        // 平方根なので残高4倍 → 支給2倍
+        assert.ok(a / b < 2.05 && a / b > 1.95, `逓減していない: ${b} → ${a}`);
+    });
+    test('どれだけ持っていても基礎額は上限で頭打ち', () => {
+        assert.equal(dailyBonusBase(1e9), DAILY_BASE_CAP);
+        assert.equal(dailyBonusBase(1e12), DAILY_BASE_CAP, '兆単位でも上限を超えない');
+        assert.equal(dailyBonusBase(Number.MAX_SAFE_INTEGER), DAILY_BASE_CAP);
+    });
+    test('単調増加する（持っているほど損はしない）', () => {
+        let prev = -1;
+        for (const c of [0, 1e5, 1e6, 2e6, 1e7, 1e8, 1e9, 1e10]) {
+            const v = dailyBonusBase(c);
+            assert.ok(v >= prev, `${c} で減少した: ${prev} → ${v}`);
+            prev = v;
+        }
+    });
+    test('ハイローラーの実支給が旧実装より桁違いに小さい', () => {
+        const chips = 1_000_000_000;
+        const old = Math.max(5_000, Math.round(chips * 0.03)); // 旧実装の基礎額
+        assert.ok(dailyBonusBase(chips) * 25 < old, 'ハイローラーの支給が十分に抑えられていない');
+    });
+    test('実際の受け取りでも上限が効く（倍率込み）', () => {
+        const { s, e } = setup();
+        s.post('u1', 'chips', 1_000_000_000, 'adjustment');
+        // 最上位ティア相当まで VIP を積む
+        s.updateUser('u1', { vipPoints: VIP_TIERS[VIP_TIERS.length - 1].minPoints, loginStreak: 7 });
+        const r = e.claimDailyBonus('u1');
+        assert.equal(r.ok, true);
+        // 倍率の上限は 連続7日(2.05) × 最上位ティア。それでも1000万に届かない
+        assert.ok(r.amount < 10_000_000, `倍率込みでも高すぎる: ${r.amount}`);
+        assert.ok(r.amount > DAILY_BASE_CAP, '倍率が効いていない');
+    });
+});
+// ---------------------------------------------------------------------------
+// ゴールドスロット
+//
+// ゴールドは長らく「貯まるだけで使い道がない」通貨だったので、唯一の消費先として追加した。
+// 倍率が VIP ランクと連続ログインで上がるのが要件の中核。
+// 賭博的な要素なので「賭けた分は必ず引かれる」「上限を超えて回せない」を厳密に固定する。
+// ---------------------------------------------------------------------------
+describe('ゴールドスロット', () => {
+    const slotSetup = () => {
+        const { s, e } = setup();
+        s.post('u1', 'gold', 1000, 'adjustment');
+        return { s, e };
+    };
+    /** 常に同じ絵柄を引かせる（先頭の絵柄＝chip が 3 つ揃う） */
+    const alwaysFirst = () => 0.0001;
+    test('絵柄の重みは正で、配当は揃いにくいものほど大きい', () => {
+        for (const sym of SLOT_SYMBOLS)
+            assert.ok(sym.weight > 0, `${sym.key} の重みが 0 以下`);
+        for (let i = 1; i < SLOT_SYMBOLS.length; i++) {
+            assert.ok(SLOT_SYMBOLS[i].weight <= SLOT_SYMBOLS[i - 1].weight, '重みが単調減少していない');
+            assert.ok(SLOT_SYMBOLS[i].payout3 > SLOT_SYMBOLS[i - 1].payout3, '配当が単調増加していない');
+        }
+    });
+    test('ゴールドが引かれ、チップが払い出される', () => {
+        const { s, e } = slotSetup();
+        const before = s.balance('u1', 'gold');
+        const r = e.spinSlot('u1', 5, alwaysFirst);
+        assert.equal(r.ok, true, r.error);
+        assert.equal(s.balance('u1', 'gold'), before - 5, '賭けたゴールドが引かれていない');
+        assert.equal(r.kind, 'three');
+        assert.ok(r.won > 0, '3つ揃いなのに払い出しが無い');
+        assert.equal(s.balance('u1', 'chips'), r.won, 'チップが入っていない');
+        assert.equal(s.audit().ok, true, '台帳が壊れた');
+    });
+    test('ゴールドが足りなければ回せない（残高も動かない）', () => {
+        const { s, e } = setup(); // ゴールド 0
+        const r = e.spinSlot('u1', 5);
+        assert.equal(r.ok, false);
+        assert.equal(s.balance('u1', 'gold'), 0);
+        assert.equal(s.balance('u1', 'chips'), 0, 'ハズレでもチップが動いてはいけない');
+    });
+    test('決められた賭け金以外は拒否される', () => {
+        const { s, e } = slotSetup();
+        for (const bad of [0, 3, 7, 999, -5]) {
+            assert.equal(e.spinSlot('u1', bad).ok, false, `${bad} が通ってしまった`);
+        }
+        assert.equal(s.balance('u1', 'gold'), 1000, '拒否されたのにゴールドが減っている');
+        for (const good of SLOT_BETS)
+            assert.equal(e.spinSlot('u1', good).ok, true, `${good} が弾かれた`);
+    });
+    test('1 日の回数上限を超えて回せない', () => {
+        const { s, e } = slotSetup();
+        s.post('u1', 'gold', 10_000, 'adjustment');
+        for (let i = 0; i < SLOT_DAILY_SPINS; i++) {
+            assert.equal(e.spinSlot('u1', 1).ok, true, `${i + 1} 回目で失敗した`);
+        }
+        const over = e.spinSlot('u1', 1);
+        assert.equal(over.ok, false, '上限を超えて回せてしまった');
+        const goldBefore = s.balance('u1', 'gold');
+        e.spinSlot('u1', 1);
+        assert.equal(s.balance('u1', 'gold'), goldBefore, '上限超過でゴールドが減っている');
+    });
+    test('倍率は VIP ランクと連続ログインで上がる（要件の中核）', () => {
+        const base = slotMultiplier(0, 0);
+        assert.equal(base, 1, 'ブロンズ・連続0日の倍率が 1 でない');
+        assert.ok(slotMultiplier(VIP_TIERS[VIP_TIERS.length - 1].minPoints, 0) > base, 'VIP で倍率が上がらない');
+        assert.ok(slotMultiplier(0, 14) > base, '連続ログインで倍率が上がらない');
+        // 両方効くと更に上がる
+        const both = slotMultiplier(VIP_TIERS[VIP_TIERS.length - 1].minPoints, 14);
+        assert.ok(both > slotMultiplier(0, 14) && both > slotMultiplier(VIP_TIERS[VIP_TIERS.length - 1].minPoints, 0));
+    });
+    test('連続ログインの倍率は青天井にならない', () => {
+        assert.equal(slotMultiplier(0, 14), slotMultiplier(0, 9999), '連続日数の上限が効いていない');
+    });
+    test('倍率が高いほど同じ出目で多く払い出される', () => {
+        const a = setup();
+        a.s.post('u1', 'gold', 100, 'adjustment');
+        const b = setup();
+        b.s.post('u1', 'gold', 100, 'adjustment');
+        b.s.updateUser('u1', { vipPoints: VIP_TIERS[VIP_TIERS.length - 1].minPoints, loginStreak: 14 });
+        const ra = a.e.spinSlot('u1', 5, alwaysFirst);
+        const rb = b.e.spinSlot('u1', 5, alwaysFirst);
+        assert.deepEqual(ra.reels, rb.reels, '同じ出目になっていない（比較の前提が崩れた）');
+        assert.ok(rb.won > ra.won, 'ランクが高いのに払い出しが増えていない');
+    });
+    test('状態表示に倍率の内訳と残り回数が出る', () => {
+        const { s, e } = slotSetup();
+        s.updateUser('u1', { loginStreak: 5 });
+        const st = e.slotState('u1');
+        assert.equal(st.gold, 1000);
+        assert.equal(st.spinsLeft, SLOT_DAILY_SPINS);
+        assert.equal(st.streak, 5);
+        assert.ok(st.multiplier >= 1);
+        assert.equal(st.chipsPerGold, SLOT_CHIPS_PER_GOLD);
+        e.spinSlot('u1', 1);
+        assert.equal(e.slotState('u1').spinsLeft, SLOT_DAILY_SPINS - 1, '残り回数が減っていない');
+    });
+    test('長期の払い出しが設計値に収まる（チップの過剰発行を防ぐ）', () => {
+        const { s, e } = setup();
+        s.post('u1', 'gold', 1_000_000, 'adjustment');
+        let seed = 987654321;
+        const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+        let spent = 0, won = 0;
+        const N = 5000;
+        for (let i = 0; i < N; i++) {
+            s.setProgress('u1', 'slot:spins', 0, '2026-08-10'); // 回数上限は統計の邪魔なので都度戻す
+            const r = e.spinSlot('u1', 1, rnd);
+            if (!r.ok)
+                break;
+            spent += r.bet;
+            won += r.won;
+        }
+        const perGold = won / spent;
+        // 設計値は約 14,000。乱数のブレを見て広めに取る
+        assert.ok(perGold > SLOT_CHIPS_PER_GOLD * 0.45 && perGold < SLOT_CHIPS_PER_GOLD * 1.05, `1ゴールドあたりの払い出しが設計から外れている: ${Math.round(perGold)}`);
+        assert.equal(s.audit().ok, true);
     });
 });
 //# sourceMappingURL=economy.test.js.map

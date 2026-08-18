@@ -12,7 +12,7 @@
  */
 import { parseCard } from '../cards.js';
 import { evaluateBest, HandCategory } from '../evaluator.js';
-import { gtoPreflop, gtoPostflop, positionLabel, VILLAIN_PRE, loadTunedParams } from './botgto.js';
+import { gtoPreflop, gtoPostflop, positionLabel, VILLAIN_PRE, loadTunedParams, loadBlueprint } from './botgto.js';
 const NAMES = [
     'マグロ半額', 'yuki_0217', 'ぽんず。', 'DarkFlame猫', 'noodle_master', 'Sio*Ramen',
     'kk_88', 'ひよこ隊長', 'Zephyr', 'たまねぎ王子', 'runa_luna', 'ガチ勢のフリ',
@@ -586,6 +586,20 @@ class Bot {
                     (this.aggBySeat.get(x.seat)?.size ?? 0) > (this.aggBySeat.get(villain.seat)?.size ?? 0)))
                 villain = x;
         }
+        // 3人残りリバー用: アクション順(SB始まり)に並べた全員のレンジ/自分のindex/ベット者を作る
+        let multiwaySpecs;
+        let heroOrder;
+        let bettorOrder;
+        let multiwayTightens;
+        if (st.street === 'river' && active.length === 3) {
+            const ordered = [...active].sort((a, b) => order(a.seat) - order(b.seat));
+            multiwaySpecs = ordered.map((x) => x.seat === st.yourSeat ? (this.myPreSpec ?? VILLAIN_PRE.bbDefend)
+                : (this.preRange.get(x.seat) ?? VILLAIN_PRE.bbDefend));
+            multiwayTightens = ordered.map((x) => x.seat === st.yourSeat ? this.myAggSet.size : (this.aggBySeat.get(x.seat)?.size ?? 0));
+            heroOrder = ordered.findIndex((x) => x.seat === st.yourSeat);
+            const bi = ordered.findIndex((x) => x.seat !== st.yourSeat && x.streetBet > 0);
+            bettorOrder = bi >= 0 ? bi : null;
+        }
         return gtoPostflop({
             hole, board,
             street: st.street === 'flop' || st.street === 'turn' || st.street === 'river' ? st.street : 'river',
@@ -602,6 +616,7 @@ class Bot {
             heroSpec: this.myPreSpec,
             heroAggStreets: this.myAggSet.size,
             heroStreetBet: me.streetBet,
+            multiwaySpecs, heroOrder, bettorOrder, multiwayTightens,
         });
     }
     /** GTOの推奨アクションを合法手に丸めて送信する */
@@ -672,6 +687,11 @@ export function startBots(url) {
     void loadTunedParams().then((p) => {
         if (p)
             console.log(`ボット: 自己学習パラメータを読み込みました (${p})`);
+    });
+    // フロップ・ブループリント(事前計算した頻出フロップの均衡表)があれば読み込む
+    void loadBlueprint().then((p) => {
+        if (p)
+            console.log(`ボット: フロップ・ブループリントを読み込みました (${p})`);
     });
     // 群れ全体の規模係数。POKER_BOT_SCALE=0.5 で半分、2 で倍(既定1)
     const SCALE = Math.max(0.25, Math.min(3, Number(process.env.POKER_BOT_SCALE ?? 1) || 1));

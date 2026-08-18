@@ -20,9 +20,21 @@ import { showdownEquity, outsFor, currentLeaders } from '../../solo/showdown.js'
 import { heroEquityVsUnknown } from '../../solo/equity.js';
 export const realScheduler = {
     now: () => Date.now(),
-    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    setTimeout: (fn, ms) => {
+        const h = setTimeout(fn, ms);
+        // unref しておかないと、卓の手番タイマー(60秒)が再アームされ続ける限り
+        // イベントループが終われず、Room を dispose しないコード(テスト等)がハングする。
+        // 本番プロセスは HTTP/WebSocket サーバーのハンドルで生き続けるので影響しない
+        h.unref?.();
+        return h;
+    },
     clearTimeout: (h) => clearTimeout(h),
 };
+/**
+ * 1アクションの持ち時間(ミリ秒)。全ストリート・全卓で共通。
+ * ここを変えるだけで全卓のアクション制限が変わる(卓ごとの上書きはしない方針)。
+ */
+export const ACTION_MS = 60_000;
 // ---------------------------------------------------------------------------
 export class Room {
     io;
@@ -43,8 +55,10 @@ export class Room {
     seedSubmitted = new Set();
     lastReveal = null;
     actionDeadline = null;
-    /** 現在の手番の基本持ち時間(Triton Tempo: ストリートで変わる) */
-    actionBaseMs = 15000;
+    /** 現在の手番の基本持ち時間 */
+    actionBaseMs = ACTION_MS;
+    /** 現在の手番に実際に与えられた総時間(クライアントの残り時間バーの分母) */
+    actionTotalMs = ACTION_MS;
     actionStartedAt = null;
     timers = [];
     eventCursor = 0;
@@ -66,8 +80,8 @@ export class Room {
             maxBuyInBB: 100,
             rakePercent: 0.04,
             rakeCapBB: 4,
-            actionTimeoutMs: 15000,
-            timeBankMs: 60000,
+            actionTimeoutMs: ACTION_MS,
+            timeBankMs: 0,
             seedWindowMs: 1200,
             handIntervalMs: 2500,
             disconnectGraceMs: 30000,
@@ -176,9 +190,58 @@ export class Room {
             this.bank.deposit(seat.userId, seat.stack, `${this.cfg.tableId}:cashout`);
             this.sendBalanceTo(seat.userId);
         }
+        this.bank.clearSeat?.(seat.userId, this.cfg.tableId); // 精算済み → 復旧対象から外す
         this.seats[seat.seat] = null;
         this.broadcastState();
         this.maybeStartHand();
+    }
+    /**
+     * 着席中スタックを永続化する。ハンドごと・着席ごとに呼ぶ。
+     * ここに書いておけば、サーバーが落ちても次の起動で残高へ払い戻せる。
+     * トーナメントのスタックは現金ではない(賞金は別途配分される)ので対象外。
+     */
+    noteSeats() {
+        if (!this.bank.noteSeat || this.isTournament)
+            return;
+        for (const s of this.seats)
+            if (s)
+                this.bank.noteSeat(s.userId, this.cfg.tableId, s.stack);
+    }
+    /** 精算(bank.deposit)と着席記録の抹消をまとめて行う */
+    payOutSeat(s) {
+        if (s.stack > 0)
+            this.bank.deposit(s.userId, s.stack, `${this.cfg.tableId}:cashout`);
+        this.bank.clearSeat?.(s.userId, this.cfg.tableId);
+        this.sendBalanceTo(s.userId);
+        this.seats[s.seat] = null;
+    }
+    /** 全員をその場で精算して席を空ける(サーバー終了時の駆け込み精算) */
+    cashOutAll() {
+        if (this.isTournament)
+            return;
+        for (const s of this.seats)
+            if (s)
+                this.payOutSeat(s);
+    }
+    /**
+     * 切断猶予を過ぎた席を精算する。ハンド終了時(settle)だけに任せると、
+     * 以後ハンドが始まらない卓(全員退出など)でチップが永久に戻らないため、
+     * 定期チェックからも呼んでいる。
+     */
+    sweepExpiredSeats() {
+        if (this.isTournament)
+            return;
+        let swept = false;
+        for (const s of this.seats) {
+            if (!s || this.isInCurrentHand(s.seat))
+                continue;
+            if (!this.isDisconnectExpired(s) && !s.standPending)
+                continue;
+            this.payOutSeat(s);
+            swept = true;
+        }
+        if (swept)
+            this.broadcastState();
     }
     // -------------------------------------------------------------------------
     // 着席・バイイン
@@ -219,6 +282,8 @@ export class Room {
             straddleArmed: false,
             bracelet: this.cosmetics.get(m.userId) ?? null,
         };
+        // 残高から引いた分を「卓の上にある」と記録する。この直後に落ちても払い戻せる
+        this.bank.noteSeat?.(m.userId, this.cfg.tableId, buyIn);
         this.sendBalanceTo(m.userId);
         this.broadcastState();
         this.maybeStartHand();
@@ -240,6 +305,7 @@ export class Room {
         if (!this.bank.withdraw(m.userId, amount, `${this.cfg.tableId}:rebuy`))
             return 'INSUFFICIENT_FUNDS';
         seat.stack += amount;
+        this.bank.noteSeat?.(m.userId, this.cfg.tableId, seat.stack);
         this.sendBalanceTo(m.userId);
         this.broadcastState();
         this.maybeStartHand();
@@ -642,18 +708,15 @@ export class Room {
         });
     }
     /**
-     * Triton Tempo 方式の基本持ち時間。ストリートが深いほど判断が重いので長くする。
-     * cfg.actionTimeoutMs を既定値(15000)から変えている卓は、その値を全ストリートに使う。
+     * 1アクションの持ち時間。全ストリート・全卓で一律 ACTION_MS(60秒)。
+     *
+     * 以前は Triton Tempo 方式(プリフロップ15秒〜リバー30秒)＋タイムバンク(卓ごとに2〜6分)で、
+     * 「合計60秒ハードキャップ」という分かりにくい積み上げになっていた。
+     * 卓の設定に残っていた 360_000 等は"予備の貯金"であってアクション制限ではなかったが、
+     * 表示にも仕様にも出てこないため誤解のもとだったので、単純な一律60秒に統一した。
      */
     tempoBaseMs() {
-        if (this.cfg.actionTimeoutMs !== 15000)
-            return this.cfg.actionTimeoutMs;
-        switch (this.hand?.street) {
-            case 'preflop': return 15000;
-            case 'flop': return 20000;
-            case 'turn': return 25000;
-            default: return 30000; // river / それ以外
-        }
+        return this.cfg.actionTimeoutMs;
     }
     /** タイムバンクを全席に加算する(トーナメントの FT 到達ボーナス等) */
     grantTimeBank(ms) {
@@ -662,7 +725,7 @@ export class Room {
                 s.timeBankMs += ms;
         this.broadcastState();
     }
-    /** 手番のタイマーを張り直す。基本時間を使い切ると、タイムバンクを1秒単位で消費する(Tempo方式) */
+    /** 手番のタイマーを張り直す。持ち時間は一律 60 秒(切断中の席だけ短くする) */
     armActionTimer() {
         this.clearTimers();
         const h = this.hand;
@@ -670,15 +733,17 @@ export class Room {
             return;
         const seat = this.seats[this.tableSeatOf(h.actingSeat)];
         const base = this.tempoBaseMs();
+        // タイムバンクは既定 0(＝全卓きっかり60秒)。トーナメントのFT特典など、
+        // 明示的に配ったときだけ上乗せされるが、下のハードキャップを超えることはない
         const bank = seat?.timeBankMs ?? 0;
         this.actionBaseMs = base;
         this.actionStartedAt = this.clock.now();
-        // 切断中のプレイヤーは待たない。復帰の余地は残しつつ短くする。
-        // 円滑な進行のため、タイムバンクを含めても 1 アクションは最大 60 秒でハードキャップする
-        const HARD_CAP_MS = 60_000;
-        const total = seat?.disconnectedAt !== null && seat !== null
+        // 卓が固まらないよう、どんな設定でも1アクションは ACTION_MS(60秒)を超えない。
+        // 切断中のプレイヤーは待たない(復帰の余地は残しつつ短くする)
+        const total = seat !== null && seat.disconnectedAt !== null
             ? Math.min(base, 3000)
-            : Math.min(base + bank, HARD_CAP_MS);
+            : Math.min(base + bank, ACTION_MS);
+        this.actionTotalMs = total;
         this.actionDeadline = this.clock.now() + total;
         this.schedule(() => this.onActionTimeout(), total);
     }
@@ -810,20 +875,17 @@ export class Room {
                 continue; // 以下はキャッシュゲーム専用の後片付け
             // 「降りる」を予約していた人はここで精算
             if (s.standPending) {
-                this.bank.deposit(s.userId, s.stack, `${this.cfg.tableId}:cashout`);
-                this.sendBalanceTo(s.userId);
-                this.seats[s.seat] = null;
+                this.payOutSeat(s);
                 continue;
             }
             // 猶予を過ぎた切断者は席を引き払う
-            if (this.isDisconnectExpired(s)) {
-                this.bank.deposit(s.userId, s.stack, `${this.cfg.tableId}:cashout`);
-                this.sendBalanceTo(s.userId);
-                this.seats[s.seat] = null;
-            }
+            if (this.isDisconnectExpired(s))
+                this.payOutSeat(s);
         }
         // 脱落者の処理と卓の再編成は主催側（Tournament）に任せる
         this.hooks.onSettled?.(this, busted);
+        // ハンドが終わってスタックが動いたので、着席記録を最新化する(落ちても復旧できるように)
+        this.noteSeats();
         this.broadcastState();
         this.maybeStartHand();
     }
@@ -1003,6 +1065,7 @@ export class Room {
             yourHand,
             yourEquity,
             baseActionMs: this.actionBaseMs,
+            actionTotalMs: this.actionTotalMs,
         };
     }
     lobbyInfo() {

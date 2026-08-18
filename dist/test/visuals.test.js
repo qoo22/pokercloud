@@ -72,9 +72,17 @@ describe('カード面の構造', () => {
         assert.ok(cardFace('♠A', { extra: 'dealing' }).includes('dealing'));
         assert.ok(cardBack({ extra: 'flipping' }).includes('flipping'));
     });
-    test('ランク文字がそのまま出る', () => {
+    test('ランク文字がそのまま出る（T はトランプ慣習どおり 10 表記）', () => {
         for (const r of RANKS) {
-            assert.ok(cardFace('♣' + r).includes(`<b>${r}</b>`), `${r} の指数が出ていない`);
+            const html = cardFace('♣' + r);
+            if (r === 'T') {
+                // T は実物のカードに合わせて「10」で描く。2文字なので wide クラスで縮めて角に収める
+                assert.ok(html.includes('>10</b>'), 'T の指数が 10 表記で出ていない');
+                assert.ok(html.includes('class="wide"'), '2文字ランクの縮小クラスが無い');
+            }
+            else {
+                assert.ok(html.includes(`<b>${r}</b>`), `${r} の指数が出ていない`);
+            }
         }
     });
 });

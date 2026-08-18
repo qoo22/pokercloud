@@ -44,8 +44,8 @@ catch (e) {
 }
 // 仕様書のブラインド階段 Lv1〜6 に対応
 const tables = [
-    { tableId: 'micro-5', name: 'マイクロ 5人卓', smallBlind: 25, bigBlind: 50, maxSeats: 5, rakePercent: 0, timeBankMs: 120_000 },
-    { tableId: 'low-6', name: 'ロー 6人卓', smallBlind: 50, bigBlind: 100, maxSeats: 6, rakePercent: 0, timeBankMs: 120_000 },
+    { tableId: 'micro-5', name: 'マイクロ 5人卓', smallBlind: 25, bigBlind: 50, maxSeats: 5, rakePercent: 0 },
+    { tableId: 'low-6', name: 'ロー 6人卓', smallBlind: 50, bigBlind: 100, maxSeats: 6, rakePercent: 0 },
     {
         tableId: 'straddle-6',
         name: 'ストラドル卓 6人',
@@ -57,16 +57,16 @@ const tables = [
         straddleAllowed: true,
         maxStraddles: 2,
     },
-    { tableId: 'mid-9', name: 'ミドル 9人卓', smallBlind: 250, bigBlind: 500, maxSeats: 9, rakePercent: 0.03, rakeCapBB: 3, timeBankMs: 150_000 },
-    { tableId: 'high-6', name: 'ハイ 6人卓', smallBlind: 1000, bigBlind: 2000, maxSeats: 6, rakePercent: 0.04, rakeCapBB: 4, timeBankMs: 180_000 },
+    { tableId: 'mid-9', name: 'ミドル 9人卓', smallBlind: 250, bigBlind: 500, maxSeats: 9, rakePercent: 0.03, rakeCapBB: 3 },
+    { tableId: 'high-6', name: 'ハイ 6人卓', smallBlind: 1000, bigBlind: 2000, maxSeats: 6, rakePercent: 0.04, rakeCapBB: 4 },
     // ここから高額ステークス（参考アプリのステークス階段。最上位はバイイン 50T〜250T）
-    { tableId: 'hr-6', name: 'ハイローラー', smallBlind: 5_000_000, bigBlind: 10_000_000, maxSeats: 6, rakePercent: 0.04, rakeCapBB: 4, timeBankMs: 240_000 },
-    { tableId: 'whale-6', name: 'クジラ卓', smallBlind: 25_000_000, bigBlind: 50_000_000, maxSeats: 6, rakePercent: 0.04, rakeCapBB: 4, timeBankMs: 240_000 },
-    { tableId: 'legend-6', name: 'レジェンド', smallBlind: 250_000_000, bigBlind: 500_000_000, maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5, timeBankMs: 300_000 },
-    { tableId: 'mil-6', name: 'ミリオネア', smallBlind: 2_500_000_000, bigBlind: 5_000_000_000, maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5, timeBankMs: 300_000 },
-    { tableId: 'bil-6', name: 'ビリオネア', smallBlind: 25_000_000_000, bigBlind: 50_000_000_000, maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5, timeBankMs: 360_000 },
-    { tableId: 'titan-6', name: 'タイタン', smallBlind: 250_000_000_000, bigBlind: 500_000_000_000, maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5, timeBankMs: 360_000 },
-    { tableId: 'gods-9', name: '神々の卓', smallBlind: 1_250_000_000_000, bigBlind: 2_500_000_000_000, maxSeats: 9, rakePercent: 0.05, rakeCapBB: 5, timeBankMs: 360_000 },
+    { tableId: 'hr-6', name: 'ハイローラー', smallBlind: 5_000_000, bigBlind: 10_000_000, maxSeats: 6, rakePercent: 0.04, rakeCapBB: 4 },
+    { tableId: 'whale-6', name: 'クジラ卓', smallBlind: 25_000_000, bigBlind: 50_000_000, maxSeats: 6, rakePercent: 0.04, rakeCapBB: 4 },
+    { tableId: 'legend-6', name: 'レジェンド', smallBlind: 250_000_000, bigBlind: 500_000_000, maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5 },
+    { tableId: 'mil-6', name: 'ミリオネア', smallBlind: 2_500_000_000, bigBlind: 5_000_000_000, maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5 },
+    { tableId: 'bil-6', name: 'ビリオネア', smallBlind: 25_000_000_000, bigBlind: 50_000_000_000, maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5 },
+    { tableId: 'titan-6', name: 'タイタン', smallBlind: 250_000_000_000, bigBlind: 500_000_000_000, maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5 },
+    { tableId: 'gods-9', name: '神々の卓', smallBlind: 1_250_000_000_000, bigBlind: 2_500_000_000_000, maxSeats: 9, rakePercent: 0.05, rakeCapBB: 5 },
 ];
 const tournaments = [
     {
@@ -227,6 +227,14 @@ if (process.env.POKER_BOTS !== 'off') {
 }
 const shutdown = async () => {
     console.log('\n終了処理中...');
+    // 卓に残っているチップを先に残高へ戻す。座席はメモリ上にしか無いので、
+    // ここで精算しないと再デプロイのたびにプレイヤーのチップが卓ごと消える
+    try {
+        gateway.lobby.cashOutAllTables();
+    }
+    catch (e) {
+        console.warn('卓の精算に失敗しました:', e.message);
+    }
     await gateway.close();
     store.close();
     process.exit(0);

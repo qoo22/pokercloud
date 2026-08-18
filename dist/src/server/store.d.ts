@@ -15,7 +15,13 @@
  * 最小限の機能だけなので、将来 better-sqlite3 や Postgres へ移すのも容易にしてある。
  */
 export type Currency = 'chips' | 'gold';
-export type LedgerReason = 'signup_bonus' | 'table_buyin' | 'table_cashout' | 'table_rebuy' | 'tournament_buyin' | 'tournament_prize' | 'purchase' | 'daily_bonus' | 'mission_reward' | 'pass_reward' | 'piggy_bank' | 'vip_reward' | 'adjustment';
+export type LedgerReason = 'signup_bonus' | 'table_buyin' | 'table_cashout' | 'table_rebuy' | 'tournament_buyin' | 'tournament_prize' | 'purchase' | 'daily_bonus' | 'mission_reward' | 'pass_reward' | 'piggy_bank' | 'vip_reward'
+/** ゴールドスロット: 賭けたゴールドの消費 */
+ | 'slot_spin'
+/** ゴールドスロット: チップの払い出し */
+ | 'slot_win'
+/** 落ちた卓に残っていたスタックの払い戻し(再起動時の自動復旧) */
+ | 'table_recover' | 'adjustment';
 export interface LedgerRow {
     id: number;
     userId: string;
@@ -74,6 +80,13 @@ export interface ProgressRow {
     day: string | null;
     updatedAt: number;
 }
+/** 着席中のスタック(未精算)。サーバーが落ちてもここから払い戻せる */
+export interface OpenSeatRow {
+    userId: string;
+    tableId: string;
+    stack: number;
+    updatedAt: number;
+}
 export interface Store {
     getUser(userId: string): UserRow | null;
     createUser(userId: string, name: string): UserRow;
@@ -101,6 +114,12 @@ export interface Store {
     getProgress(userId: string, key: string): ProgressRow | null;
     setProgress(userId: string, key: string, value: number, day?: string | null): void;
     listProgress(userId: string, prefix: string): ProgressRow[];
+    /** 着席中スタックを記録/更新する(再起動時の払い戻しに使う) */
+    setOpenSeat(userId: string, tableId: string, stack: number): void;
+    /** 精算済みとして着席記録を消す */
+    clearOpenSeat(userId: string, tableId: string): void;
+    /** 未精算のまま残っている着席記録をすべて返す */
+    listOpenSeats(): OpenSeatRow[];
     /** 仕訳の集計と実体化残高が一致するかを検証する */
     audit(): {
         ok: boolean;
@@ -130,6 +149,7 @@ export declare class MemoryStore implements Store {
     private purchasesById;
     private receipts;
     private progress;
+    private openSeats;
     private nextLedgerId;
     private nextPurchaseId;
     getUser(userId: string): UserRow | null;
@@ -153,6 +173,9 @@ export declare class MemoryStore implements Store {
     getProgress(userId: string, key: string): ProgressRow | null;
     setProgress(userId: string, key: string, value: number, day?: string | null): void;
     listProgress(userId: string, prefix: string): ProgressRow[];
+    setOpenSeat(userId: string, tableId: string, stack: number): void;
+    clearOpenSeat(userId: string, tableId: string): void;
+    listOpenSeats(): OpenSeatRow[];
     audit(): {
         ok: boolean;
         problems: string[];
@@ -230,6 +253,9 @@ export declare class SqliteStore implements Store {
     getProgress(userId: string, key: string): ProgressRow | null;
     setProgress(userId: string, key: string, value: number, day?: string | null): void;
     listProgress(userId: string, prefix: string): ProgressRow[];
+    setOpenSeat(userId: string, tableId: string, stack: number): void;
+    clearOpenSeat(userId: string, tableId: string): void;
+    listOpenSeats(): OpenSeatRow[];
     audit(): {
         ok: boolean;
         problems: string[];
