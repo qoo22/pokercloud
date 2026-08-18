@@ -1,0 +1,3231 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLO POKER</title>
+<style>
+  :root { --bg:#0d1116; --panel:#171d25; --panel-2:#212a34; --line:#2e3844;
+    --text:#e8edf2; --muted:#8b97a5; --gold:#d9b45f; --red:#e05a5a; --green:#4dbd7a; --blue:#5a9de0; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--text); min-height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Segoe UI",sans-serif;
+    font-size:14px; line-height:1.5; }
+  button { font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel-2); color:var(--text); padding:9px 16px; transition:.12s; }
+  button:hover:not(:disabled){ border-color:var(--gold); background:#2b3542; }
+  button:disabled { opacity:.32; cursor:not-allowed; }
+  button.primary { background:var(--gold); color:#201704; border-color:var(--gold); font-weight:700; }
+  button.danger { border-color:#6a3535; }
+  input[type=range]{ accent-color:var(--gold); width:100%; }
+  input[type=text]{ font:inherit; background:var(--panel-2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:7px 10px; width:150px; }
+  .hidden { display:none !important; }
+  .sub { color:var(--muted); font-size:11px; }
+  .ok { color:var(--green); }
+  .ng { color:var(--red); }
+
+  header { display:flex; align-items:center; gap:12px; padding:10px 16px;
+    border-bottom:1px solid var(--line); background:var(--panel); flex-wrap:wrap; }
+  .brand { font-weight:800; letter-spacing:.08em; }
+  .grow { flex:1; }
+  .chip-badge { display:flex; align-items:center; gap:6px; background:var(--panel-2);
+    border:1px solid var(--line); border-radius:99px; padding:5px 14px; font-variant-numeric:tabular-nums; }
+  .chip-badge b { color:var(--gold); font-size:15px; }
+  #rank-badge { border-radius:99px; padding:4px 14px; font-weight:700; color:#0d1116; font-size:12px; }
+
+  #lobby { max-width:1000px; margin:0 auto; padding:20px 16px 60px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .panel h2 { font-size:12px; margin:0 0 12px; color:var(--gold); letter-spacing:.08em; }
+  .rpbar { height:8px; background:var(--panel-2); border-radius:99px; overflow:hidden; margin:8px 0 6px; }
+  .rpbar > div { height:100%; transition:width .4s; }
+  #recharge { font-size:12px; line-height:1.7; }
+  #recharge b { color:var(--gold); font-variant-numeric:tabular-nums; }
+
+  .tables { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); }
+  .tcard { background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:13px; }
+  .tcard.locked { opacity:.5; }
+  .tcard h3 { margin:0 0 3px; font-size:14px; }
+  .tcard .blinds { color:var(--gold); font-size:12px; font-variant-numeric:tabular-nums; }
+  .tcard dl { display:grid; grid-template-columns:auto 1fr; gap:1px 10px; font-size:11px; color:var(--muted); margin:9px 0; }
+  .tcard dd { margin:0; text-align:right; color:var(--text); font-variant-numeric:tabular-nums; }
+  .tcard button { width:100%; padding:7px; font-size:13px; }
+
+  .ach { background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
+    padding:9px 12px; margin-bottom:7px; }
+  .ach.done { border-color:rgba(77,189,122,.4); }
+  .ach .nm { font-size:13px; }
+  .ach .rp { color:var(--gold); font-size:11px; margin-left:6px; }
+  .bar { height:6px; background:#151b23; border-radius:99px; overflow:hidden; margin:5px 0; }
+  .bar > div { height:100%; background:var(--gold); transition:width .4s; }
+
+  #table-view { display:grid; grid-template-columns:1fr 300px; gap:14px; padding:14px; max-width:1280px; margin:0 auto; }
+  @media (max-width:960px){ #table-view { grid-template-columns:1fr; } }
+  .felt { position:relative; width:100%; aspect-ratio:16/10; min-height:400px;
+    border:12px solid var(--rail); border-radius:200px/130px;
+    box-shadow:inset 0 0 70px rgba(0,0,0,.5), 0 10px 34px rgba(0,0,0,.55); overflow:hidden; }
+  .center { position:absolute; left:50%; top:38%; transform:translate(-50%,-50%); text-align:center; width:92%; }
+  .board { display:flex; gap:7px; justify-content:center; min-height:80px; align-items:center; }
+  .pot { margin-top:8px; font-size:12px; color:var(--gold); font-variant-numeric:tabular-nums; }
+  .pot b { font-size:19px; color:#fff; display:inline-block; }
+  .street-tag { display:inline-block; margin-bottom:6px; font-size:11px; letter-spacing:.14em;
+    color:rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.22); border-radius:99px; padding:1px 10px; }
+
+  .seat { position:absolute; transform:translate(-50%,-50%); width:156px; text-align:center; }
+  .seat .cards { display:flex; gap:3px; justify-content:center; margin-bottom:4px; min-height:48px; align-items:flex-end; }
+  .seat .box { background:rgba(8,14,18,.85); border:1px solid rgba(255,255,255,.14);
+    border-radius:9px; padding:5px 6px; }
+  .seat.folded { opacity:.34; }
+  .seat .nm { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .seat .st { font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .seat .bet { margin-top:4px; font-size:11px; color:var(--gold); min-height:16px; font-variant-numeric:tabular-nums; }
+  .seat .tag { color:rgba(255,255,255,.32); font-size:10px; }
+  .badge { display:inline-block; font-size:9px; padding:0 5px; border-radius:99px; margin-left:3px;
+    background:var(--gold); color:#1a1206; font-weight:700; vertical-align:middle; }
+  .badge.allin{background:var(--red);color:#fff;} .badge.win{background:var(--green);color:#062514;}
+  .badge.you{background:var(--blue);color:#fff;}
+
+  /* 直前のアクションの吹き出し。
+     色で種類、文字で金額。ログを読まずに卓だけ見て分かるのが目的 */
+  .act-bubble { position:absolute; left:50%; top:-14px; transform:translateX(-50%);
+    padding:3px 11px; border-radius:99px; font-size:12px; font-weight:700; white-space:nowrap;
+    z-index:8; box-shadow:0 3px 10px rgba(0,0,0,.5); animation:actPop .34s cubic-bezier(.2,1.5,.4,1);
+    font-variant-numeric:tabular-nums; }
+  .act-bubble.fold  { background:#3a444f; color:#aab4bf; }
+  .act-bubble.check { background:#3f5b6e; color:#dbeaf5; }
+  .act-bubble.call  { background:#2f7d5a; color:#eafff3; }
+  .act-bubble.bet,
+  .act-bubble.raise { background:linear-gradient(135deg,#e0a13a,#c2761c); color:#2b1a02; }
+  .act-bubble.allin { background:linear-gradient(135deg,#ff5a5a,#a81f1f); color:#fff;
+    box-shadow:0 0 0 2px rgba(255,120,120,.5), 0 4px 16px rgba(255,60,60,.45);
+    animation:actPop .34s cubic-bezier(.2,1.5,.4,1), allinPulse 1.1s ease-in-out .34s infinite; }
+  @keyframes actPop { from { opacity:0; transform:translateX(-50%) translateY(8px) scale(.8); }
+                      to   { opacity:1; transform:translateX(-50%) translateY(0) scale(1); } }
+  @keyframes allinPulse { 0%,100% { transform:translateX(-50%) scale(1); }
+                          50%     { transform:translateX(-50%) scale(1.07); } }
+
+  /* オールイン中の勝率バー */
+  .eq { margin-top:5px; }
+  .eq-bar { height:5px; background:rgba(255,255,255,.14); border-radius:99px; overflow:hidden; }
+  .eq-bar > div { height:100%; background:linear-gradient(90deg,#5a9de0,#8fd3ff); transition:width .5s ease; }
+  .eq.lead .eq-bar > div { background:linear-gradient(90deg,#d9b45f,#ffe9a8); }
+  .eq-num { font-size:11px; margin-top:2px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .eq.lead .eq-num { color:var(--gold); font-weight:700; }
+  .eq .outs { color:#8fd3ff; }
+  .eq .lead-tag { color:var(--gold); }
+
+  .street-tag.hot { color:#ffd76a; border-color:rgba(255,215,106,.6);
+    background:rgba(255,90,90,.12); animation:hotPulse 1.2s ease-in-out infinite; }
+  @keyframes hotPulse { 0%,100% { opacity:1; } 50% { opacity:.55; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .act-bubble, .act-bubble.allin, .street-tag.hot { animation:none !important; }
+  }
+
+  .actions { margin-top:12px; min-height:110px; }
+  .btnrow { display:flex; gap:8px; flex-wrap:wrap; }
+  .btnrow.main button { flex:1; min-width:100px; padding:14px 8px; font-size:15px; font-weight:600; }
+  button.chip { padding:5px 10px; font-size:12px; }
+  .slider-wrap { margin-top:10px; }
+  .hint { font-size:12px; color:var(--muted); padding:20px 0; text-align:center; }
+
+  .side { display:flex; flex-direction:column; gap:12px; }
+  .log { height:280px; overflow-y:auto; font-size:12px; font-family:ui-monospace,Menlo,monospace; }
+  .log div { padding:2px 0; border-bottom:1px solid rgba(255,255,255,.05); }
+  .log .hl { color:var(--gold); } .log .win { color:var(--green); } .log .ng { color:var(--red); }
+
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.7); display:flex;
+    align-items:center; justify-content:center; z-index:60; padding:20px; }
+  .modal { background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:22px; width:min(560px,94vw); max-height:92vh; overflow-y:auto; }
+  .modal h3 { margin:0 0 12px; font-size:17px; }
+  .modal .lead { font-size:13px; color:var(--muted); margin:0 0 10px; line-height:1.8; }
+  .modal .lead b { color:var(--gold); }
+  .modal .row { display:flex; gap:8px; margin-top:12px; }
+  .modal .row button { flex:1; }
+  .share-preview { background:#0a0e13; border-radius:10px; min-height:180px; display:flex;
+    align-items:center; justify-content:center; color:var(--muted); font-size:12px; }
+
+  #toast { position:fixed; right:16px; bottom:16px; z-index:70; display:flex; flex-direction:column; gap:8px; }
+  .toast-item { background:linear-gradient(135deg,var(--gold),#8a6a22); color:#1a1206;
+    padding:10px 16px; border-radius:10px; font-size:13px; font-weight:600;
+    box-shadow:0 6px 20px rgba(0,0,0,.5); animation:toastIn .3s cubic-bezier(.2,1.4,.4,1); }
+  .toast-item .rp { margin-left:8px; opacity:.75; }
+  @keyframes toastIn { from { opacity:0; transform:translateX(30px); } to { opacity:1; transform:none; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">♠ SOLO POKER</span>
+  <span id="rank-badge">ルーキー</span>
+  <span class="chip-badge">💰 <b id="chips">0</b></span>
+  <span class="grow"></span>
+  <input type="text" id="player-name" maxlength="16" placeholder="名前">
+  <button class="chip" id="btn-mute">🔊 音オン</button>
+  <button class="chip" id="btn-theme">🎨 クラシック</button>
+  <button class="chip primary" id="btn-share">成績カード</button>
+  <button class="chip hidden" id="btn-leave">卓を降りる</button>
+</header>
+
+<div id="lobby">
+  <div class="panel">
+    <h2>ステータス</h2>
+    <div class="rpbar"><div id="rp-bar" style="width:0%"></div></div>
+    <div class="sub" id="rp">0 RP</div>
+    <div id="recharge" style="margin-top:12px"></div>
+  </div>
+
+  <div class="panel">
+    <h2>テーブル</h2>
+    <div class="tables" id="stakes"></div>
+  </div>
+
+  <div class="panel">
+    <h2>実績 <span class="sub" id="ach-count"></span></h2>
+    <div id="achievements"></div>
+    <div style="margin-top:12px"><button class="chip danger" id="btn-reset">記録を消去</button></div>
+  </div>
+</div>
+
+<div id="table-view" class="hidden">
+  <div>
+    <div class="sub" id="stake-name" style="margin-bottom:8px"></div>
+    <div class="felt" id="felt"></div>
+    <div class="actions" id="actions"></div>
+  </div>
+  <div class="side">
+    <div class="panel">
+      <h2>ログ</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-root"></div>
+<div id="toast"></div>
+<script>"use strict";
+(() => {
+  var __defProp = Object.defineProperty;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+
+  // src/cards.ts
+  var SUIT_CHARS = ["s", "h", "d", "c"];
+  var RANK_CHARS = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+  var SUIT_SYMBOLS = ["\u2660", "\u2665", "\u2666", "\u2663"];
+  function rankOf(card) {
+    return (card >> 2) + 2;
+  }
+  function suitOf(card) {
+    return card & 3;
+  }
+  function cardToString(card) {
+    return RANK_CHARS[rankOf(card) - 2] + SUIT_CHARS[suitOf(card)];
+  }
+  function cardToDisplay(card) {
+    return SUIT_SYMBOLS[suitOf(card)] + RANK_CHARS[rankOf(card) - 2];
+  }
+  function freshDeck() {
+    const deck = new Array(52);
+    for (let i = 0; i < 52; i++) deck[i] = i;
+    return deck;
+  }
+  function createSecureRng(poolBytes = 4096) {
+    if (typeof globalThis.crypto?.getRandomValues !== "function") {
+      throw new Error(
+        "CSPRNG \u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002Node.js 19 \u4EE5\u4E0A\u3001\u307E\u305F\u306F Web Crypto \u5BFE\u5FDC\u30D6\u30E9\u30A6\u30B6\u3067\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+      );
+    }
+    const pool = new Uint8Array(poolBytes - poolBytes % 4);
+    let offset = pool.length;
+    const next32 = () => {
+      if (offset >= pool.length) {
+        globalThis.crypto.getRandomValues(pool);
+        offset = 0;
+      }
+      const v = (pool[offset] << 24 >>> 0) + (pool[offset + 1] << 16) + (pool[offset + 2] << 8) + pool[offset + 3];
+      offset += 4;
+      return v;
+    };
+    return {
+      randomInt(n) {
+        if (n <= 0) throw new Error("n \u306F 1 \u4EE5\u4E0A\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059");
+        if (n === 1) return 0;
+        const limit = Math.floor(4294967296 / n) * n;
+        for (; ; ) {
+          const v = next32();
+          if (v < limit) return v % n;
+        }
+      }
+    };
+  }
+  function shuffle(arr, rng2) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = rng2.randomInt(i + 1);
+      const t = arr[i];
+      arr[i] = arr[j];
+      arr[j] = t;
+    }
+    return arr;
+  }
+  var Deck = class {
+    constructor(rng2, preset) {
+      __publicField(this, "cards");
+      __publicField(this, "index", 0);
+      this.cards = preset ? preset.slice() : shuffle(freshDeck(), rng2);
+    }
+    draw() {
+      if (this.index >= this.cards.length) throw new Error("\u30C7\u30C3\u30AD\u304C\u5C3D\u304D\u307E\u3057\u305F");
+      return this.cards[this.index++];
+    }
+    drawMany(n) {
+      const out = new Array(n);
+      for (let i = 0; i < n; i++) out[i] = this.draw();
+      return out;
+    }
+    get remaining() {
+      return this.cards.length - this.index;
+    }
+    /** ハンド履歴に残すための、配布順の完全な記録 */
+    snapshot() {
+      return this.cards.slice();
+    }
+  };
+
+  // src/evaluator.ts
+  var CATEGORY_NAMES_JA = {
+    [0 /* HighCard */]: "\u30CF\u30A4\u30AB\u30FC\u30C9",
+    [1 /* Pair */]: "\u30EF\u30F3\u30DA\u30A2",
+    [2 /* TwoPair */]: "\u30C4\u30FC\u30DA\u30A2",
+    [3 /* Trips */]: "\u30B9\u30EA\u30FC\u30AB\u30FC\u30C9",
+    [4 /* Straight */]: "\u30B9\u30C8\u30EC\u30FC\u30C8",
+    [5 /* Flush */]: "\u30D5\u30E9\u30C3\u30B7\u30E5",
+    [6 /* FullHouse */]: "\u30D5\u30EB\u30CF\u30A6\u30B9",
+    [7 /* Quads */]: "\u30D5\u30A9\u30FC\u30AB\u30FC\u30C9",
+    [8 /* StraightFlush */]: "\u30B9\u30C8\u30EC\u30FC\u30C8\u30D5\u30E9\u30C3\u30B7\u30E5"
+  };
+  var RANK_LABEL = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+  var label = (r) => RANK_LABEL[r - 2];
+  function describeHand(hv) {
+    const base = CATEGORY_NAMES_JA[hv.category];
+    switch (hv.category) {
+      case 8 /* StraightFlush */:
+        return hv.ranks[0] === 14 ? "\u30ED\u30A4\u30E4\u30EB\u30D5\u30E9\u30C3\u30B7\u30E5" : `${base}\uFF08${label(hv.ranks[0])}\u30CF\u30A4\uFF09`;
+      case 7 /* Quads */:
+        return `${base}\uFF08${label(hv.ranks[0])}\uFF09`;
+      case 6 /* FullHouse */:
+        return `${base}\uFF08${label(hv.ranks[0])} over ${label(hv.ranks[1])}\uFF09`;
+      case 5 /* Flush */:
+        return `${base}\uFF08${label(hv.ranks[0])}\u30CF\u30A4\uFF09`;
+      case 4 /* Straight */:
+        return `${base}\uFF08${label(hv.ranks[0])}\u30CF\u30A4\uFF09`;
+      case 3 /* Trips */:
+        return `${base}\uFF08${label(hv.ranks[0])}\uFF09`;
+      case 2 /* TwoPair */:
+        return `${base}\uFF08${label(hv.ranks[0])} & ${label(hv.ranks[1])}\uFF09`;
+      case 1 /* Pair */:
+        return `${base}\uFF08${label(hv.ranks[0])}\uFF09`;
+      default:
+        return `${base}\uFF08${label(hv.ranks[0])}\u30CF\u30A4\uFF09`;
+    }
+  }
+  function evaluate5(cards) {
+    if (cards.length !== 5) throw new Error(`evaluate5 \u306B\u306F 5 \u679A\u5FC5\u8981\u3067\u3059\uFF08${cards.length} \u679A\u6E21\u3055\u308C\u307E\u3057\u305F\uFF09`);
+    const counts = new Array(15).fill(0);
+    let suitMask = 0;
+    for (const c of cards) {
+      counts[rankOf(c)]++;
+      suitMask |= 1 << suitOf(c);
+    }
+    const isFlush = (suitMask & suitMask - 1) === 0;
+    const grouped = [];
+    for (let r = 14; r >= 2; r--) {
+      if (counts[r] > 0) grouped.push({ rank: r, count: counts[r] });
+    }
+    grouped.sort((a, b) => b.count - a.count || b.rank - a.rank);
+    let straightHigh = 0;
+    if (grouped.length === 5) {
+      const rs = grouped.map((g) => g.rank);
+      if (rs[0] - rs[4] === 4) {
+        straightHigh = rs[0];
+      } else if (rs[0] === 14 && rs[1] === 5 && rs[2] === 4 && rs[3] === 3 && rs[4] === 2) {
+        straightHigh = 5;
+      }
+    }
+    const sortedCards = sortForDisplay(cards, grouped, straightHigh);
+    if (isFlush && straightHigh) {
+      return { category: 8 /* StraightFlush */, ranks: [straightHigh], cards: sortedCards };
+    }
+    if (grouped[0].count === 4) {
+      return { category: 7 /* Quads */, ranks: [grouped[0].rank, grouped[1].rank], cards: sortedCards };
+    }
+    if (grouped[0].count === 3 && grouped[1].count === 2) {
+      return { category: 6 /* FullHouse */, ranks: [grouped[0].rank, grouped[1].rank], cards: sortedCards };
+    }
+    if (isFlush) {
+      return { category: 5 /* Flush */, ranks: grouped.map((g) => g.rank), cards: sortedCards };
+    }
+    if (straightHigh) {
+      return { category: 4 /* Straight */, ranks: [straightHigh], cards: sortedCards };
+    }
+    if (grouped[0].count === 3) {
+      return {
+        category: 3 /* Trips */,
+        ranks: [grouped[0].rank, grouped[1].rank, grouped[2].rank],
+        cards: sortedCards
+      };
+    }
+    if (grouped[0].count === 2 && grouped[1].count === 2) {
+      return {
+        category: 2 /* TwoPair */,
+        ranks: [grouped[0].rank, grouped[1].rank, grouped[2].rank],
+        cards: sortedCards
+      };
+    }
+    if (grouped[0].count === 2) {
+      return {
+        category: 1 /* Pair */,
+        ranks: [grouped[0].rank, grouped[1].rank, grouped[2].rank, grouped[3].rank],
+        cards: sortedCards
+      };
+    }
+    return { category: 0 /* HighCard */, ranks: grouped.map((g) => g.rank), cards: sortedCards };
+  }
+  function sortForDisplay(cards, grouped, straightHigh) {
+    if (straightHigh === 5) {
+      const order = [5, 4, 3, 2, 14];
+      return order.map((r) => cards.find((c) => rankOf(c) === r));
+    }
+    const priority = /* @__PURE__ */ new Map();
+    grouped.forEach((g, i) => priority.set(g.rank, i));
+    return cards.slice().sort((a, b) => priority.get(rankOf(a)) - priority.get(rankOf(b)));
+  }
+  var _counts = new Int32Array(15);
+  var _ordered = new Int32Array(5);
+  function rank5(c0, c1, c2, c3, c4) {
+    _counts.fill(0);
+    _counts[(c0 >> 2) + 2]++;
+    _counts[(c1 >> 2) + 2]++;
+    _counts[(c2 >> 2) + 2]++;
+    _counts[(c3 >> 2) + 2]++;
+    _counts[(c4 >> 2) + 2]++;
+    const suitMask = 1 << (c0 & 3) | 1 << (c1 & 3) | 1 << (c2 & 3) | 1 << (c3 & 3) | 1 << (c4 & 3);
+    const isFlush = (suitMask & suitMask - 1) === 0;
+    let k = 0;
+    for (let cnt = 4; cnt >= 1; cnt--) {
+      for (let r = 14; r >= 2; r--) {
+        if (_counts[r] === cnt) _ordered[k++] = r;
+      }
+    }
+    const distinct = k;
+    let straightHigh = 0;
+    if (distinct === 5) {
+      if (_ordered[0] - _ordered[4] === 4) straightHigh = _ordered[0];
+      else if (_ordered[0] === 14 && _ordered[1] === 5) straightHigh = 5;
+    }
+    const topCount = _counts[_ordered[0]];
+    let cat;
+    let d0 = 0, d1 = 0, d2 = 0, d3 = 0, d4 = 0;
+    if (isFlush && straightHigh) {
+      cat = 8 /* StraightFlush */;
+      d0 = straightHigh;
+    } else if (topCount === 4) {
+      cat = 7 /* Quads */;
+      d0 = _ordered[0];
+      d1 = _ordered[1];
+    } else if (topCount === 3 && distinct === 2) {
+      cat = 6 /* FullHouse */;
+      d0 = _ordered[0];
+      d1 = _ordered[1];
+    } else if (isFlush) {
+      cat = 5 /* Flush */;
+      d0 = _ordered[0];
+      d1 = _ordered[1];
+      d2 = _ordered[2];
+      d3 = _ordered[3];
+      d4 = _ordered[4];
+    } else if (straightHigh) {
+      cat = 4 /* Straight */;
+      d0 = straightHigh;
+    } else if (topCount === 3) {
+      cat = 3 /* Trips */;
+      d0 = _ordered[0];
+      d1 = _ordered[1];
+      d2 = _ordered[2];
+    } else if (topCount === 2 && distinct === 3) {
+      cat = 2 /* TwoPair */;
+      d0 = _ordered[0];
+      d1 = _ordered[1];
+      d2 = _ordered[2];
+    } else if (topCount === 2) {
+      cat = 1 /* Pair */;
+      d0 = _ordered[0];
+      d1 = _ordered[1];
+      d2 = _ordered[2];
+      d3 = _ordered[3];
+    } else {
+      cat = 0 /* HighCard */;
+      d0 = _ordered[0];
+      d1 = _ordered[1];
+      d2 = _ordered[2];
+      d3 = _ordered[3];
+      d4 = _ordered[4];
+    }
+    return ((((cat * 15 + d0) * 15 + d1) * 15 + d2) * 15 + d3) * 15 + d4;
+  }
+  var COMBOS_7C5 = (() => {
+    const out = [];
+    for (let a = 0; a < 7; a++)
+      for (let b = a + 1; b < 7; b++)
+        for (let c = b + 1; c < 7; c++)
+          for (let d = c + 1; d < 7; d++)
+            for (let e = d + 1; e < 7; e++) out.push([a, b, c, d, e]);
+    return out;
+  })();
+  function scoreBest(cards) {
+    const n = cards.length;
+    if (n === 5) return rank5(cards[0], cards[1], cards[2], cards[3], cards[4]);
+    if (n === 7) {
+      let best = -1;
+      for (let i = 0; i < 21; i++) {
+        const c = COMBOS_7C5[i];
+        const s = rank5(cards[c[0]], cards[c[1]], cards[c[2]], cards[c[3]], cards[c[4]]);
+        if (s > best) best = s;
+      }
+      return best;
+    }
+    if (n === 6) {
+      let best = -1;
+      for (let skip = 0; skip < 6; skip++) {
+        const idx = [];
+        for (let i = 0; i < 6; i++) if (i !== skip) idx.push(i);
+        const s = rank5(cards[idx[0]], cards[idx[1]], cards[idx[2]], cards[idx[3]], cards[idx[4]]);
+        if (s > best) best = s;
+      }
+      return best;
+    }
+    throw new Error(`scoreBest \u306F 5\u301C7 \u679A\u306B\u5BFE\u5FDC\u3057\u3066\u3044\u307E\u3059\uFF08${n} \u679A\u6E21\u3055\u308C\u307E\u3057\u305F\uFF09`);
+  }
+  function evaluateBest(cards) {
+    if (cards.length === 5) return evaluate5(cards);
+    let best = -1;
+    let bestCombo = null;
+    if (cards.length === 7) {
+      for (let i = 0; i < 21; i++) {
+        const c = COMBOS_7C5[i];
+        const s = rank5(cards[c[0]], cards[c[1]], cards[c[2]], cards[c[3]], cards[c[4]]);
+        if (s > best) {
+          best = s;
+          bestCombo = c;
+        }
+      }
+    } else if (cards.length === 6) {
+      for (let skip = 0; skip < 6; skip++) {
+        const idx = [];
+        for (let i = 0; i < 6; i++) if (i !== skip) idx.push(i);
+        const s = rank5(cards[idx[0]], cards[idx[1]], cards[idx[2]], cards[idx[3]], cards[idx[4]]);
+        if (s > best) {
+          best = s;
+          bestCombo = idx;
+        }
+      }
+    } else {
+      throw new Error(`evaluateBest \u306F 5\u301C7 \u679A\u306B\u5BFE\u5FDC\u3057\u3066\u3044\u307E\u3059\uFF08${cards.length} \u679A\u6E21\u3055\u308C\u307E\u3057\u305F\uFF09`);
+    }
+    return evaluate5(bestCombo.map((i) => cards[i]));
+  }
+  function compareHands(a, b) {
+    if (a.category !== b.category) return a.category - b.category;
+    const n = Math.min(a.ranks.length, b.ranks.length);
+    for (let i = 0; i < n; i++) {
+      if (a.ranks[i] !== b.ranks[i]) return a.ranks[i] - b.ranks[i];
+    }
+    return 0;
+  }
+  function findWinners(hands) {
+    let best = null;
+    let winners = [];
+    for (let i = 0; i < hands.length; i++) {
+      const h = hands[i];
+      if (!h) continue;
+      if (!best) {
+        best = h;
+        winners = [i];
+        continue;
+      }
+      const cmp = compareHands(h, best);
+      if (cmp > 0) {
+        best = h;
+        winners = [i];
+      } else if (cmp === 0) {
+        winners.push(i);
+      }
+    }
+    return winners;
+  }
+
+  // src/pot.ts
+  function computeUncalledReturn(contributions) {
+    let top = -1;
+    let topSeat = -1;
+    let second = -1;
+    for (let i = 0; i < contributions.length; i++) {
+      const c = contributions[i];
+      if (c > top) {
+        second = top;
+        top = c;
+        topSeat = i;
+      } else if (c > second) {
+        second = c;
+      }
+    }
+    if (topSeat < 0 || second < 0) return null;
+    if (top <= second) return null;
+    return { seat: topSeat, amount: top - second };
+  }
+  function buildPots(contributions, folded) {
+    const n = contributions.length;
+    if (folded.length !== n) throw new Error("contributions \u3068 folded \u306E\u9577\u3055\u304C\u4E00\u81F4\u3057\u3066\u3044\u307E\u305B\u3093");
+    const levels = Array.from(new Set(contributions.filter((c) => c > 0))).sort((a, b) => a - b);
+    const pots = [];
+    let prev = 0;
+    for (const level of levels) {
+      let amount = 0;
+      for (let i = 0; i < n; i++) {
+        const c = contributions[i];
+        amount += Math.min(c, level) - Math.min(c, prev);
+      }
+      if (amount <= 0) {
+        prev = level;
+        continue;
+      }
+      const eligible = [];
+      for (let i = 0; i < n; i++) {
+        if (!folded[i] && contributions[i] >= level) eligible.push(i);
+      }
+      if (eligible.length === 0) {
+        if (pots.length > 0) pots[pots.length - 1].amount += amount;
+        else pots.push({ amount, eligible: [], level: 0 });
+        prev = level;
+        continue;
+      }
+      const last = pots[pots.length - 1];
+      if (last && sameSeats(last.eligible, eligible)) {
+        last.amount += amount;
+      } else {
+        pots.push({ amount, eligible, level: pots.length });
+      }
+      prev = level;
+    }
+    pots.forEach((p, i) => p.level = i);
+    return pots;
+  }
+  function sameSeats(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  function awardPot(pot, winners, buttonIndex, seatCount) {
+    const shares = /* @__PURE__ */ new Map();
+    if (winners.length === 0) return { pot, shares, oddChipSeat: null };
+    const base = Math.floor(pot.amount / winners.length);
+    let remainder = pot.amount - base * winners.length;
+    for (const w of winners) shares.set(w, base);
+    let oddChipSeat = null;
+    if (remainder > 0) {
+      const ordered = [];
+      for (let i = 1; i <= seatCount; i++) {
+        const seat = (buttonIndex + i) % seatCount;
+        if (winners.includes(seat)) ordered.push(seat);
+      }
+      for (const seat of ordered) {
+        if (remainder <= 0) break;
+        shares.set(seat, (shares.get(seat) ?? 0) + 1);
+        if (oddChipSeat === null) oddChipSeat = seat;
+        remainder--;
+      }
+    }
+    return { pot, shares, oddChipSeat };
+  }
+  function computeRake(potAmount, percent, cap, sawFlop) {
+    if (!sawFlop || percent <= 0) return 0;
+    return Math.min(Math.floor(potAmount * percent), cap);
+  }
+
+  // src/table.ts
+  var Hand = class {
+    constructor(opts) {
+      __publicField(this, "players");
+      __publicField(this, "buttonIndex");
+      __publicField(this, "smallBlind");
+      __publicField(this, "bigBlind");
+      __publicField(this, "ante");
+      __publicField(this, "straddles");
+      __publicField(this, "rakePercent");
+      __publicField(this, "rakeCap");
+      __publicField(this, "board", []);
+      __publicField(this, "street", "preflop");
+      __publicField(this, "currentBet", 0);
+      /** 直近の「フルレイズ」の上乗せ幅。最小レイズ額の計算に使う */
+      __publicField(this, "lastRaiseSize", 0);
+      __publicField(this, "actingSeat", null);
+      __publicField(this, "events", []);
+      __publicField(this, "result", null);
+      /** Provably Fair を有効にしている場合のセッション */
+      __publicField(this, "fairness");
+      __publicField(this, "deck");
+      __publicField(this, "deckOrder");
+      __publicField(this, "sbSeat");
+      __publicField(this, "bbSeat");
+      if (opts.seats.length < 2) throw new Error("\u30D7\u30EC\u30A4\u30E4\u30FC\u306F 2 \u4EBA\u4EE5\u4E0A\u5FC5\u8981\u3067\u3059");
+      if (opts.seats.length > 9) throw new Error("\u5E2D\u306F\u6700\u5927 9 \u3067\u3059");
+      if (opts.seats.some((s) => s.stack <= 0)) throw new Error("\u30B9\u30BF\u30C3\u30AF\u304C 0 \u4EE5\u4E0B\u306E\u5E2D\u306F\u7740\u5E2D\u3067\u304D\u307E\u305B\u3093");
+      this.buttonIndex = opts.buttonIndex % opts.seats.length;
+      this.smallBlind = opts.smallBlind;
+      this.bigBlind = opts.bigBlind;
+      this.ante = opts.ante ?? 0;
+      this.straddles = (opts.straddles ?? []).slice().sort((a, b) => a.amount - b.amount);
+      this.rakePercent = opts.rakePercent ?? 0;
+      this.rakeCap = opts.rakeCap ?? Number.MAX_SAFE_INTEGER;
+      this.players = opts.seats.map((s, i) => ({
+        seat: i,
+        id: s.id,
+        name: s.name ?? s.id,
+        stack: s.stack,
+        startingStack: s.stack,
+        holeCards: [],
+        folded: false,
+        allIn: false,
+        streetBet: 0,
+        totalBet: 0,
+        mustAct: false,
+        canRaise: true,
+        lastAction: null
+      }));
+      this.fairness = opts.fairness ?? null;
+      const preset = opts.presetDeck ?? this.fairness?.deriveDeck();
+      const rng2 = opts.rng ?? createSecureRng();
+      this.deck = new Deck(rng2, preset);
+      this.deckOrder = this.deck.snapshot();
+      const n = this.players.length;
+      if (n === 2) {
+        this.sbSeat = this.buttonIndex;
+        this.bbSeat = (this.buttonIndex + 1) % n;
+      } else {
+        this.sbSeat = (this.buttonIndex + 1) % n;
+        this.bbSeat = (this.buttonIndex + 2) % n;
+      }
+      this.begin();
+    }
+    // -------------------------------------------------------------------------
+    // 開始処理
+    // -------------------------------------------------------------------------
+    begin() {
+      this.events.push({
+        type: "hand_start",
+        button: this.buttonIndex,
+        sbSeat: this.sbSeat,
+        bbSeat: this.bbSeat
+      });
+      for (let round2 = 0; round2 < 2; round2++) {
+        for (let i = 0; i < this.players.length; i++) {
+          const seat = (this.sbSeat + i) % this.players.length;
+          this.players[seat].holeCards.push(this.deck.draw());
+        }
+      }
+      for (const p of this.players) {
+        this.events.push({ type: "deal_hole", seat: p.seat, cards: p.holeCards.slice() });
+      }
+      if (this.ante > 0) {
+        for (const p of this.players) {
+          const amt = Math.min(this.ante, p.stack);
+          this.commit(p, amt);
+          this.events.push({ type: "ante", seat: p.seat, amount: amt });
+        }
+        for (const p of this.players) p.streetBet = 0;
+      }
+      const sb = this.players[this.sbSeat];
+      const sbAmt = Math.min(this.smallBlind, sb.stack);
+      this.commit(sb, sbAmt);
+      this.events.push({ type: "blind", seat: sb.seat, amount: sbAmt, blind: "sb" });
+      const bb = this.players[this.bbSeat];
+      const bbAmt = Math.min(this.bigBlind, bb.stack);
+      this.commit(bb, bbAmt);
+      this.events.push({ type: "blind", seat: bb.seat, amount: bbAmt, blind: "bb" });
+      this.currentBet = Math.max(this.bigBlind, sbAmt, bbAmt);
+      this.lastRaiseSize = this.bigBlind;
+      let lastStraddleSeat = null;
+      this.straddles.forEach((st, i) => {
+        const p = this.players[st.seat];
+        if (!p) return;
+        const amt = Math.min(st.amount, p.stack);
+        this.commit(p, amt);
+        this.events.push({ type: "straddle", seat: st.seat, amount: amt, order: i + 1 });
+        if (st.amount > this.currentBet) {
+          this.currentBet = st.amount;
+          this.lastRaiseSize = st.amount;
+        }
+        lastStraddleSeat = st.seat;
+      });
+      this.events.push({ type: "street", street: "preflop", board: [] });
+      const first = lastStraddleSeat !== null ? this.nextOccupied(lastStraddleSeat) : this.players.length === 2 ? this.sbSeat : this.nextOccupied(this.bbSeat);
+      this.beginBettingRound(first);
+    }
+    /** チップをスタックからポットへ移す。オールイン判定もここで行う */
+    commit(p, amount) {
+      const amt = Math.min(amount, p.stack);
+      p.stack -= amt;
+      p.streetBet += amt;
+      p.totalBet += amt;
+      if (p.stack === 0) p.allIn = true;
+    }
+    nextOccupied(from) {
+      const n = this.players.length;
+      for (let i = 1; i <= n; i++) {
+        const seat = (from + i) % n;
+        if (!this.players[seat].folded) return seat;
+      }
+      return from;
+    }
+    beginBettingRound(startSeat) {
+      for (const p of this.players) {
+        const active = !p.folded && !p.allIn;
+        p.mustAct = active;
+        p.canRaise = active;
+      }
+      this.actingSeat = null;
+      const n = this.players.length;
+      this.advanceFrom((startSeat + n - 1) % n);
+    }
+    /** 次にアクションすべき席を探す。見つからなければストリートを終了する */
+    advanceFrom(from) {
+      const n = this.players.length;
+      if (this.countNotFolded() <= 1) {
+        this.finish(false);
+        return;
+      }
+      for (let i = 1; i <= n; i++) {
+        const seat = (from + i) % n;
+        const p = this.players[seat];
+        if (p.mustAct && !p.folded && !p.allIn) {
+          this.actingSeat = seat;
+          return;
+        }
+      }
+      this.actingSeat = null;
+      this.endStreet();
+    }
+    countNotFolded() {
+      return this.players.filter((p) => !p.folded).length;
+    }
+    countCanAct() {
+      return this.players.filter((p) => !p.folded && !p.allIn).length;
+    }
+    // -------------------------------------------------------------------------
+    // アクション
+    // -------------------------------------------------------------------------
+    /** 現在アクション権のあるプレイヤーの合法手 */
+    getLegalActions(seat) {
+      const s = seat ?? this.actingSeat;
+      if (s === null || s !== this.actingSeat) return [];
+      const p = this.players[s];
+      if (p.folded || p.allIn) return [];
+      const out = [];
+      const toCall = this.currentBet - p.streetBet;
+      out.push({ type: "fold" });
+      if (toCall <= 0) {
+        out.push({ type: "check" });
+      } else {
+        out.push({ type: "call", amount: Math.min(toCall, p.stack) });
+      }
+      const maxTo = p.streetBet + p.stack;
+      if (p.stack > 0 && maxTo > this.currentBet) {
+        if (this.currentBet === 0) {
+          const minTo = Math.min(this.bigBlind, maxTo);
+          out.push({ type: "bet", min: minTo, max: maxTo });
+        } else if (p.canRaise) {
+          const minTo = Math.min(this.currentBet + this.lastRaiseSize, maxTo);
+          out.push({ type: "raise", min: minTo, max: maxTo });
+        }
+      }
+      return out;
+    }
+    /**
+     * アクションを適用する。
+     * @param seat   アクションする席（サーバーでは必ず認証済みの席と照合すること）
+     * @param action 種別
+     * @param toAmount bet / raise のときの「このストリートでの最終出資額（raise to）」
+     */
+    act(seat, action, toAmount) {
+      if (this.street === "complete") throw new Error("\u30CF\u30F3\u30C9\u306F\u65E2\u306B\u7D42\u4E86\u3057\u3066\u3044\u307E\u3059");
+      if (seat !== this.actingSeat) {
+        throw new Error(`\u5E2D ${seat} \u306B\u30A2\u30AF\u30B7\u30E7\u30F3\u6A29\u304C\u3042\u308A\u307E\u305B\u3093\uFF08\u73FE\u5728\u306F\u5E2D ${this.actingSeat}\uFF09`);
+      }
+      const p = this.players[seat];
+      const legal = this.getLegalActions(seat);
+      const entry = legal.find((l) => l.type === action);
+      if (!entry) throw new Error(`\u4E0D\u6B63\u306A\u30A2\u30AF\u30B7\u30E7\u30F3: ${action}\uFF08\u5408\u6CD5\u624B: ${legal.map((l) => l.type).join(", ")}\uFF09`);
+      let paid = 0;
+      let allInNow = false;
+      switch (action) {
+        case "fold": {
+          p.folded = true;
+          p.mustAct = false;
+          break;
+        }
+        case "check": {
+          p.mustAct = false;
+          break;
+        }
+        case "call": {
+          paid = Math.min(this.currentBet - p.streetBet, p.stack);
+          this.commit(p, paid);
+          p.mustAct = false;
+          allInNow = p.allIn;
+          break;
+        }
+        case "bet":
+        case "raise": {
+          const to = toAmount ?? 0;
+          const maxTo = p.streetBet + p.stack;
+          if (to > maxTo) throw new Error(`\u30B9\u30BF\u30C3\u30AF\u3092\u8D85\u3048\u3066\u3044\u307E\u3059\uFF08\u6700\u5927 ${maxTo}\uFF09`);
+          const isAllIn = to === maxTo;
+          if (!isAllIn && to < (entry.min ?? 0)) {
+            throw new Error(`\u6700\u5C0F\u984D\u306B\u9054\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u6700\u5C0F ${entry.min}\u3001\u6307\u5B9A ${to}\uFF09`);
+          }
+          const prevBet = this.currentBet;
+          paid = to - p.streetBet;
+          this.commit(p, paid);
+          this.currentBet = Math.max(this.currentBet, p.streetBet);
+          allInNow = p.allIn;
+          const raiseSize = this.currentBet - prevBet;
+          p.mustAct = false;
+          if (raiseSize >= this.lastRaiseSize) {
+            this.lastRaiseSize = raiseSize;
+            for (const q of this.players) {
+              if (q.seat === p.seat || q.folded || q.allIn) continue;
+              q.mustAct = true;
+              q.canRaise = true;
+            }
+          } else {
+            for (const q of this.players) {
+              if (q.seat === p.seat || q.folded || q.allIn) continue;
+              if (q.streetBet < this.currentBet && !q.mustAct) {
+                q.mustAct = true;
+                q.canRaise = false;
+              }
+            }
+          }
+          break;
+        }
+      }
+      p.lastAction = action;
+      this.events.push({
+        type: "action",
+        seat,
+        action,
+        amount: paid,
+        toAmount: p.streetBet,
+        stack: p.stack,
+        allIn: allInNow
+      });
+      this.advanceFrom(seat);
+    }
+    // -------------------------------------------------------------------------
+    // ストリート進行
+    // -------------------------------------------------------------------------
+    endStreet() {
+      for (const p of this.players) {
+        p.streetBet = 0;
+        p.mustAct = false;
+        p.lastAction = null;
+      }
+      this.currentBet = 0;
+      this.lastRaiseSize = this.bigBlind;
+      if (this.street === "river") {
+        this.finish(true);
+        return;
+      }
+      if (this.countCanAct() <= 1) {
+        while (this.board.length < 5) this.dealNextStreet();
+        this.finish(true);
+        return;
+      }
+      this.dealNextStreet();
+      this.beginBettingRound(this.nextOccupied(this.buttonIndex));
+    }
+    dealNextStreet() {
+      if (this.board.length === 0) {
+        this.board.push(...this.deck.drawMany(3));
+        this.street = "flop";
+      } else if (this.board.length === 3) {
+        this.board.push(this.deck.draw());
+        this.street = "turn";
+      } else if (this.board.length === 4) {
+        this.board.push(this.deck.draw());
+        this.street = "river";
+      } else {
+        return;
+      }
+      this.events.push({ type: "street", street: this.street, board: this.board.slice() });
+    }
+    // -------------------------------------------------------------------------
+    // 決着
+    // -------------------------------------------------------------------------
+    finish(showdown) {
+      this.actingSeat = null;
+      const contributions = this.players.map((p) => p.totalBet);
+      const uncalled = computeUncalledReturn(contributions);
+      if (uncalled && uncalled.amount > 0) {
+        const p = this.players[uncalled.seat];
+        p.stack += uncalled.amount;
+        p.totalBet -= uncalled.amount;
+        if (p.stack > 0) p.allIn = false;
+        contributions[uncalled.seat] -= uncalled.amount;
+        this.events.push({ type: "uncalled_return", seat: uncalled.seat, amount: uncalled.amount });
+      }
+      const folded = this.players.map((p) => p.folded);
+      const pots = buildPots(contributions, folded);
+      this.events.push({ type: "pots", pots: pots.map((p) => ({ ...p, eligible: p.eligible.slice() })) });
+      const hands = this.players.map(() => null);
+      const reachedShowdown = showdown && this.countNotFolded() > 1;
+      if (reachedShowdown) {
+        for (const p of this.players) {
+          if (p.folded) continue;
+          const hv = evaluateBest([...p.holeCards, ...this.board]);
+          hands[p.seat] = hv;
+          this.events.push({
+            type: "showdown",
+            seat: p.seat,
+            cards: p.holeCards.slice(),
+            hand: describeHand(hv)
+          });
+        }
+      }
+      const sawFlop = this.board.length >= 3;
+      const potResults = [];
+      let totalRake = 0;
+      for (const pot of pots) {
+        let winners;
+        if (!reachedShowdown) {
+          winners = pot.eligible.filter((s) => !this.players[s].folded);
+        } else {
+          const candidates = this.players.map(
+            (p) => pot.eligible.includes(p.seat) ? hands[p.seat] : null
+          );
+          winners = findWinners(candidates);
+        }
+        const rake = computeRake(pot.amount, this.rakePercent, this.rakeCap, sawFlop);
+        totalRake += rake;
+        const distributable = { ...pot, amount: pot.amount - rake };
+        const award = awardPot(distributable, winners, this.buttonIndex, this.players.length);
+        for (const [seat, amt] of award.shares) {
+          this.players[seat].stack += amt;
+          this.events.push({ type: "award", seat, amount: amt, potLevel: pot.level });
+        }
+        potResults.push({ pot, rake, winners, shares: award.shares });
+      }
+      if (totalRake > 0) this.events.push({ type: "rake", amount: totalRake });
+      this.events.push({ type: "hand_end" });
+      this.street = "complete";
+      this.result = {
+        pots: potResults,
+        uncalledReturn: uncalled,
+        totalRake,
+        showdown: reachedShowdown,
+        hands,
+        netChange: this.players.map((p) => p.stack - p.startingStack)
+      };
+    }
+    // -------------------------------------------------------------------------
+    // 状態の取得
+    // -------------------------------------------------------------------------
+    get totalPot() {
+      return this.players.reduce((sum, p) => sum + p.totalBet, 0);
+    }
+    get isComplete() {
+      return this.street === "complete";
+    }
+    /**
+     * 指定席から見える状態。他人のホールカードは含まない。
+     * ショーダウン後は公開された手札のみ含める。
+     */
+    getStateFor(seat) {
+      return {
+        street: this.street,
+        board: this.board.slice(),
+        pot: this.totalPot,
+        currentBet: this.currentBet,
+        minRaiseSize: this.lastRaiseSize,
+        actingSeat: this.actingSeat,
+        buttonIndex: this.buttonIndex,
+        smallBlind: this.smallBlind,
+        bigBlind: this.bigBlind,
+        legalActions: seat !== null && seat === this.actingSeat ? this.getLegalActions(seat) : [],
+        players: this.players.map((p) => ({
+          seat: p.seat,
+          id: p.id,
+          name: p.name,
+          stack: p.stack,
+          streetBet: p.streetBet,
+          totalBet: p.totalBet,
+          folded: p.folded,
+          allIn: p.allIn,
+          lastAction: p.lastAction,
+          holeCards: p.seat === seat || this.isComplete && this.result?.showdown && !p.folded ? p.holeCards.slice() : null
+        })),
+        result: this.result
+      };
+    }
+    /**
+     * 配牌前にクライアントへ送るコミットメント。
+     * Provably Fair を有効にしていない場合は null。
+     *
+     * サーバー実装では、これを送ってからでなければカードを配ってはいけない。
+     * 順序を逆にすると仕組み全体が意味を失う。
+     */
+    getFairnessCommitment() {
+      return this.fairness ? this.fairness.getCommitment() : null;
+    }
+    /**
+     * ハンド終了後に serverSeed を開示する。
+     * 進行中に呼ぶと、そのハンドの残りのカードが計算できてしまうため例外にしている。
+     */
+    revealFairness() {
+      if (!this.fairness) throw new Error("\u3053\u306E\u30CF\u30F3\u30C9\u306F Provably Fair \u3092\u6709\u52B9\u306B\u3057\u3066\u3044\u307E\u305B\u3093");
+      if (!this.isComplete) throw new Error("\u30CF\u30F3\u30C9\u304C\u7D42\u4E86\u3059\u308B\u524D\u306B\u30B7\u30FC\u30C9\u3092\u958B\u793A\u3059\u308B\u3053\u3068\u306F\u3067\u304D\u307E\u305B\u3093");
+      return this.fairness.reveal();
+    }
+    /** ハンド履歴（配布順のデッキ全体を含む）。Provably Fair の検証に使う */
+    getHandHistory() {
+      return {
+        button: this.buttonIndex,
+        blinds: { sb: this.smallBlind, bb: this.bigBlind, ante: this.ante, straddles: this.straddles },
+        seats: this.players.map((p) => ({
+          seat: p.seat,
+          id: p.id,
+          startingStack: p.startingStack,
+          holeCards: p.holeCards.map(cardToString)
+        })),
+        board: this.board.map(cardToString),
+        deckOrder: this.deckOrder.map(cardToString),
+        events: this.events,
+        result: this.result,
+        // 終了後のみシードを含める。進行中は commitment だけ
+        fairness: this.fairness ? this.isComplete ? this.fairness.reveal() : this.fairness.getCommitment() : null
+      };
+    }
+  };
+
+  // client/assets.ts
+  var CARD_BACK_CLASSIC = "data:image/webp;base64,UklGRlRdAABXRUJQVlA4IEhdAADw5ACdASrcACwBPoEukEglIiGhOH4tkKAQCWYzi/61jRzMZbKATKf9fYBCf/9HxZYgAXnsC/p+qJlv1Hmh9p+sP+/lX6BIuPy3iF9EH979JToW+bLzff/R61/7r04fq6/5z1Rv269aL1kv8lv/+WU/HrzH8jXr793/zX/N/vfzWfiWFPrE/1PQP+ZfeD9n/g/yT+hn9h/w/8z4l/Hz/h9QL8u/p/+18YXZB71/v/QF9vPuX/P/yfqc/Kf9T/OeoX2H/73+P+AH+gf2L/j+xv+q/ZvyN/zH+m/a/4Av6H/bP/N/kvzW+nL+3//X+z89f1J/8v9d8Bv9E/vn/m7Gv7u///3eP2+//6w893rHXOSlB7GCU3gUpsTYAzXqLRGuApT6xEldo0lSN8sUEJ0I4XSWXI7Ptl45imGpg2EHkhPYNR0JQzOxmCyHp9grgpIQpLIqV/d1cZm68zqtr0qidFE7542hMDpPnNcD7UovSsINHD2WrmAyYOUB6nEQviLONdZ34p086aj7KmFM33Yw2mY1ClR5nSxnQPwFuqgjMrFK43LB91zfVpZ8sj4RxJjhBf2T/5Cq3yJazxhr9ssL8Rr8jptUZWUq9gyspV3zN9kwfZxk8aMKQejr38Z18lzxAmqLrArKZRUhs3tPGOkOCcR4M8kID9pBfyFHox5LavynfX+G4uJ3PeIprpFbOu5YweYkxlJNIbDZCHHZsku+Ghr4LQG74n0WQ4TubxgRY527s265FT5RbHAt3nTT6baWI7LFAeltaCvoE93CMoWsIXfInKQk1iRmN1mPSOqcWQZE0lCaAKl/5UTbraQZjnsw6xRTKjHf8PDNHpjd49GXcAXcEhOgT2r15dkYLApTuBnOxA9RP4eoJbMZRxzyQ9znwO48CmFutYRxrxkr6eaKxa6jbmyBJNQL/DLNLFIcPfEEPGss7z0+Pn7hspvaafS3CTUjDkvqgbi2qBSo1Hr2zMDMlZpBWCsQeJG2ccpsdp/ARdrP3H5wr7s7IAuXGcUD0mIFAeqcXqp1E/TSmjkfapKbQdggQ7pGeccKC85GnWpIxoqvzWztcUqNMVlc+IYk5Y7zXPlqM7/ctu2ZJQ696c421sKnvu+3NnjXj7e2gcgWt758W4d/oRr8CqI+MGVm3L77Yfx3OMpuZoC/YZVyKQhUqPTdy5JUobV08k8zvWuyY814FoN0WkTl8DjPDXV/L47kt4Ya++6n2MIIVlEiDw2BtH+Q1dpMOJ2TBthEaOpwUI2bE0wXdt3zZpG2hKNQ+3j7O66krtsKcEI6SDAq4rRBCGpfu6eFKdFRfEw4jXfQ0/G0XZoLpl3/XZjQvs7kXzdE/me70wOw2R2MCpWkm7BOadz0zTeefhfauaTW0rQB6zfAlAdxXJUZmzlvIQ3jtk/6O7VSOZgA0+uf7m74lSvfa9m6+xbwXEVOqXVCP4yyOFhOVjETauktFfs1l2SkeC8ODNoPOtmaUq8kk3MzcnIChW/IelZ2Ufte4YnxcsQeiz95Mq0CO0Zs8mfFSbXty4x/prvqGNAGKMkSABnCTKkzrZQZ4T4daMJlT7hxrDadUo/07wRNyYB8q2i03XBKOLkzFW+LxOXlhSRXa1/c8JedLvCMsyCNs/Io1ZrhhbGBOCw0myHZvVdx/7CsA9rzA+AiS2F8F4FdSo4GSIZ+Tn9vwfj5r/Zl/y+jHwv7rSE0OqLTKzovz+79DD6dp/kiG4Wa/ocyNqfNGPxhzcIdDkvZEZO747hqKV2bMfguuzvLWylfT5/aazcMYrtgINAqFeZAgdP4suDl2yvfZWOMdd1Sylg4gVfOX8Oc5a/WQ0GpCWn0wTAt/QOq6K4SV463QmAh393rrooVgKCLpgtLjvha99xYCtaZr2rNwq8oCcQQmndL3NmUMHcUVzTXqKedpU4/3X2QAkal8lOYuN+pyg9MamNW7hNx0ZcYQuPd4HDsS/YFnq724ZSXfbWoyBaqW/Q5hjfIFTdgRve3HU6nqDa+daRfaP4p3PnJV+zL7lvRIK3ln6pfzo8TqnAG3UheKz/Uy4qoJzNY/mXzdhpaVJ8udXgo1OG36R6rLsZaSm5CrmYJ+fZ0jVWp+BAs5DbnEhM6Dv8T3lPq2iWoPz4owe7IxaIbc6KIMtcFvCOMndT2/4ecjv8bCDB5T4i52lw6+4z5qCBHt/lW+jxcgqjlaIbZ3BI1xH5CSCVvV3UG2JzimN8wziZTKAjJLEDK4YUp/ukZOFh3rUXrvZfi7U/BNGztMtBDf15J3yAyJP9y4sfxS//DUBPWyPAdnDeUjNgp4qczwG1oPzpVXsGDcdTkPHiJvPsgzr9xQ6mPLrK5tw1m97/yslr5bfW46HobfWi87RPFwb+zE7cHkynS4Hd4L/27ga+nlGh3EDmaXUAQiBvPNoZuNrvSW5cEZNsy/MkRaAEh6D6iW5DFzJPrBzf1WjwAAOJ6MLWUkXHP0gQY5rjwN9qqH/ulXiiL5BSGnOQ0vS1hVWq63+tBVbPlqeDPicFJbfg7Mpkr2D8/hZ5ZqloWCkyB6/rsYaxp9sxw+Zl+DfxSiZ/yZEbmm/3nNf4YAHx2bd662WQMEl4ak4jckSXRBGF4dONA2tdpMNquS/j5uyb/MCRlrxxlX1vP43TXDUxW0DliHjOcr9vTkM6xnQYdrvO5lS54asMdREqovbqoSvvFYuHBIguoFTF/rUGLQ2KQuxQTAi4vYLonzYzUcJ+751sOCKiFrRMZ0goT7O71xq/k3YJhCPDf32QvU+sYlV4sz7ccDI8b7FVK3YQSmeRbXFD3sT+MuHoDAIyJICLB2eTyfYe6v+hGUWi9hzY5odFC2N3I6IeQUB5V/lYkY5ibJSuOxTDLxP1F9gWtd84aukv4rjFhFvWvDpvjy+A7v+3V6QKjZ6lIOXFHrdqDSP9AE+D8NjoMBV1SPUe5cPshcgQdNN+N4255VRGbz6o9/+NARzlN+tCJyT7QCiT4g4wB/AzKbCN9A0+lz5pFjypq5662OUbkqHBYI0VtXFEVDvzCxssJbIWsDk7FSfOUXTGjYlfdXFHek0zhypASbwT8QnNyHh+e0eUb4DwPWUhxDl7v2h/KbF6qQZ9F6gOf7RDykvwloxAnVyqzm9/WAq0/j8w/B6UZeQARF3GPJvBSxr148DtS7Tns+IDbzgj0lY7ecfe4MecnvJNp5ssilodopL2eEwoqwblxxRlQA5u/wBxQNvDFl9FugfghJ3LPWA+il9L3BpguM/yD2oLvNJLzqC3fdg+4jJ/UyunCQGIQKVEycPRZ6YFDwyJ+6kH+eGkRG6fYAez4Js0xv+Ytn+uhUcyrZ/J/xdiFh+9QHoVur9FXZkr0e/yofNlhiVH18rtzdGAGWQrQfS6wbGKgtajmUod796VL0JrgzVrdo6Yw/igsbM8X8ltk+MtQOU6rAwPxh98qJKIMigLByogI3PyZpPqdxijo+IY25My0RSq5BMun7Lyy4MI3OakwlEECunYkoGFErE+XZDzmBB5uqIMPa7DDOyzk5TeeDqtlkFrEnPMKUs/z3dmPY33zdYV09GIt4Sdxfk1JebeZbOecxtnfuZR9Au7rgFBgFeTFXvvDSJfK+/9RNQ5/gvYRqY0XNO17Fu5TEIiX+Uogiluxzp7zRKe0gI1Ici+yJy4dwfpG6M70bSIMRNrJpUnhuaF7OK0wOGSCw9M3xPqh3vzP0GedTy6Yt5xs0SqSktVKGDmu33GJEcXokOAWi3lHmR7CM+nEmQvO/6fqpPhZOUn/n8prD5RxvGCJdSgCH+08k6/FkzgnkEmqUUvl78/5iZ9SXtA/WquWqDX+hvgOVUqqJwiCMW0mKlWA/cH8xdVYTbgGEzWrngZYvKq5/QF5O8hrIO7HFH9cuIiAJ0Hx00ta+gdhuINia//NS33VI089Ocwp00TNqbxXW0X8M2z5XudzcuHDnu+jyin3VB5miSws8mgYaK0vVGHTWSz80nu0tRXK3FJQeWFi6rYhrHYGWL+5QIE/c/h74TT2ZgfHT4MiayQi4jbzSftUpF+AsRBI2J+7qRygA+p2g9qPgWgKfL2lMM9cm+ESI/1xKQfTkAKS9Nu6FosblbvQfaMaBYIFvk8Yn40xBsABoLL9n1PlWrVvBkuDGYhhr4NL4reA2aCm+aidw0RoBQwEHWyseidKkyh97RmQQTB16eQ3KzfbKIq8JGR2cTGjoMSC1MaJIsr/0Q6Q6yxSay51O8HNisOaWPCszpSATe6wo2vdtBKjZuIw/JvFkFAJqN5znZM5sWLtGbt5u6gPHbB0MovlOIqkqvK9IvBeXu85sd7i7e8DHuohS87Iybx18CT/ycldVVYxctY4ITzvbNWo1uFEI2yCV5w/5DAm9wBxO6TzCOcdTDNXmx4LAjS1m21IMDWzdmyUD8pPpET1SVdL0axz0Gb812jsl33xsSSSfP0A2snSOHNupRXRPC21lYEztiDKBFT+t1KBSFMOXUwRXQLHzo1NQX5breYsM/1sGFp952nd/WB9lk+bhkUewaimyZ3b3zbQEeChNM4YB4zjlJUOeE9tNBRt/bvEdeqH4tubfrjYBgsYqC+2uMeV7ycvgR1VUHCNK2ayf0ZSm0Nz2BDa07L9ocKrX5z+3B2TUWF9BwUyLMk6U12sG+I5/DOJ0M2mKllwhzG1LjmoymoO21v09LKH07ZcCtIObBWb9VWiZYMFWLVAz7RcfVATTCLSbS09SbwsccFwpR54FntHF1PTEs/F6v3fFbjogwZkBKOb0s0xM9SVPoBd8pzgBwiTBLEe7exgo3XrnHNJ1mo3yjx8dJ7torciM5c6ZDErN0pvWEbBHlmiPLygmT5yncqovk5WgKZwPSFmnatZ/Q5t6iWV95urFL1RTHoO0ay8X/9IvA81YmkhCHQBl+PMdaFHTFSiaAOdqCwQDb2FylI6FuJzUMllVxfezub+7NDscbn0BKOCE49K+WIflmBpaIwdp1SCBV4MWco4wzwyKFDU0gVcL7xiCsEVhqVl0qifvo+yd07Fbuk4xg5DZLCPKtBIEw4GurrTFNlYn1QRnEM8xRdBvq7pSwEO6sUpSjCVnDg9TmN0aJORZQH+kRhn8/3rwRgFHEcWmm1qtFZxVA+mSluVBL8axUOvfCM+JDddfUUbtv9XmuY5N6nCYn64/vw4+ZPD25ZckLtyvBRsjUsEkVaVCTxLsFZSPnh7SkZ1sk+WHXABps7d/VE9aQjUt2T2yi++i3DyQoPT542qRdpyS94h9UZT/1bra7uESpZGMHAkM7lo94+t6ht9ubQHJ/1eXrIgGTI0jgM+jAw4L0Ni5nfFeQLKn9Vdey3fq3DxstpUGD25+Wrb9JXBPjTQN8J18f8qePQGMm55ANJ4oJEGQfHKkQHjjbqmXHcJiN38ZYZIRhD1r4JJPgf4aMCuGoDFtETbXp4+U6sEJaZjvk1se+5kLcNJgtJfdMgyM24dR8DmV3124n6lm64uGp/GBaUd+mbqD6D6Rc5MEL9XhOGmpH/s1FWUHD1DQg53ZOWFp7zzQrQnlL2+KUhcRpz+LvbkvYmWwgtFXnuxqDzgtofrO6l8RFqP0JDPZAW6t2xqMgK4LISPUbMQ87ovs7VeO98QF7Y1OE3TTUneCsoNzaALOJh8T9Gf9tsc+2DlfDNCgH+aBUO0LBwWtWIAuyyLkTcihH0tFMz0JVSf6A0xLz7bWc/m5vvc/5Aa/gEW6JqaFIRdaGJFaLS87AMNg52QS2OjIaHJ3y13CEflEp+58Iqbshx2NYGtce4J5MiblRnyROmiNgsvZEM4Kt2oFpnlJWHqJ/hRPucdxL2LLVRSQQwzCAX6sFITGIvSlL5sjWazx6WzqgpW1ZII2z0ruE1WwG6Wc7U/wwvAHJMEIB8l9JZ1Pj8x++wAFFfWeGBVAj9nFdaJQlf0ooHAM2weKYP7olxc8GqCvecHtQiXC3SgeUus/mgTSBmGfLxXtjp2MWXZIhQ94XIDxcUD0P6GmpVAzDSkFkWX3tymStmdxoWTLRV7EpQmFi+cIMRWeiU8ol2As2mwOwCVXE0BULWqjm35GO7XXDUSK6bQyn8vU/Xpv9MnBAmFaERY+Z9Uo9FSpC1yAR6s7jX3RXOwsktSALZAPh6HNsd1Z9NCxr43rx1Bka5TgC2Z2lfOGEr3r2501bcVydjz7jO8UqresHsCueowOZDU5xzujAZ0BuuIqOAMxHANhqhB8VXZ7YCCJzKkYn7aS0bcDIJ4WfkyvBJyEecGfZ86BsuyPWb5CcH22eJurf0g6c8KuoYpmO0A8M+9f3DdM1vaeSjgSGWg0UxIfpUziCpN1TvqMO2mLPAYS/TaSOSJ9L+84nIxLUofBSsnRhQr3otOHp3AMlBktpv0JbpZqmLBEH4TB3r25ED+Q0FoX4UsezMSTCciw3thVKo8eLWzs8YyYelyLgEPkx2/6CTGSZ0TeFqPGev7EmwDO+9GByERW63ubc1woc/gT2h65/5tIj981jw3KQTcKNypPKV/ZmUYrnkKU2uCUeZyh+k0YMqzAR6Exrmnc4o7Rla+mvV4o401oGwN171WSYneBsaFF/EGUYQ4PdQ8w8RTo+fcqjphJaAkc0/EMk4qZTRhyCwOWRo8lTItXsmTYmqUJ5ZhSGafjBF/C548OicDycml8RlzbiqANcGQ7PMLMkEF+x9bpwu01uZj98Bp/7S4HymuXqQHx4EP1SD9KAWqWFzoHDVtBId509jj364WdDqp8PkWN+yuANT09knec53wJi6uDHkpY5b23/3xZqq3vrMrItGYx8Mku3Lucs57tlEEDVb0nv/vDt08Ed59hNWBk/DrI8nh0W3arWfnaLsIQEBQnOYhQcCCnYDtQX3tFCGcU+KJBF4uRwcG8hX9j4eCsrWb/KUrUbufNZrOMlA93uxih345yqHpaY8kprGECt1nneBcu689UoVITq+4YDxFA58Yx/A2yDUmJSj+nQMbBBUlQa9U+V3VARIZ0qlJzylpKLNu8OX/4924jdD1P0CV16tWoa3KTKHNAWTAxg8ZLZUXJuRwNK4mTRM+rjbHJ8JH0Yx65mslkHYXdbSglrdRPSeuJpqE+/GQlbo4bz5nIhbzpa2YDJzUAQMkzJsPSlcLNnE/Gz1xpJpp5a+Pne1Oen8dwiwdb1Qa2dHgIkKZ9UA53Llcj+0cy5yu6palVSE2Z44tKL05FOA1dR3Brwad8UURG/oSQAuYa2ouCqqzOzglybLRTHp20FPQ+bD7JY4bcstadFcrRCnkfI6U36TnQ+9RrFjIQenoVarwJI0KxuE/lB08dGUdcHBmboJHjAIvbD4bdSx0m5Zl/NUb2ygLwAe5xmWC0mjnCxKRgKy10vTb9OvLMa8FjI/ZiIjIv2ylPL+nVZxF9IYzYMQRYEi2OEwwtRGne7WvsbuKpNgSh1uGmuPPC2FGoTeBR6fpHC+IjCIkhegZtBP/3Ekp7qjUdSouh0ovK+L10z9U/hnCAocWHLOW7+FvPFa8AGhRAKLJqrFXu04+h+OG3vzL0TH7ld8P02tvxQj3ruZ3PMD/2heors34OWwBdBuYYuFEqN1jBISsuudf2yYUp3F29x0rbetM8u5/0PQeWZ9LkeGym1nXYcEMN9ewNVYBvRUvs969rvj6bjT/WZWA36l2XFBeffjMsOFY6qnZUfeyS8gh0QL6ViLYPXlThUE0992XlaZMifkEKcA2XKG5YGurzS1O91NghJBaeZQ3AceY3MwiCx5PVeeJ10j7KXAbNYed2No8uJANbQQh2SOqNObUDf7pIvlyoGxbH1vtE8FfNsvWo1kRJzsJG8oVlxqqVuF1+M42tQwVvSZAAbNg0Y/H37E3Dnkw8Oj9WtIq0wxX09etlZD03sd8g86gz5cDQiF6KV24uN8DGoOJoKQ6z2zoRWQLNpo/Z1D6tcyAWpmxfHGNr7AMAUaO2BPEiVxf13D7iUCQTwhFSyOYqf5iEeVUDqJYjfNnWDY2c8lUQBJgdvakvpDcjpy/YSYRIn9HVu0FKoLnbWk43qctXLL9ae5bHpyspst1JpbkkKjMW2mDtu3kiakZJlr0edMZepO0H2/2w7JKULtO/KjgDR7tGS5d+5n1N+1ubEAs09htjQN9l0LzckI4YnHB0Ty4iVLa6jb2ywzNbRsS8z54bio0BLRsO6chTayV5f61OoZtfsBCKP7LS4t+SrazpY40e5q1vSNLRgpd9ZspDC6VZbU+BI+vj82uInaT/Pg8Bn1RfCh3Wk05h+R309522OJ6McE7MnRnLLxwssEsKGylsebWbh8y/AXBhoiHa4+Rt+dQbSqwsIYEP+6UkYw+6Ntrz6V9l/cjwpYmTcAi21GMLqiY9GpGsGpuWa0UilUiVc8pd3Q/NGijXddb1KgvrnsF95FaPsk3/BW9GWRVGJr6gAH6DxC7+bZmloGpN0Y8SurLhE4jgHyGegNT1tJZSYw2pbNDv2cmT3K2rohZUewD8rVmzXdqKXaxq9nw4UYyuuWcqBFZ54hfCOioUNmpDYW4n3UhAV+UGd/mySG7j0/z938PW5Ua65ZDkFf/x8NU7JyUy7pSn3juRBVCb04U8BnXdM4w5nHMoY5a/jm8LJZvhSlpyGfR4lurGm+tXE/BX9105N5oRN3KrdHuUw6RYT8Xx9atjTy6MGgKyA08o79eN1aWDpcye321eUPKomwNCaQHHqtQ5Vu8z7dR7ax/sgWAplVRYQoAr8VsfJ7Zo4gbsJASghSUZsQUrdVsfpAYA45Oxq0PwXMu91+U8ewRZUnUdP0Tu+IeMm2mmgZ4AQI67yFDbQZSAMcuw+B2hnZHQ7pbI2VYgr86gzQjQeGLXZK4JMH8ycXy2YwO/eZENJYIDzbIfyspWqUB1OzVcddVQoH/dWL5V2ofWFs7smHcvnNmJA94T3lxV0Ohl9Zxrz9lWh3D4s0qkdJ+cJ4M5OCG+/h+1gLnpM36vM2JR9ceAhQ/ejZx7dDtWUWzm+n28KzqRFEarj0QcvAn+UkrvrJRoKVLD8SUHxMdClwsUWkobEwTKSPY8LFUHfKRTb7QLU3NtlBOmTyjzkxCENc/69Z7vHYZX3d087QxhK29lfJ/Rh3c/Wv48MCun5CofGuJFEWfuzDdYdTMPQlknMiBgQ2N2cOewy82HK7lYoI8Hlnolan9wX6R8oduWTA/l7YCy+PIDDPV3ytu15KJ20vOyFZJOfQ6adWewRCv8wib5aasEDtYtXGeHxTzw/gVC/tGSEYIcwMlLSVy94hpmwqzpCzRTGECZCUkp4p82LnkZeiORPSzs/zn0HEjj6xeMl+yJbr0MrJ973Fp/N3H6taCnQwH2owZLZH3BSGLo5MkQkNLkz5I8NfAllxlU0r5d81ucJBg8IcGauJF5mNjt/ZbEerIxVl5GauUFe+djd+2zwKnnPzNCEgxh+IWdw6AEKCXvSXhqPZZ2KYet5QdfSbcgIxFfxZngTMBaOeKYM6hZgU1Nlj7XAp5CpY4UQ9k/WJzmm1QhABYyt5QJABfEdi+gQaGTS0VXrh0Dd8Vs72JIuM374qE736WachAf7vilb2IyshnS7w+CfLpbC42856pdyC9REysv2c1P8x1z/QxyHyVbqrzl22qNTBTRwnRSsawdFpWAd7Oxnsoma/XaSg19G59oS2bLKBPpmPwLlLGEsU0aJF9IlSkP2KxIxu6iE7Pf7geWFowHNAka30S+pJGSDiijQHpw7RixhCSf8opkQPBFuixGkwTnMosV6EvBhdNDVEAAjjq5vXQQlZF1Tm41dw1iSPaxQRvX7ByujJh5oz7Dx8i0s4YQwnHhQ+wifVSlWrSK77iQa35OpupTPjC+w/yZeI/3gnfcRAx4pQtY3EOQHeD6KEPvqs1Zv2iYU5xie0l0rPYEjDaryWdH1/fM1WQgnmJ2HA+Tyer0p9y5DlpmBQgKjrxOdncU1eWyC6aRrc9lW+7AUAKLdBf4inMwYBDKiCxSR2MDJ9vKzijYOYOdUOLM6J+fzddyzZbeNF4uBbhsnBymM/gHx8ZCyJmx2v8a3wYaT6nxTkiruwMeeGBUXcC7OCNarQ90zY08toOV6N50+jnOe0DDhQLS4ImY0x/WAmQDmHjwJtHmaZpvcGLZa8nUN5gQP90Ym1LpIQidetxA/hiEEBW5XZy1k6Y1nAzuLZiFDMno1bVOKocTcqavL3LDHSt2vzreMog2u+5PJ1LB+DkxmcA3QgPUEu+8/p+Ac9kBoCVVfqNcjvuFokZ9paFr5CojTIPZlppD0Sc+ilnzc2pkILv2EXBQa3SM0vIC8IsEEp2Ur/Swn8PtlEsfYDV6FDb/S8ESUhhcc0OZ7eLwm95vObWS9svG7VgJqyuKbRFcRGnIydJxJ6bl+0RsTNXiEeWdQKg/5P/rSaiPfMDcvjiTIRZMLnFFdS6cHWY/CSrvVYGuRaRdmd+KZFCj/E+Dd5RiEEObBlLzL8EoTxB2+iwwVk88D7JNQTQJMpiAhl6JFal0r01Qd3MYMyJkIDl8yMH344baMOOVBPFt2C6MoXxjCOCXdLKHdPFrflr79hR6icwrAB4EDcRrXEeLOMqN/pYM5mLn/lCSRJBXq9L8orFN6xwiUCkKpPlwHZL2hdwZ2+BtUiIdPlDHkZmyJFgRL1ryq6Tx1h60B6MmFi/Lqc6hpIPrjFSjZbBsipWbWpQZ92pRbnwjxdm7wyLWHAcnSbLYSIricjYIenGcIU9qgn37vtDXNhNKz8duN6n3JwC+J5N8uZXeQezTAW8Mz7szgixEOKj2WWdh0jJ9IKMKmjrWqjwOnMr+BvQcIAffxGzHY/gNzCidiSgcmjMOIX7UdczA4O5lgsNlfp3c+H18qqsEUcZ+HKgHAbIk3ik39mk6L1Vszri+KRoVZfBVcOX41FeFGTEVPOFKqxshzjn42Qu8+1WlZUw7wdv+TcabE+V2AuJHtt1/mL9EjOGUBGYcrRoIQpnR3GGCofrxtNEHEY5dc1SskLq9+z/0k3kISFjLsdoS/rgcOCiL4GtKWvTC9E29sDwOCKUbCmqe06UGN5QCbvncpBOxwiYrnxD+gtKKmgpu7QmqbTLB6mi8gYt5UUsv0vC7hakW6q7qyUy3kBOrS/Ytij8by8DsNJrFgs7c1BgapHnQxGf+RVzTtxBhWVkEz8RUbTW2n13cPS+EWFDVs2/iBI7jogQBvlpj9KEVKeoMuFeEk42z3VVkG03G+KhD5uvR88Xe8x7j3O6El8ZIzjuzF5M1NaiQKc8uNTH5rdaElnKH1P6njVf2mPsQ5p9XZhL09pCU+Zqtird7X7W4Q4ct4vKj6Ip6Y87c6e30wf1n+wq0YqdsmJYu2sCQOH7GKxzIBOi4GNCbrHaIXmv5KjIkMX9K9ee5IT3pht0ejKkzGABtpD8WLinPCnJPT7K0ocCICnU2l2igwWu8k+mPt+XnH4NUo1l3cLCSwrtypbt3UBlTymgQ6aCrhw44WHJyd0ttOI0A5DidNvdV6I20s1tQKxKPFtFc6g3fg7Um/SGaC7kGqghB/tvW2jUX2nOTYQs09seSGrOHulpH8pabENKv9f9b5AZ7c8kiz68H5LDkXxKmFP7cY8EbEe5coVuX12kHB5t4dY5qKCcW2/CPxktWv0aFdLoxXOYstYZKkqOmUly9oHY5XfKj5+o2xvOUwvHX0CeZh0NmahosyTXW5LZFF6mPS/j95OgVgK7ndhvh7kFCyiz2rQiv4hrYC4B0dZluHWFba5biSLpyb5IEaH0e8IfO5rJMJqwGZOESl49ys2k0Fb04EGOxVGYxcuHlAnii8uAdPBDLdG4iNcQ3fsy3fOJNhvf/O3pfmKYnfUkAgmxhmAQGVijs7kH1/HVlevcoRG/rWoUVFukvjwgvA3gl6d7pVX5i6WLXGLiHkeZH2J5QiHvlOI6E/e3B+EDF0xnGD65IB+6knE40gAvfEdT7AJ94o2hG1k+8JSIq5PMDErpewIxl6WgfLyryAxV8kJeMjexza6ftWg9yT85vBTkqZuLWor4NHspibhcqjV+wp6KfJIoesFd55A1RUNop+h2jdk+JOkQBvdMOCcCtb3N+KdCjLWqUgzoBa6dHFlJn2mg8zWp3+uctwT2Qn2DJhM8IZcj+CG73FTjbwxJwm8rWT2Bmab4mFWvmaHyqcYuRMq7s0iOhTFUT3Wo3MX/DfcuUnARCm/pYsss+E49OBBcHUcu7m7753LF7+Pdu7T9zkCPYJe/gT/B+Tk2sGyh1jm5MxBd85z9bmV3gvbPiOLtxo5vxVyt0Rq/6PdB2npYd3Xr6hqS+yNCdIKkDXb31Rey97evcp7613l1+vT2/62x1iUcqREmAPlDIvc+o3PrUJbl89ah+aTTqQl/fztI8uiJb1B5sIxmZbnb9Hiv+cjyXAV4KX6ZrcjUmHLuFzQR7X+3pyi+oyOOjJART2rcIo+Tdp2avo6hMgv9ne3KRS1v9ICqOitj6MzKUFDjRkZ5oPiZRbDsMAJYLVQDTeNvC5FhVS2ugOLpvHMSSneUSqXEUNUxg0VZHJRw4//tfBcYFLLVNAAwhR7zZugHpYKIeR64onhqNDYxaFoNHDo8wJ8GMLRXS9FPlC2jh5pKOifo+vE6ov2IweaJtIYlJQZ6YT053/0uLGQHfGbe5HMtlLz6mZlv/jTx53kzr9OVGYdRACRgS1Bl/QcwtU95aiFsD9fFfM03Nd+ghTObk04VmB/HJTjnEwKVBPyGJezV2Ur5lJiXVPbvvft+17ayWtPvutKnl1WmBRaeoG3+fAuCk2LiHoLtj+OpH8KbUwakwqK7tkO11may5nkSJVecyh94X8vY9G+9UF1SkfnlRdBRgcOc6kHVaUVr0X4GIQQ6AuGBaw2DxQSCXrEaGUyujk36iDM+JeIuaDuJdBQEUZwTufIACKsUqvYEd9XLaQlVhQnw4L637fyO89InH6TvIcg6jSSYV4NAwMraDtL82dEqqWgcf3DedFNC6O1SSdgEV+TEKdiGYQ9IAL4AmBDexqOAnJTEwlMm9y+pr03LZ0IjLNu7xQXL5LYZ7u4WcHIvGyixbTM2n1CQ7MTkPUr4LYyL6Liy66KkZeQsWbjm5tyYV8ajvzloPNtxy4lgsBodE0DuMpvb1hn8cROJL/mSCM2FMmsFOzISZKJfDT+KHDKriucOAvT5SEeMIdPswkCcp4SxvxLj7PDaL2MtP/gPnppsPDYhPcCSEZPBYL2DdjmsyAY8dHRc2JfdxH+aDlzqthZ9T8Ama6uSEh/zOSREEDF+XlZjb4lsx1K9ctQJlFvt75F51WwliG+8VGIH0HW35qoDsV/0mc8m5tt/EBKDHx3hjXZksa6Q4MG/ybztnsxb2eKm3GhpF/SCTbphgZ5iANhXSyaF87drw67nvshTaiuRYp653FFxnMyhDPu2Eau5n+/TIey5VHzlnawZk9oxYERzRmVjWO/dgcjNPYt73/R1Sd0c590GOhFWEEg26P2fg9QJUGgGEjfpKonXUyY5pQSbFyIsB7GXxPS/D9zjvox76mPsmnzISOurQ98L19wHiWYGP0yhsf3RS99/zLObxpyzlygMRb01uh8AYhWLtehQxKtvLRERQXc9dmuVbVdZqCzggKHWOk0rndkaTKn3I5ASdaPKNAc/kK8vmHXUHrCeGLjH4qHa1mAV3iMsRvODwVeDx12Z1UNVnSgCJLHyjwhXJDVw2n/K7gJbiYgcQ4+w0IALyN863R0seOPA5624LfEKvNKZJbS1RsT5ojvi7t1zAb39ORpB2yEaYSa4rKfezctrbEJVp5HFlQz71YDssaWNlYdPT9XR+pnhI4HOYJ+nTconB7VS7gNu8udjVSKBBLmVlauUBI6gqT/G2Voo4AGv16vBIKQZn4MixI/3nYpe92yes7kzSPAd27K520/7gaamOTBKdEY98npDYkSqs2pzAOfa5MMZo8kTVTT8tBSezodxee+7zlMnHAE9p9cosSHtFlEVhvJbKgaln3cgWjNJocjStlGuHdJBveJWr2RrPA005zHCchiVGzNFWaye/qijF7oUZThrUkD2WhyTvEs3IbxzpKd54JwDJJA2hOtNpOLTAV+ekFKNHTENbl5FVNeU9cjHYzi01CWnNfgLvzMlETIfDxFoAu5Ef/Iw0SVGpaEPxB7/cmk/gLbRzkmbD1abGUxIy172GQSnH+3kb5lP3YWF1XejBTvvk7+OX/ZC7AcsaKsCx6Q8j7yI3INTgcJIRoVtjWk1+ClJAFpPFB7bZd6+DH1BzLQE4Byify7zqToyjo4itjdpbvrRZntbUUQeAZiug0dWH+Q/dCRxkr0QQGuf1RCrELCkF4EzZO0HHiOBaBwTWdPxsPvyZDh4SeRQpgZvuxVo22koLAC/2oK2q7WZAkybcB6xDN9gruFPTruFpRJSW5F3xebosdI6nde9WNlcvedfgIm8xDL/YpdoUTmfZxEBA2Ww1tpYJE451jtU/o+IqFE/BpiRP4jz7+Cz08JPOY0l/9B6yVGAvFm25NRXug2vEpvD1g8h4TVPd5wZA6eYrcHK8gLJDPK7+YM7fFr0BfEYyMQV77iz8XMqC27Pkb2Hl+HIUXOATjKip/rpAwU7htvSekf99BInKpHsDZIaanp4mUnAtfXnV//qvpOcJ/tuL7dtPgefe6PYXw7PW+UCTl7eIjqp3O3+Evh1IDXSTuDB0KkDz1ZE4gGBFfrH4D3If//F0744DmyvmpcJ4+sZH1NQIQD/+XRzbVbZ8tyJ7BTQqRCysQN4gghX9no1ciotsRoFTbxPq+qWEt6OO2npKecMyd/kqnJtiXpjEaXd0FYJtM04ymIwvPtoxKSy6StmKj+vTRs1BU9sykzgKuPiC9Bvot12ASK4yCMtTuVjdhvMicK9nM/iubfWMN16dCWLOKWyICEvmEi1JaswH7QZ3EypdTSfEVwslvzqWtWQTXPW3jpptII/5R+GCTjdgZbxnXexN2ayP2r9L0t1tv9xDZQRmGX3V8YsLweJvj3KNqOF8l2JS1ZUPmLmVvqZJFvrYfkV4QZNme7BxYmL48o3CFqmSOxb1hVeRNjxOo/0z1hI1YsYOCMj161dnu4dQETpPc8GxH7y3U+mCcS9f4B24pSvyCanzE3ax/MIoJNq/zJ6zs9+9h/X7gVT0t7oTE/wAd5H2VHZfoDwSlQdIbRj6syaFZgLGvdwXiQE/2/kE/7by9iwmA3g+OK3hq8BUTWLDSubn/9tcfcXtaTgZn3FA2Aj0AQDqQkgWq8mSdZ3wnl/Szx2d1tslym1xtmwqUzNoRmDOHdjKMT8m18Zx0Zf5spiWq5X6i2a5WjOG1K4r9n2pHFGhizCMtItFBkXo//ed7UmFYme/UPOskLmi49zZ3JqpfePdL5wYqDOe1hZEB4XqWc//TCrTNMmYIybc2Q04CvCjwKjGrka4gbRr7sF5jSri9YV5bHj8Ke6SLmNWLFuizxomIixF47D3gmZNhg2DJ4W/IA9de66585DDDAVP04sijr8nFfCy2q7QT0HX7fmOPFxjTh/+e+ImT+xilOmS6H9aREFgzVdENDgpCUSYW4N9dGxsIJmlRgerl6teiB+LTlkVxntmJ7Co01JQOyzORpy1Ma6sKA6wKyswfvLEKVN/nEw7vyeSpX9xJc0LhMVhUijO23IvwGgvvs+k1/16xbxjnwhbn2Nwylt203gj8YyqnvrC78ja2verxuQCxQFFikTFFnfGUDScr7HreGlUFeXghi9HTo41n0ijs1yggckM3lz3sjGM7l6IxtbPO/M0hSuPyAyJeIFz0KbR2GpQJgRVypeEq86Vigzyo9l/NiUuwR1P1lfxpmBz99WwnKvHFat170zSrwFznPPGJwDt1f8sPprxZ7xSfuJCDloXY1gVoo+3vSKBSD5GvG+K3R2qqzBrJV6bncU6nZ0k29oxgZXXrOEUvpf91ICHjuqo/Rq1nFSzYzpa1MsK22fdDjigA6VeMbpQ3qwgX2L8qImhx0k0aycwtrkPXci1X7rdOyQz92zx8NONDtAumWIoDCHp1BYO9wLlBoovWQjQ5U6L4qduIStwqlRPed31j9YXewW0ZbkoSkOocFdJ3QyS9m6HEtBuImdsy3Iho6obO+wDDJ5z0FO0R0Io1jJfItEf2p6gjl81fgt9Y1jPBhdkevs0NJ1PwZAZyS3ptyUKL7ArV34jeQGQnliwzRignanQWUNkzJ/fNHuCJBUnsFtApF7tBmgx25yThxF6D7aMIHZXjDPfeSMrzZtKrVpvLz9GW2VrRx058hnmK511bh50c2byBgvnbf3wgDXaRhysqdZs+ou7ViwO/D65ykNtX2GjqeG7J2Z0RtjazpI2jjpvuo8I4Wfb/6P85vnfUfXkNj4PB4KUTQ9Yt323Ic/Aw1jQ0RellgabJALnFnEuWjsSoHllfHrFbkyRppQ6opQ/JX8S2NlgKCc8+0n002nBioyB9cWIAzzL8XTvXHzrDCkT5A2coHLXPUzF+cSutpDLd0pzXESp7dQwi/oqN14Kc400PojV8Ez5xr7pwB1/zgC4UYtKIlm+ycCzE+Obo9tcDpB7xQkRNOy8Vdahwb9m+vrT6e5yDBexhXNFdYJANIQIdFoTaTMKJfNgw5Sdny2nvi9muu3e2H6fkTVBYzjEUTeSDfOgeN5xRhyVLSfv09el5YDV77ZkoFMK5GhXDaMJT0wlVCEYl2BN4PvxnVRf2+LhJeYx79AwBJJJeZE2Yg98NGW9dFn3KIQ6yFMbyPZ0NWZBGkgrlkBRMXgMvSBnlpWAq59u148yHsj3cdm7TpdGcMJHsyDutiWVyOl4VpnK3msKhavbPRhT5Q30zSnaT51LYec4IIwHd741/L/PLcEEt/Vg3whvIQP8i/HCE9SkqVoH0nBcdVD5a3/X2SBZjNHGQO07DEwTYCzxDacyHT/3vMrVH3GZv4TV0fncehsMDyKUYiXSXcuN+QfGMME/Nmwz4fjpZWRC0n9hwEa/yeeny+mbVa4CICseYPXRqstl3EzCSUCs9eIwpbn/gAVTgfGICU60H2NTLK0yVfk5svo4O5Vsf6t/uSQkD1HLJFksuJ4Lo9rggE8AmGT29fAN82TdjEO9eS1itKaLJsBFmUPctletm0AAWp9Hru1LjdIaI9gsYk7kPE0uGrewMMwvA9L+ztMYj/620coSAm6HMfEIjiGOfX+Y4XvhQL93uK4m1qKIqew3MBsMUFZyjBC3zSF2ZLYwW6gGpflRhQxdEWwp2Z8ma0BVvLF/a9Pm9GOPPbbPTEWhuXceJwVkwbNWUji+3mAusFldrnS4y1m7axhi3A/HmUhnD6CCFt3on1wqS/wKXFWTGjiDpsR5UUPaDJsOn+KyVCldYEB25HI/N686RbVxOrKXjy05JqmfZEIDfAsymr0E/yXUM/DoA+fSgSLiOt4ogRj2i+WPGhuobfs+95K7rIP3rw+5NxNFAyl92nZUSic4tfSld0hTyft6Mm4vHRCgZxIr4EHAROG622MSD4Q5kdTAeCLFBVw8vZ46Y6i6btb0C6zyLyoQELuATpJNIrM3al5MsfhCIA1zNX0HyX4mdy1LYK9MKBVZ8UW0UdTtaLpUZhmOKXA+um/sXtncxGCzNyKCxv+SzsGg73qOSi4413t4cPvmsEnxjFx42L+TFOouZm1Djq7G3VNJoICQYV0ESCHE/y/VGZR55SO9dCr+cqrkEjkuE7RLOQ6MlEDO9y6SZBjptm9WPnMeP5M7BnP5bOfI1ptPHHJNUbwFKUp3Nsdag9flzIQQVpijxElsMmcnobOajujrq/5G/0yBmAJqXMSIB5R/Im7dWofaFuxNZGF1wsNEzZFNteckqScDaMMDo/EJw6360r/klUiSMgxItlnF5po7UlrKRI6jjwNU39qaTqyPWwrdZFlSg7prJHKvvo0gDll7Ruy6HMscu+zZ13LrMfs6AMiY4pZZf+T79IGaSQaADruhP/2hT5dVkz+0heOJANZWnQy3CSjIgxOB/H2PYWqIrOrUr2cGKBoAK0S+cVMXpiJTuo4X++lmw2CmcZPJRl80Qo676m2yRVudafNBgF1/uZb5LATZtzMyY9vPA4KYhXCSXG90m2GFFe9TXVfU+87X2LZHfLcVnPsQZ7ZRXcj7HcKvEI7fD87cI0u8mXKj+vCd0Su5wwswklFdkUQxeuy7xIG6wsigad7fQVyBhI5Zb+iK0gi6NB5RXC/RtPvDKIpiZeqwhkwvd+sfRUpknJNdcBhuCanmQ50jP6RO+Wet25oXaRY+A8/jIZTCOJRsDfVuJpAz2NqhTNyCdfgRwAiwg+1zsm0mYeumQQ+axxOKgvLq37Wdh/jAfC7Kx0n2XVhtA/W49wNW3Ofj+3glzyNp1DjdM1KKSL8auwNOpimGrc8/AJkYECjWkw38eCDo3RdHnEtVjI7E7YNHxyw1jb8XtsAxbSuyjONxBle+6WYTn/wI97obWFnMzymK/2y8Cz3ehFEj9mthk133+KrozRNmfIUeOmbBfO3r5WQIPywewOLf03tmcf+PmC56zuUNclM1oxArqcahN9lsQeu7IWiRyvcIyE5gxql5GcDsthYPG9LEy0ZwAvHUrucpq5gpUKohk4dCGpIUfG/NGdzNg/d1QUx+sUlrBKBYjb6e3562jlIojsgLDSQYhJqp0p3MO7xPxItQxSx1M5DB9HEIuzY9brj6LD8uKgPQpMiKkkEd9uOI5CDVdKGDwQT/AAtSR7y4zimfGATQv9LLUsLxXylrw8WHgcR3U46QAlGXvtr19aChu66xqRWJjywY1BpVtQd1W7JR03dYCWlvQmzXxow8cVJspvd2JcmME6XeukvHwLG2TmBvHu3bZpL/7yOZOm8A8dhASlXU7qXZ8rU156LeJWHUKT/rCb63KhXgqbUzrSuQORG8jXe7ZirwbZ7PnLFAj9KzBfIoxqxopV++MNlXVtoPxMGEGjlNVALG3+5J3OJcMF8L+80EUTfg+XX5WPj1IzLKQ7rJomOohzZKLEDOzMLaQNMxnskNwO+HnAuNSgQtJt17eRmnPRyOhkVpcPYaptGiANgEkB4DKa+MFi81/0N25/zMiriJS2S4beKfyKPDGNLExnrE4p6xRjnJjmieRMms59Q4XlReGOBT7TPd9VE6PFxl72ZaGgC0vvmwAHHKzqTsO0M61W87yASaUI915/+DugOBxFb3p4uJkve618cplUc/uT1scgT3Hl2etUbo7VW/uSxt1AxbAQCE//V1Ava3BILp+Iz7D9BEfGkVZYhLa+cx5IcsGv2U5wafesDMlC1v+FTQQlAOR0YI30Bln7wlxv1FPoehfe2bnKO5/ISEukpY0xCB7DyOQI3wyJizyHBtVrXjo6fECzc0/uGHBvRlgzLCeH63Czo37inoUYCw3HdOdr3tNSKFx2mgW1riB25JCtz/nqMdoz7C/acSfgysDb6Ltk8VBBAMAJIOOBIckI1fARCuVUweRe7Oj+HMMeP2f8xX9zmkx0MmJexiOvWte27z6m6HIFECWeigVuq+EQa4EsUTRaARxkCSCOQYOu22T2S8I5CrPhil3ILTbZzQeNBwpq/EdKziy7djJdRmw2vtzu74cpg/SKIpalb5miZE3LSBhJbnBOt/gWMIb4OzilTytz/3ZfHMK4xkOMx3pz6ZkMsMaTbd7cJ83EAAwKJ25DyG2JU29wTF/ObfDjdxPpJSn2M5tH5WW6MzMcERCiYNe57agzpzzTwm+Vwx29k0MxZdbJlA6aiChCv2ccsgVKOrd5Q5Lm0IFsgQtdT/P+sqpQWsqHgiHm1V1KCRKBLy/hhp4plOPssENuM9xTXnjNPKDY2vS6sMjw+1x0p/0zUtYXGIlr0QCoad4NyB/sNc/QdTyp797yXKaBl15wP/n7e9WhHxb6cU/+KM6jM0BApZOJFInHFTwOw+wtU3bzcdZ3whVHTFt6QIaeIokk8ZLKXeEFP1lR6albXPdBsNv7Zl6q/OSDdUG8aWzepd/s8QJgsQGEFcBZ8sWHOXBDW8CvgOWsuOB0K7YmcSXga2TmL4Ks1vJ1HNzLu/NWkhzXOgA9KEuudXocdihyGRFJTCJQnsCPs1XjM28mNMtQhrOMAh0Cn19nv66XSytReI4eWCdFBM0qrcaoptGL8iBj+vsl841Cbw103/TtpL7P7NJsorambdr2SQ9bF3TcFuAPbMxJsKz2ivnb+k5k239i2i6H4/cCyIn07hZ7+XN9VI1DNYliLhha2PgOKd/xMLKuRc8huU8tAQCz4ySnOmJrs9iR8cmYu89rcteishw91rNDjwMDOMKROIvgm3SxZyehALOtE5PoVYOQjKGPGOKEfmD76VHBOVF+ciBaChYCIXiGVCvZ8fjB4KiPDQETN/dXbJYlgfDbXoLnT+twho/g4rK6Se/M2A8NvBXh/E2w+AvJWfHl14IqlEZ6uW0ybGhuY3nkhki2y5d2dhuF6LCwACRmHrrmkW5Z0XgwqUaxph3YJPpvmwiQ8scKOqTe5vOyIaBtJU2hei+hSCi75p0ll4g5a5yY9v/ZdAxBY2YL0Dqa2m/UFPolfLZPlNc0V0yE3Elw6T9aRavOmubvFEBbSv7vH2Dd+fJTn7LkFc+NEozH9Rjs5/zQz1YhK9QT35UwDY+eMMvPdzFro/9hfVO9sqliSzAOg8aUagSxeYVNg8zmvXL385QQebHFJ5gToBpAGM/qIm4nHo7GQaLo/PxrpSIhOncxgZ12e/5ZZn+SNEA3ZbNbFsGYwLafg37Ce9x70KoEp8T90QnkwOiCSaLapTKqHKe0dobblSXV5rdAFqjz9j2gpUXXjMbg1KfNEZ+SMsc14pa49dCRBmKcNfDv1XimWBEzaTrt3+VXAhY7CXeO9wvnZEWS4xonx+a3JvWIF1tRP6Gt0rPA7jwX6qVtGugsCNOYgZdL7r72RKLrvuF9HvivYXjbpfKs1wy6MXBbOmT0MD295h/wYPo/qATcGhQGdGevLePDv5PunQ9ssZH4/JTwQHpyrHthdm5YYeLWC6N1tK7fsWqI2hGbWxBxzP10PUZ7Layh4Asw7rOb1xsUXDNbflzHhKL9zhKT/CEvJkJFC0h82QLDTOlgzLoTzmp43NaI5bYuEUV3lcc/7zdhB9OeBHKIb6O4QHaqUE9ntJbTQb06ICO52hFPgub4Xtp/CazVANuP3uux4kYDSiS6g6PMrQIIVxWRmypJfw9UkPnFGpLR0CsEtdRK6dMzdusN7hNOf8Ev1iFz955x5e23IAyh5Q9zyAzVxvm9/fqKOTOqzSHeR8XXwlcaBU9jE33Tcfa5h+tFq6SHnf6sG7TScUUxxgyLyjitzrp/CktPhxSioVMTCXSUo1o+8E9AduZ84eg7rhcpShchpYhPv7b7wST91CU9/N0Xh/yousBWy+68wFl3omyvODhpSrHpAQKoEZAEzmp+8EheaHIBJPSa4htlHC9LGdUVvPdXlvmFOacdW2Q0VNpL1Z5zDToSak4hlzKwQSyLJfgk6wJCPCCssWoG2fneb1sF8RyICWI8RpsU+w0S5pdtZTpfMunb74ifArSbvu7DMA1LB0kW4AQrhwOdJb6Ia35nKD+1Sh7sOnoSTtBJ4Cyv9U44462nK7iNmMdrc1Qjkxj4c6K64gmKUHQ64b9ECuI1prY5KJ8V8A3eV++Gc79hQUVNKExysI/isnRfRTn/NI+vp/djlXm/CB9S2CTPiN0qVPGhQlQyp65xw+/n3OpNe1EzdwN6T8yJkzpshPzgJc2JJTJq9vOiy8WkM0vrfLF1xTqzq4s62Qso0DD5Btq2ODWZAPcPZIuEI5WaGtWvoYdUaMtZ0eI15euMwAnZjt7csoUMaWOBY3j0tXoNBgfeZAt/pjcG+hAIWdDgAYh0zhjB+7li20cGF1IVc/sVv2SHjJOm/iHcHqOl4EoaylDKA3HCSG8/6ZILLxkhEQizU6onzz+7xlkFbxg0s5UWuoFFPRy+YdKxeU+PgVJMrXSwIBDLQvgYyOqe+e7rz/AyROpdb2iJ/fk9cnSnKG0LYTtCYlcmj+BNtoFV+AAuVwTdgJT60nTAyJTT+H8Q3jZ8nCgd7eBt/9Kr21qFMHfiAkNhms+XD8aUxT8/Sg+SBliVZTEr0NY4Pc4SRs4ForRyuU3kSdLnZPxB9TWK1WIMuUEHkvEI0QUCy2FATak1GGKpaYhnBkYu4jRnCLKAPwgI0crsSin8VogBGpMirCZsplqZLweJ3vA6fg2xwKkmRSpTGsz+Nu3tHVR2SWbFkyaMCsXcW0naEOH7VhwZ1dJQHq4wgrepfhlLrHcdMuCVAGxDj+m0DgSf+UV3rp8heNsgGd1wyhcLA7mH9So8jgGFvkAAnSSNpp/pws47os/jz/4EVIMY5azonjB9RHMYVmH7XOYgVyM4aX65dAyV8mw+Xa3IpyK3BAxJLYfkz8WPf8aVaBks/3AaI6lGACAFxSfyEaMJj0e2QveBXCOrx55sYTD/WD9btjY2gNKckngd07zLJVLAMe2TxF+xPqKRB3gzUyCBKYgaDQzqGr2AZjKMpPPkK4w9WuI/lXJuBVvdn6CG0N+4G5NYNFHw9QxdQR0BFlYGEFOJX6Ig4MDX09a7aJJgC5nGPk5LVDNiJs3trvaUcncVKOsae+81smC7YeYlBSTHqMU3CBtghXN3gODVVWPf1FRknXbIxeJIyi5aXEE4C/JwmPIcXru2Dm3IpkWPiq+ytEwRusWVnTonjY6NyIVTKo3gJvU4hexgbepUjDhSbUyTwlXOdtqF4nE4hTdplyZ7ldsJoUPEjuEr473CbG68TQcZky3vJ4UG77E8M8qQk1SPK2lF/V7h7vIKbNizjotbVjWmsBNTYqcnmDTWCD3KQEHHvfQn/9Fdv5/6aEY2L9q+4gEIhCru0gy3nk2vhlUOrHaRq/61UnPWcR01DQJRHKTsvP3M2CeZmpSEORy0qVK5bqkjMyZr36qPc0FWyrArbBcwSo/Kt4XbsmiNuFih1lxdlcHl/LVuMCS0fcsKTXaZq3ZVkhR3OiCy9O2nz/FZ5zZ21MeA1xm8hXd6KrxPC4A8pryOQbWAEWXzYlW/EPVre6LAT4YPM8Nwj36DljctHkt38RZoau3AwBjRXID3LilR+Earqp3aPOz0zxES1ZwPsPx4EqGRXppYTNh13/d4hj4yE/oFRY6HSZJC3mU96B+34wOcS+VPJe6jsiAxneNn/ZGqhuqV/ooHMnqq9l/VfydP6cHMJfhAzfC63D0p1Laugsx5ccZV+nENS3OwCdv4zfZv/aBWlH5fJ4kxDXGniW1xeWaA+K2QHSvX+JGKvddpMyrJwROYdWgASy71l5UJCMwVNUyJJN6e1G7/UVfGOMV0mledLp7KTsvR7+kFt7YiRB7FsmuaD7YW497ayLezl+oypId6JU7EIZsqZmLwjc2WBbLtxCrL0Gd1SC+vOrSCH/XVSoeTuJR4fnNifBOq/VKdw2w6UomAoY00VHYhwIM9LWUaYzeSZVKlmP1QgtHpIq4YA8FccpBDt7+b6EuxMrH99h7LIeAykeNF2FiwLCafApKzs3jSdQKB1qsYnEFInPuiOKBXY71Ff3Ud+bVWe/SFENyrUyEG5YuH1214wkR+rPiGafRg+wvjpW5ALsWD7DJYBqwSuaPYmveaya2hA8ySU2NWYBNKl4HqDshWLL7IEkbQMli1QMCaJGaB/Q3IpkTZN3Ro3fnLCPl+JDyk7PzQQSqDTeXz6NgtWWEdWP51xAJlPyDLDCkAT50215zqwAsHzxf+jdhbvdGptdlhZc0fSbgQTABFw7iLQe9qAkoeAWNC7AWsuMoe/UnVyq6CRRTnQvNwkODR1GCHblJwozpd+uZXB1BjPxEf/OS3R5GJhXCHrviJy4+nEjbJz5fXx8JArbdPxT/MTaQfd1wqF7IwQXhzDXKyX6ZUXYaeIgFtPv+4pWJsRpcNbgdi5uxGxcBgetFmBQXb2TX1y4buxRdNRbz9xLgJan/pkXjw3IFqsOU6FPWFyNTAhrAW22z4vydaoXZ4lHdqcwj1S8+Wh7k0+dIzs1AJ/MTgxH8c62w1d4dAzVVUiGwkwP8eJ9ZHBDmhT0FCBNoMSvIH2u2NWeUvTfVQzl38ulKHhPizljH11CHq4OaWz3/aZN18ZLymznbEmVks5eS1ZLQS+dHmV/nLszw2ZYfiEvU1vExgPVfZoi01esc7m8t6TUYO43NxTS5UIFdWonkLy3Tlpi3YHiNE7VyCaa1JND5rcTgFGAc5qEJ5qdbszDcPRDudXcLTjPPgSq271hTZsXvGN3S3jW1mYXJjwglu1J/vQAlGBct8rFHl4A48pQEkPcvzc3cwZ7ZUFN42jZiZoQ8GJ2f+9PO5wI6krQivTg+JN1gG2BGWDz5qEdbNJxMe+5cGQ1bYh2aqVQrM5/sGg+O+SpRCt7eP2xnQ8FMlkBthiaiMZcU+OufubEONFiKW1xplOnmoI1cXW4AdfCKfcXHDmd1RA6AoJSsSojhzQ6uzym3a5CzqyApZtX1YfW6eQSWakTDR8KCgMwpUKdO8+lic5a5jPXT5o8bs5eUehaoLWBiG5StzSQoOHkFRiKqD4WLtgzlcGH+r+/w9vza6Sistq+1Jkvs5Wg7Rw8DzMxFHSOe6yuOGP+YKsdMC/iXov/u6du5Pa+/MWYdE9b7KPQ6QPI15oNvgTEjzIZj4wKuuvwqi/QTckmRAqckkxRMi/HnXsTwE9Q2SrRg9uQoyKnRygyFnmgaj94zKTRey/yFIbodAMStdINEIf9Xt0AxYw1YqJVOXRjdp8YFdYW9B0UMhbiefR3CjCrA3iAXd40EWFQ6Om5yXTi6jOTGhRPGvjBx9EOZzWZEWykfCcK0XTnK6MaxkxY2TGonTBoJlEKTnfnf38Ucd/GfeYDicAvDdi2hTqvom5ikEdMbig9eqGnz8ySCYJg5QAN3nBTdK05JY/SoxqFcvvq+81fTArpm0v9J2+WLZQmL9mnLhdtWMck+qECOmD2I8Q0mZlgXxWU6GdEZsWC23MLdoBzlcn1VgmUb7SFJHAQuWaXlZhsYqu6EeIHXZ1anohdxyH4s52AGIaNdKe4372GtzqwykZ9A3ed4x8HLxawDo76IwQKQbp4eUDe2tcusSsQSq8P3iCNB/M/D+wd0V5BwuyeZ9am3Murul1768ShS7itO8VfLwpC3EL5tGx+pMtZj5KMfoxgaSE/5AbIo70AGUPX4a/REfQ/YnT+AmhadB/YEIp8S3vZXiFjTADJpLtmxTWP01pVXDwmp7xUY+rtKpHFMuPU6rvEyAeQilkZHuwj/lHZrLT+ZJIosY3keFfgVGYi3IFsPKa/4toCV/Kh7PsxsthMwNuESeY8whkrO7bkZAq4ovNFKZoFkkzHqyGsELmEPV9FxDl4RMoaVBJcCBFdM1wOKAHXIJT+zsoSBm92+cpUjXIyRZHK9WyyFO7qZnchegjtxPfAu1f4HImKJIvtSwOyicFEigM/jUyjs812+vFBhQcy4JEplW8ZF1VTG0rr0I5yRq6auc0DBdBBJRk0eCBrzhJ9e6niXqeHgoOt6VhOdqe0IVAyNKj77mqhU/gavtRKJVXW888+LNvtFB8o6rUsL3CfcNwlT0oNpKUsAi9WuP2IqFLLDJVVtJvVslnZx+a624WU+uSCFn7Mqihrth9LvHHdo2UREtiWgQS8ZPFTYe1rZhBu18RWgzGoW2VFqJBH1VGnEnf5pXZ8R55lTJe9Lh1IVxVqNTKXrLUPnOKpbItFTVOl0nszBgImP2ErqNFqjOrEx8qRmosD7yIxD7A0gq6ecNelMrpBzKNbV2OG+mWnbSrxfyd1Sx0DJUC4QpF/uzhoL7gIiGMG+hHMuTCr0W0r/ug+2MIotA9jiASyTkSP4YYGvl+UW4Cyas8fStr5cbt6smNalRrrb8i18dm8jrpPLcxpniWd2x/U1t/ZQeJws6SmGrRtGygNuTfvTeB99rHPqvwcV0CXTV5ygaDmqPvyVk0JyaR4yIo4omVJRtIS18zs1t767RXOZ6c0PPrm3OdNKHhTCCSw4INoVny8RaAqyl2SAbtw/JLOD7haSx93M+YvUtvV1IlGfWMC5k4bQBuN/qZuKS4vbYkY9D9HHsQbs2RhKfhpT8xe6APM5w9Aold8OMDcCWnSjqj7W/L8uPyVfFjtkZihLdlHj9X08ThY1kGqb/Rfg98EPCXPzqWRT4msQDCqJ8IVR4WifEmQrzlZp7vpydibO77QjiXOWpwo6soNod4t93wizX64yuVMuDkU3aif1BYCefADZejDw2bDsCLtFYtLH6i1VBnUp6C1A+TkJgJsg5Y1DjoAaJLim3xn4Mf3LYN31jdfvsQm0rUFGiF3D3hpBgX/PqpGFKwZD5QnaqRSRhh+5mu4MFko/XFrfd6oFUcCBrY9KYrO0eVpx5e1eyeAPv03SIgJWt44B3oIULyAfUY7SgoPHeiHCwK7JvihyaSFDb4azQo/2Lyl9RQW2/igGwxJhmZbUQ8QI7CQ8hKhpANlm1wHYsMqXdjuUzTQs2nZReS4vfgl0gdAYt5zRZ2k37vrV4+Jrm4DhuhW0TkkzkZaOq6B7Y2ll5pmOBMMJspGlbNbr2+9RmK8CYJln8oKPhrRLBx2GVZRSk/eQHKazI6U8CsDmQG51Z9YWhImoiseBxAyX2zGU6ytE8ZosRGaedCuAg+r9kWxsTYGRAdBpLjcj4xmWhKEETA9iD+VZQjWt/VDnrSFJDjWBkcU7sFY7OfZQ0M6CLi0PKXuDIJyeQJN4Mq7HkXNHDoHjoilaTjQ5tBzWYyv74MHyp0+tB7JV3aAWbvQ7IEGfEzV8xV9srOHQ6DHcnc766tB0PDOi6V2ZUNMsU0v3OiOP/rjVosAKTyvSpIvWtla4LCyXDnei8KqHNzYqOQwlwEntB0coQMkC/Bz0warc2TPUNvFRHajEyMIMn7nmMrTD1muceDsCRNDH8HaPLGQ3t2xKW7PtLTJqwcz9/vt/7T0A468C30YqYp0N1Evd769WxPIRzK8y5WTLZe5bBCWIZk6GHqrFLDYNc4xja34B9T3Eqy8uVwfjKJZMS8wLO6qrRFnWp0rnydtN4h/aA/nOWUWd1dDYe+99/yIOjNpfxaML6P2aTaHyl56MifTbC4tqoFde7QtwFY6N3fWCiBfvElwf8+qPAd7Uw/izyH99pZmCIkJeb/weINbiVBHpUkfhCwiQw8EhrVJa1t+Q3o5rIBpG5YpiBqs3WwyVQ/8PKWd1yM1Xzvo+PM8DiD+EPBV8T2FZx1pb83Gd8wvxRPjGxq/HDpLemN8SksIMS/N7qwXlGxA2achLIzXXZyH7G9qCYyqsxAhXGcEEpLt14SJzJziwqk9KLL+FwRq2EKUIwm5arwCJ6xrJVztjKAqtH0z0XDUEe1VFWu3sQVUNXk2m5xWLifZCbB9a+wkqYUJ+oz+yaHxcDlyLfHdA4RwWMUC7H6ctbJP9Wa/zgoyAlGU7Q3tlnIKG/hl3lNGfgX7LUy2/jkEuHz67jnPmmoxCrsypIovCjVdRk8ak5ynPZkR0nitiYZTPMnAwB5+B7PG2eUTpIC1WkIE+jiHvZZcxbcFaeR0P3ce/nvnkkwOw7ywv9183IBNH+2uDbM/8HHb4YLR5oRsIfejVSfHJMsV4aGST7xJg+g+aHfXOPyhvE6ToQR5412njimFDV+0Az/Pp7CYcTgyP5xAyq62GTdfLk7RyOJLbBTma01VHO/yIezGWL8m5mJRJopWGXHFk+EDITVpu80JSJGWMllQJ+9DGOT2T70fI5D4NAToaghWSYLOWIU0vhg3fbCrFdGV8UydVZS4+NfZOw8HX0MDn5NpxPkC4utoUzd6+I+BKa9q+EtzE7t7eH/CVqt7Cc07uin8PKc/KS4coim1Sw23Zg3DxllKj2lLZIRUNYHMZIhP6eLtxNO/uL90E9ZOhnX2x1zoDsZKYsBEh6ugUMAl0BpDveEC9yCTCCcEYh2Cap7Oa0lxGO7TkFCofjOFNogElQknS9MaxgG5cwN40cnjbB9yn/pNortovgAQhnfrVOYSzpH/U6+CEFmbljYy+w1Mxno+AqPpAbtNGBadBtNVXLq5uvYDlIySKybYlWFBB9ZxAWBa9lPGesDjw5YDaZKuS//SABlUfqsOt/Qukiu87254AGECxU2hiWG8sY6+oSkEIAB3O2252mSeQiHMAZnYCb5+0nTYr9utf24+Tsk9OH/WPHviQiNjySJaCnBr47kINnjFg6fjhkgULFXg4QjK/k00yunXHuovBEf6dc0OshlR1z7gWhqN/9OMOTW6sCR2Vx/RFtnrHbBVD2iaxPGKePA8IZGUGYdaIGJ+F/Q6Q/DWcNAztQ3MUKn+JpVryF+fsoIFkYx3oNG5Ulkk/8QZrD2qBEHO3Dh38EoWJvgY/ZcNf80QIUA6QEeIl6ciFNFlgZI/HJUOvyIsgtcDQSdvDUKOIME+EvkcR4qWucG3HGz5RS8lregDb81IPhGqRwskpH3TvWL1KSFYFKkSQbRANjLmq3TQ2+3lUr2+AhhjQ6HZCZ3eMv3YVHksFvlsC0B5ERZ1vaQbUD3m6h+J4CwEJWautH004cwtpURDbYUb7qFhCrOgETJubT46EIc4akIHYBQC8SgomMAgiYCWDy0C5pqAsZO2Xw8LLGBjk7hl4drNaYWoeQAo3olTT9Z3B3MWaBGqpzR9z94UhVms+nlprx0I59x0NXuyUrMuPdBQiOjkKoE85eXgk5X+IJ4bW38y4n2y1w3NOPvuDFer5qHQ7EUqCEPaBwzHbygLIt93PXWdRaUqT4GBHBfKf3iyRMDlsui6j+h0814ojYbXwU9TP3Pi41hLcgKKmhqCg0Rny3Oo3c/KQJzgBm6CNeGd5JtP2q68qX+T3sPrTLuQMfm9EjhMSZ47vwicHOu9EipBk4i0x1KQorIGd+UUBAjRrr9lkINsivwaublIJpnG33Gl6Uvxs5K++9s3xQf9rMO7tsqm2Ef98tZ5C7tlA5m2YXQ/a9sGo9Vth28fw6QH6+LL6qb7ygKlxbd3A0HiQhokgaxqc2C4M1PyYcIhyZZMJmo2Cn6h1yaxTCByPBgdvvdZDLOi6+ea5qiyht5pY3HFIgIpT7Qvwky+bWRlz6e7OV48ETGn7HNQUTb2mJT711V9BH18F7Msf1elJPe3Jv5ipaD/1o9NLVNdA3yhvxtciOJfUq/BWFmai1EfwBpvvXrz7CfScIymLMLuJVU0siDcwQkU8R/du6LvYpxnijggzHf/hzaEKYHFplpA1U3Bi/MOlhfF1o72PahiDyVFE6u8qABv01ziSCeUFzqqJAjQqNh71YVx0V/Zg4dp+Yymj6kDU071ILqQTdgyzz6UBI2poFLV14FT4YqzGDYM1Oaw0ZGaamfCLCJUU0PA1ziEtxH7GyoTs0zc0kA+SNQYimKRFHAEg7UA+iKCMESpBoezhcZBi6ZSx6hBnYfgCMsYuIqn87uArfUdhG9yUMcD6f083j93ifj2XUQvmIFvGl+w6zV7MV9zL/5ewlnBtFb2rMbRmXJTxPl0JPbEAI81pvKam3Ly8OO1Cb0uIFttqus4/bU0dtndkUx3fzTtH6p3kBR0Z7Cg9T3ncNN2ja2AqOepceSCtRC1TlG+zWNqW38kSHVwIIQDQdU1OwhcVSYwb/UBvGYM/VaRagLeVbtoV+iV7LCMuP0l73ddxAR6C13nb5lTj90CVFt3PThcKJjfOk6rNutuELU+eAlkHZAlq2DSoRkELRxwhCpshUjXX4zGB4hE43aX1powRfX6X1uaQNr+iNckst3udSeOF7d/FLaoEj3Ss29fXfl93SjGvXvLdafLr1d+iaYldhVgOLOXZ/Ayyz3vsoqUKX6LQjSVulR+yspzICzPE/Cvo7IyXt/PFWkQqDSWZKgfA97WnS3sJy3h53+bFaYAYyBEIDeWKLn3qQ7DanCHJByxAWpgu9Iw1zbiVc4uWUidt3QSC/7KkSulvw9rP5HaqbhFVs1UekImJCGzTGa2XDYOua55b+8lXnJxnb+AF65gzKwbYNKDFqTy4fTDcq3De+lY8IGN3TcvRWLRM4zAr1Y5yR412HhTnEWefGdEvSUepu3t6A3TErKi/dSSGV9SyzETIo4CkqpaacF8g6XPoiJOiJ5G0wGhkpXwOGYCIcu6KQp6zZO+mpGVY29HgPzSIuboJX7nNGNK5YfQAuEjyfISa68oj0oBqbHabaO/C0F28YA2O2r2Z7gqHTqrO6Do4ysxz5RlhaY9Copi5F2NxrAAJKXptbF1Zt2Lh9CVn+BUk+j3CMDV3TeU1Ov7ne0dcadiHBJKVNCCDq6aJ6pD7JfD4k34Mpg1REHv1vJRgXJ63gHzFyga73BAu+fmx95wFzjZnj7PuIJcU/45+sudcrLv68lftfx3gC6rAhHI6sTbElPiPR0gtfhHrEn68mqbi8wTOx5lc456RjgrvkC1nBGL33a1bJfDfHUyl/erDo/BexpfQye4r/f7s6VhY/jTCMjY4Gjub7ikwDm4dZ9Ux4gTOHigskwa0fnv/O1fa/QdeYeMpd7KSzsoXt6E8m62LLsw+3IxCq9aS9QnHhDkUtkOsU9ymlLBZYSxfWZEmuI5S8Lyn2aqhdOHy3NsI6plU2oK6U1MfHVpqtoRc+H9rphU6pNYL18ISpwBECGaGA44+K/HVWmniQ6zX5onNoYhh8EUQa2Szm6FHRXPENN9xGAYYJAqEE9ekJkaL/FBWahoxFzCI4oJfscFik7jGWFXgZsmYZqDqWRELqtlgcgn24YsUzyQPx9+xlvZf1K7SN3a7309Ty6Wf60fQC5R2Nzcsy1P70PdzbavfLm07jdeClzx8pGC23yZTe1d7MDSvzV2fxr+vBwHpRFaqwBx1Zg4nNDwy4IYQpQV5L3uDx2wVbL90y2U3yuNLxv7+dnHFH9ruY1eIqqgNjJcbMPFgz9AtiNC1vFCALwc/d/3+wRScRHYhXPo/QkY41EMXJh7gkNqA68D/Wsxm0dV/zLrthO59kZnqX77LHJEND6DFLAH51zAX8Q6WBI8NDLU3yqd7gJ4N/Sq+qxQSaSTomUSMwVSCP63XeFgMIBx9q+DeY5FGeZ7yrQSLLIrr1DYHK3IEZgQuCAHV2rk7HG7qLD6xRN+rs13Ln7rOsRxoqmktJSJIU/fQHAHQJxBgsa1tv1glaoaIywPgidgE1RFSI/Q8zufrjvmBgzX4/jkl7AnhGcuqV5GpsHJCgsmb+ATkG7q0iFxTh03a3aDaSBhjv5XoFCw5rULBpacp3MlER1LzQyUAuQD+1cl1LtlM3foB0CABPESwYjZz/HfDxtRbt8HYMvBDROw4/rflmiMd2xGriiZp5tmL8WHokbNtOOZJKhLfvJm/u/s3Z+eRynBJCzL535vDE7HNpzItztbu8aru3i+CCVV198rth5RJwHr+7qd3An/HipCYhKRDR7dTxVFoMf0ZgbTbDQFOy8okUmFuqsvQJdri2etUICZl4oKDBq7Q3C5WfDFIX+cFDqMA7/yGNsb/9agJdTfwSwVFapxfgwcNQWrp9/BrkOkuAdIrTCDJ3f8igU23Gef79GcOvYuzrnfh0N/j2TIHpkbUcl1q1DXX6cGXSmSvzBVmAInau5A1Gno8KChpppkJqxpCE8173GXOBDU7rreaBeRVTSp73A38x3jgKW5Mj7xc91cboelYO4ROKvN15iPVIgS6AXWO0XzknuddDAmIgu6vhvpYLI8P8lcFg/5hVkRv1550fFk9McBs7BWCGlRd65HpxocrpDY2bdQ958MOH9f4F2WbhntyEI46yxg8G/+DKVFyRFQAA=";
+  var CARD_BACK_NEON = "data:image/webp;base64,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";
+  var FELT_TEXTURE = "data:image/webp;base64,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";
+
+  // client/visuals.ts
+  var SUIT_SHAPES = {
+    "\u2660": `<path d="M50 6 C50 6 91 35 91 58 C91 72 80 81 68 81 C60 81 54 77 50 71 C46 77 40 81 32 81 C20 81 9 72 9 58 C9 35 50 6 50 6 Z"/>
+        <path d="M43 64 C43 78 37 90 28 97 L72 97 C63 90 57 78 57 64 Z"/>`,
+    "\u2665": `<path d="M50 93 C50 93 7 62 7 35 C7 19 19 9 32 9 C41 9 47 13 50 20 C53 13 59 9 68 9 C81 9 93 19 93 35 C93 62 50 93 50 93 Z"/>`,
+    "\u2666": `<path d="M50 4 L88 50 L50 96 L12 50 Z"/>`,
+    "\u2663": `<circle cx="50" cy="27" r="20"/><circle cx="25" cy="58" r="20"/><circle cx="75" cy="58" r="20"/>
+        <path d="M43 62 C43 77 37 90 28 97 L72 97 C63 90 57 77 57 62 Z"/>`
+  };
+  var SUIT_KEY = { "\u2660": "s", "\u2665": "h", "\u2666": "d", "\u2663": "c" };
+  var CARD_METRICS = {
+    /** 高さ / 幅。実物のトランプ（63×88mm）とほぼ同じ */
+    aspect: 1.4,
+    /** 角の指数の位置 */
+    idxTop: 0.05,
+    idxLeft: 0.06,
+    /** 数字の大きさ */
+    idxFont: 0.28,
+    /** 「10」だけは 2 文字ぶん横に広がるので、その場合は縮める */
+    idxWideScale: 0.58,
+    /** 数字とスート記号の間隔 */
+    idxGap: 0.02,
+    /** 指数に添えるスート記号（小さすぎて見えなかったので拡大。横幅は数字側が支配的なので隙間には影響しない） */
+    idxSuit: 0.17,
+    /**
+     * ピップを並べる領域の余白（左右／上下）。
+     * 角の指数を避けようとしてここを広げすぎると、今度は列の間隔が詰まって
+     * ピップ同士がぶつかります。避けるのは領域ではなく指数を小さくする側で、
+     * 本物のトランプもそうなっています
+     */
+    fieldX: 0.14,
+    fieldY: 0.22,
+    /**
+     * ピップ 1 個の大きさ。
+     * 中央の列（0.5）と両脇の列（0.28 / 0.72）の間隔より小さくないと、
+     * 7 や 9 のように列をまたぐ配置で重なります
+     */
+    pipW: 0.14,
+    /** 指数とピップの間に最低限空けたい距離 */
+    minGap: 0.02
+  };
+  var PIP_LAYOUT = {
+    2: [[0.5, 0.14], [0.5, 0.86]],
+    3: [[0.5, 0.14], [0.5, 0.5], [0.5, 0.86]],
+    4: [[0.28, 0.14], [0.72, 0.14], [0.28, 0.86], [0.72, 0.86]],
+    5: [[0.28, 0.14], [0.72, 0.14], [0.5, 0.5], [0.28, 0.86], [0.72, 0.86]],
+    6: [[0.28, 0.14], [0.72, 0.14], [0.28, 0.5], [0.72, 0.5], [0.28, 0.86], [0.72, 0.86]],
+    7: [[0.28, 0.14], [0.72, 0.14], [0.5, 0.32], [0.28, 0.5], [0.72, 0.5], [0.28, 0.86], [0.72, 0.86]],
+    8: [
+      [0.28, 0.14],
+      [0.72, 0.14],
+      [0.5, 0.32],
+      [0.28, 0.5],
+      [0.72, 0.5],
+      [0.5, 0.68],
+      [0.28, 0.86],
+      [0.72, 0.86]
+    ],
+    9: [
+      [0.28, 0.14],
+      [0.72, 0.14],
+      [0.28, 0.38],
+      [0.72, 0.38],
+      [0.5, 0.5],
+      [0.28, 0.62],
+      [0.72, 0.62],
+      [0.28, 0.86],
+      [0.72, 0.86]
+    ],
+    10: [
+      [0.28, 0.14],
+      [0.72, 0.14],
+      [0.5, 0.26],
+      [0.28, 0.38],
+      [0.72, 0.38],
+      [0.28, 0.62],
+      [0.72, 0.62],
+      [0.5, 0.74],
+      [0.28, 0.86],
+      [0.72, 0.86]
+    ]
+  };
+  var RANK_VALUE = {
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+    "9": 9,
+    T: 10
+  };
+  var COURT_MOTIF = {
+    // 王冠
+    K: `<path d="M22 62 L16 30 L32 42 L50 20 L68 42 L84 30 L78 62 Z" />
+      <rect x="20" y="64" width="60" height="10" rx="3" />
+      <circle cx="50" cy="16" r="5" /><circle cx="16" cy="26" r="4" /><circle cx="84" cy="26" r="4" />`,
+    // ティアラ
+    Q: `<path d="M24 64 C24 42 34 26 50 26 C66 26 76 42 76 64 Z" />
+      <path d="M50 20 L56 30 L50 34 L44 30 Z" />
+      <rect x="22" y="66" width="56" height="9" rx="4" />
+      <circle cx="34" cy="46" r="4" /><circle cx="66" cy="46" r="4" /><circle cx="50" cy="42" r="5" />`,
+    // 羽根飾り
+    J: `<path d="M50 16 C36 30 30 48 32 72 C42 66 50 54 50 40 C50 54 58 66 68 72 C70 48 64 30 50 16 Z" />
+      <rect x="30" y="74" width="40" height="8" rx="4" />`
+  };
+  var suitSvg = (suit, cls) => `<svg class="pip ${cls}" viewBox="0 0 100 100" aria-hidden="true">${SUIT_SHAPES[suit] ?? ""}</svg>`;
+  function cardFace(code, opts = {}) {
+    const suit = code[0];
+    const rank = code.slice(1);
+    const rankLabel = rank === "T" ? "10" : rank;
+    const key = SUIT_KEY[suit] ?? "s";
+    const size = opts.size ?? "md";
+    const cls = `card face ${size} suit-${key}${opts.highlight ? " win" : ""}${opts.extra ? ` ${opts.extra}` : ""}`;
+    const wide = rankLabel.length > 1 ? ' class="wide"' : "";
+    const corner = `<span class="idx"><b${wide}>${rankLabel}</b>${suitSvg(suit, "ci")}</span>`;
+    let center;
+    if (rank === "A") {
+      center = `<div class="center ace">${suitSvg(suit, "big")}</div>`;
+    } else if (size === "sm" && rank in RANK_VALUE) {
+      center = `<div class="center solo">${suitSvg(suit, "big")}</div>`;
+    } else if (rank in RANK_VALUE) {
+      const pips = PIP_LAYOUT[RANK_VALUE[rank]] ?? [];
+      center = `<div class="center pips">${pips.map(
+        ([x, y]) => `<span class="p" style="left:${x * 100}%;top:${y * 100}%${y > 0.5 ? ";transform:translate(-50%,-50%) rotate(180deg)" : ""}">${suitSvg(suit, "sm")}</span>`
+      ).join("")}</div>`;
+    } else {
+      center = `<div class="center court">
+        <svg viewBox="0 0 100 100" class="motif" aria-hidden="true">${COURT_MOTIF[rank] ?? ""}</svg>
+        <span class="letter">${rank}</span>
+      </div>`;
+    }
+    return `<div class="${cls}" data-card="${code}">
+    <div class="paper">
+      ${corner}
+      ${center}
+      <span class="idx bot"><b${wide}>${rankLabel}</b>${suitSvg(suit, "ci")}</span>
+    </div>
+  </div>`;
+  }
+  function cardBack(opts = {}) {
+    const size = opts.size ?? "md";
+    return `<div class="card back ${size}${opts.extra ? ` ${opts.extra}` : ""}">
+    <div class="paper"><div class="backart" aria-hidden="true"></div></div>
+  </div>`;
+  }
+  function cardSlot(size = "md") {
+    return `<div class="card slot ${size}"><div class="paper"></div></div>`;
+  }
+  var M = CARD_METRICS;
+  var round = (n) => Number(n.toFixed(4));
+  var VISUAL_CSS = `
+:root, [data-theme="classic"] {
+  --card-back-img: url("${CARD_BACK_CLASSIC}");
+  --felt-tex: url("${FELT_TEXTURE}");
+  --felt-a:#1d6b4f; --felt-b:#10432f; --felt-c:#07261a;
+  --rail:#2a1a0e; --rail-hi:#5a3a1c;
+  --card-paper:#fbfaf6; --card-edge:#d8d2c2;
+  --card-s:#1a1c22; --card-h:#c62233; --card-d:#1666c4; --card-c:#1e7a3c;
+  --back-1:#8e1c26; --back-2:#a92a34; --back-line:#e6c98a; --back-frame:#e8cf9a;
+  --glow:#d9b45f; --winglow:#ffd76a;
+  --banner-a:#d9b45f; --banner-b:#8a6a22;
+}
+[data-theme="neon"] {
+  --card-back-img: url("${CARD_BACK_NEON}");
+  --felt-a:#141a3a; --felt-b:#0a0e22; --felt-c:#05070f;
+  --rail:#0d1020; --rail-hi:#2a3a7a;
+  --card-paper:#0f1420; --card-edge:#2b3a5c;
+  --card-s:#8fe9ff; --card-h:#ff5f8d; --card-d:#8f7bff; --card-c:#5cff9d;
+  --back-1:#101a3a; --back-2:#16255c; --back-line:#3ad1ff; --back-frame:#3ad1ff;
+  --glow:#3ad1ff; --winglow:#7cf3ff;
+  --banner-a:#3ad1ff; --banner-b:#7b3aff;
+}
+
+/* ---- \u30AB\u30FC\u30C9\u672C\u4F53 ---- */
+.card { position:relative; flex:0 0 auto; perspective:600px; }
+.card .paper {
+  width:100%; height:100%; border-radius:calc(var(--cw) * 0.09);
+  background:var(--card-paper);
+  border:1px solid var(--card-edge);
+  box-shadow:0 2px 6px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.5);
+  position:relative; overflow:hidden;
+  display:block;
+}
+[data-theme="neon"] .card .paper {
+  box-shadow:0 2px 10px rgba(0,0,0,.6), inset 0 0 0 1px rgba(120,200,255,.18);
+}
+
+.card.sm { --cw:32px; width:32px; height:45px; }
+.card.md { --cw:52px; width:52px; height:73px; }
+.card.lg { --cw:72px; width:72px; height:101px; }
+@media (max-width:640px){ .card.lg { --cw:58px; width:58px; height:81px; } }
+
+/* \u30B9\u30FC\u30C8\u306E\u8272 */
+.suit-s { --ink:var(--card-s); }
+.suit-h { --ink:var(--card-h); }
+.suit-d { --ink:var(--card-d); }
+.suit-c { --ink:var(--card-c); }
+/* 2\u8272\u30E2\u30FC\u30C9\uFF08\u8A2D\u5B9A\u3067\u5207\u66FF\uFF09\uFF1A\u8D64\u9ED2\u306E\u4F1D\u7D71\u7684\u306A\u914D\u8272\u306B\u623B\u3059 */
+[data-suits="two"] .suit-d { --ink:var(--card-h); }
+[data-suits="two"] .suit-c { --ink:var(--card-s); }
+
+.card .pip { fill:var(--ink); display:block; }
+
+/* \u30B3\u30FC\u30CA\u30FC\u306E\u6307\u6570 */
+/* \u6570\u5024\u306F\u3059\u3079\u3066 CARD_METRICS \u304B\u3089\u751F\u6210\u3057\u3066\u3044\u308B\u3002\u76F4\u63A5\u66F8\u304D\u63DB\u3048\u306A\u3044\u3053\u3068\uFF08\u30C6\u30B9\u30C8\u304C\u691C\u7B97\u3057\u3066\u3044\u308B\uFF09 */
+.card .idx {
+  position:absolute; top:calc(var(--cw) * ${M.idxTop}); left:calc(var(--cw) * ${M.idxLeft});
+  display:flex; flex-direction:column; align-items:center; line-height:1;
+  color:var(--ink); font-weight:800; font-variant-numeric:tabular-nums;
+}
+.card .idx b { font-size:calc(var(--cw) * ${M.idxFont}); letter-spacing:-0.04em; }
+/* \u300C10\u300D\u306F 2 \u6587\u5B57\u3076\u3093\u6A2A\u306B\u5E83\u304C\u308B\u306E\u3067\u3001\u7E2E\u3081\u3066\u30D4\u30C3\u30D7\u306E\u9818\u57DF\u306B\u98DF\u3044\u8FBC\u307E\u305B\u306A\u3044 */
+.card .idx b.wide { font-size:calc(var(--cw) * ${round(M.idxFont * M.idxWideScale)}); }
+.card .idx .ci {
+  width:calc(var(--cw) * ${M.idxSuit}); height:calc(var(--cw) * ${M.idxSuit});
+  margin-top:calc(var(--cw) * ${M.idxGap});
+}
+.card .idx.bot {
+  top:auto; left:auto;
+  bottom:calc(var(--cw) * ${M.idxTop}); right:calc(var(--cw) * ${M.idxLeft});
+  transform:rotate(180deg);
+}
+/* \u5C0F\u3055\u3044\u30AB\u30FC\u30C9\u3067\u306F\u4E0B\u306E\u6307\u6570\u3092\u7701\u304F\u3002\u6F70\u308C\u3066\u6C5A\u304F\u306A\u308B\u3060\u3051\u306A\u306E\u3067 */
+.card.sm .idx.bot { display:none; }
+
+/* \u4E2D\u592E */
+/* \u30DA\u30FC\u30B8\u5074\u306E\u30EC\u30A4\u30A2\u30A6\u30C8\u306B\u6C4E\u7528 .center\uFF08position/left/top/transform/width \u3092\u5F35\u308B\u3002
+   \u4F8B: client/index.html, solo/index.html\uFF09\u304C\u3042\u308A\u3001\u30AF\u30E9\u30B9\u540D\u304C\u885D\u7A81\u3059\u308B\u3002inset \u3088\u308A\u8A73\u7D30\u5EA6\u304C
+   \u4F4E\u3044\u306E\u3067 top/left \u306F\u52DD\u3066\u308B\u304C\u3001transform \u3068 width \u306F\u6253\u3061\u6D88\u3055\u306A\u3044\u3068\u6F0F\u308C\u3066\u304D\u3066\u3001\u4E2D\u8EAB\u304C\u5DE6\u4E0A\u3078
+   \u305A\u308C\u3066\u6F70\u308C\u308B\u3002\u3053\u3053\u3067\u7121\u52B9\u5316\u3057\u3066\u304A\u304F\uFF08\u7D75\u672D\u306E .center.court \u306A\u3069\u306B\u3082\u52B9\u304F\uFF09\u3002 */
+.card .center {
+  position:absolute;
+  inset:calc(var(--cw) * ${M.fieldY}) calc(var(--cw) * ${M.fieldX});
+  transform:none; width:auto; text-align:initial;
+}
+.card .center.pips .p { position:absolute; transform:translate(-50%,-50%); }
+.card .center.pips .p .pip { width:calc(var(--cw) * ${M.pipW}); height:calc(var(--cw) * ${M.pipW}); }
+
+/* \u5C0F\u3055\u3044\u30AB\u30FC\u30C9\u306B\u30D4\u30C3\u30D7\u3092 10 \u500B\u4E26\u3079\u3066\u3082\u6F70\u308C\u3066\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u30B9\u30FC\u30C8 1 \u500B\u3067\u8868\u3059 */
+.card .center.solo { display:flex; align-items:center; justify-content:center; }
+.card .center.solo .pip { width:calc(var(--cw) * 0.42); height:calc(var(--cw) * 0.42); }
+
+.card .center.ace { display:flex; align-items:center; justify-content:center; }
+.card .center.ace .pip { width:calc(var(--cw) * 0.46); height:calc(var(--cw) * 0.46); }
+
+.card .center.court { display:flex; align-items:center; justify-content:center; position:absolute;
+  inset:calc(var(--cw) * 0.24) calc(var(--cw) * 0.2); }
+.card .center.court::before {
+  content:''; position:absolute; inset:0; border-radius:calc(var(--cw) * 0.06);
+  border:1px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  background:linear-gradient(160deg, color-mix(in srgb, var(--ink) 9%, transparent), transparent 60%);
+}
+.card .center.court .motif { position:absolute; width:70%; height:70%; fill:color-mix(in srgb, var(--ink) 22%, transparent); }
+.card .center.court .letter {
+  position:relative; font-size:calc(var(--cw) * 0.46); font-weight:800; color:var(--ink);
+  font-family:Georgia,"Times New Roman",serif;
+}
+.card.sm .center.court .letter { font-size:calc(var(--cw) * 0.5); }
+
+/* \u88CF\u9762\uFF1A\u6A21\u69D8\u306F\u753B\u50CF\u3002\u30C6\u30FC\u30DE\u5909\u6570\u3067\u5DEE\u3057\u66FF\u308F\u308B */
+.card.back .paper { background:var(--back-1); }
+.card .backart {
+  width:100%; height:100%; display:block;
+  background-image:var(--card-back-img);
+  background-size:cover; background-position:center;
+  border-radius:inherit;
+}
+[data-theme="neon"] .card.back .paper { box-shadow:0 2px 10px rgba(0,0,0,.6), 0 0 0 1px rgba(58,209,255,.35); }
+
+/* \u30D5\u30A7\u30EB\u30C8\uFF1A\u751F\u5730\u306E\u30C6\u30AF\u30B9\u30C1\u30E3\u3092\u30C6\u30FC\u30DE\u8272\u3067\u67D3\u3081\u3066\u6577\u304F\u3002
+   \u5E73\u5766\u306A\u30B0\u30E9\u30C7\u30FC\u30B7\u30E7\u30F3\u3060\u3051\u3060\u3068\u300C\u5E03\u300D\u306B\u898B\u3048\u305A\u3001\u5353\u5168\u4F53\u304C\u5B89\u3063\u307D\u304F\u306A\u308B */
+.felt, .scene {
+  background-image:
+    radial-gradient(ellipse at 50% 40%, rgba(255,255,255,.13), rgba(255,255,255,0) 58%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--felt-a) 74%, transparent),
+      color-mix(in srgb, var(--felt-b) 86%, transparent) 62%,
+      color-mix(in srgb, var(--felt-c) 94%, transparent)),
+    var(--felt-tex);
+  background-size: cover, cover, 190px 190px;
+  background-repeat: no-repeat, no-repeat, repeat;
+  background-blend-mode: screen, normal, normal;
+}
+
+/* \u7A7A\u304D\u30B9\u30ED\u30C3\u30C8 */
+.card.slot .paper { background:rgba(255,255,255,.04); border:1px dashed rgba(255,255,255,.18); box-shadow:none; }
+
+/* ---- \u6F14\u51FA ---- */
+
+/* \u914D\u5E03\uFF1A\u30C7\u30A3\u30FC\u30E9\u30FC\u4F4D\u7F6E\u304B\u3089\u98DB\u3093\u3067\u304F\u308B */
+@keyframes dealIn {
+  from { opacity:0; transform:translate(var(--dx,0), var(--dy,-140px)) rotate(var(--dr,-25deg)) scale(.75); }
+  to   { opacity:1; transform:translate(0,0) rotate(0) scale(1); }
+}
+.card.dealing { animation:dealIn .34s cubic-bezier(.2,.9,.3,1) backwards; }
+
+/* \u3081\u304F\u308A\uFF1A3D \u3067\u56DE\u3059\u3002\u88CF\u8FD4\u3059\u77AC\u9593\u306B\u4E2D\u8EAB\u304C\u5165\u308C\u66FF\u308F\u308B */
+@keyframes flipIn {
+  from { transform:rotateY(90deg) scale(.9); opacity:.4; }
+  to   { transform:rotateY(0) scale(1); opacity:1; }
+}
+.card.flipping .paper { animation:flipIn .28s ease-out backwards; transform-style:preserve-3d; }
+
+/* \u5F79\u3092\u69CB\u6210\u3057\u305F\u672D\u3092\u5149\u3089\u305B\u308B */
+.card.win .paper {
+  box-shadow:0 0 0 2px var(--winglow), 0 0 16px 2px color-mix(in srgb, var(--winglow) 60%, transparent);
+  animation:winPulse 1.1s ease-in-out infinite;
+}
+@keyframes winPulse {
+  0%,100% { transform:translateY(0); }
+  50%     { transform:translateY(-3px); }
+}
+/* \u8CA0\u3051\u305F\u5074\u306E\u672D\u306F\u6C88\u3081\u308B\u3002\u52DD\u3061\u672D\u3092\u76EE\u7ACB\u305F\u305B\u308B\u306B\u306F\u3001\u5468\u308A\u3092\u6697\u304F\u3059\u308B\u306E\u304C\u4E00\u756A\u52B9\u304F */
+.showdown .card.dim .paper { filter:brightness(.55) saturate(.6); }
+
+/* \u5F79\u540D\u30D0\u30CA\u30FC */
+.hand-banner {
+  position:absolute; left:50%; top:46%; transform:translate(-50%,-50%);
+  padding:8px 26px; border-radius:99px; z-index:20; pointer-events:none;
+  background:linear-gradient(135deg, var(--banner-a), var(--banner-b));
+  color:#1a1206; font-weight:800; letter-spacing:.06em; white-space:nowrap;
+  box-shadow:0 6px 24px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.5);
+  animation:bannerIn .4s cubic-bezier(.2,1.4,.4,1) both, bannerOut .4s ease-in 2.4s both;
+  font-size:15px;
+}
+[data-theme="neon"] .hand-banner { color:#04101c; }
+@keyframes bannerIn { from { opacity:0; transform:translate(-50%,-50%) scale(.6); } to { opacity:1; transform:translate(-50%,-50%) scale(1); } }
+@keyframes bannerOut { to { opacity:0; transform:translate(-50%,-70%) scale(.95); } }
+
+/* \u30AA\u30FC\u30EB\u30A4\u30F3 */
+.allin-flash {
+  position:absolute; inset:0; z-index:15; pointer-events:none;
+  background:radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--glow) 35%, transparent), transparent 60%);
+  animation:allinFlash .8s ease-out forwards;
+}
+@keyframes allinFlash { from { opacity:0; } 30% { opacity:1; } to { opacity:0; } }
+
+/* \u30C1\u30C3\u30D7\u304C\u30DD\u30C3\u30C8\u3078\u98DB\u3076 */
+.chip-fly {
+  position:absolute; width:16px; height:16px; border-radius:50%; z-index:12; pointer-events:none;
+  background:radial-gradient(circle at 35% 30%, #fff6d8, var(--glow) 55%, #7a5a18);
+  box-shadow:0 2px 5px rgba(0,0,0,.5);
+  animation:chipFly .5s cubic-bezier(.4,.1,.6,1) forwards;
+}
+@keyframes chipFly {
+  from { transform:translate(0,0) scale(1); opacity:1; }
+  to   { transform:translate(var(--tx), var(--ty)) scale(.6); opacity:0; }
+}
+
+/* \u7D19\u5439\u96EA\uFF08\u30ED\u30A4\u30E4\u30EB\uFF0F\u5927\u52DD\u5229\u306E\u3068\u304D\u3060\u3051\uFF09 */
+.confetti { position:absolute; inset:0; overflow:hidden; z-index:18; pointer-events:none; }
+.confetti i {
+  position:absolute; top:-12px; width:7px; height:12px; opacity:.95;
+  animation:fall linear forwards;
+}
+@keyframes fall {
+  to { transform:translateY(115%) rotate(var(--spin,540deg)); opacity:.1; }
+}
+
+/* \u30DD\u30C3\u30C8\u984D\u306E\u30AB\u30A6\u30F3\u30C8\u30A2\u30C3\u30D7 */
+.pot b { transition:none; }
+.pot.bump b { animation:potBump .35s ease-out; }
+@keyframes potBump { 0% { transform:scale(1); } 40% { transform:scale(1.25); color:var(--winglow); } 100% { transform:scale(1); } }
+
+/* \u624B\u756A\u306E\u30EA\u30F3\u30B0 */
+@keyframes actingRing { 0%,100% { box-shadow:0 0 0 2px var(--glow), 0 0 14px rgba(217,180,95,.3); } 50% { box-shadow:0 0 0 2px var(--glow), 0 0 26px rgba(217,180,95,.55); } }
+.seat.acting .box { animation:actingRing 1.4s ease-in-out infinite; }
+
+/* \u52D5\u304D\u3092\u6E1B\u3089\u3059\u8A2D\u5B9A\u3092\u5C0A\u91CD\u3059\u308B\u3002\u3053\u3053\u3092\u7121\u8996\u3059\u308B\u3068\u3001\u9154\u3046\u4EBA\u304C\u78BA\u5B9F\u306B\u51FA\u308B */
+@media (prefers-reduced-motion: reduce) {
+  .card.dealing, .card.flipping .paper, .card.win .paper,
+  .hand-banner, .allin-flash, .chip-fly, .confetti i, .seat.acting .box {
+    animation:none !important;
+  }
+}
+`;
+  function showHandBanner(container, text) {
+    const el = document.createElement("div");
+    el.className = "hand-banner";
+    el.textContent = text;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 3e3);
+  }
+  function flashAllIn(container) {
+    const el = document.createElement("div");
+    el.className = "allin-flash";
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 900);
+  }
+  function flyChips(container, from, count = 5) {
+    const box = container.getBoundingClientRect();
+    const src = from.getBoundingClientRect();
+    const cx = box.left + box.width / 2;
+    const cy = box.top + box.height * 0.4;
+    for (let i = 0; i < count; i++) {
+      const chip = document.createElement("div");
+      chip.className = "chip-fly";
+      const jx = (Math.random() - 0.5) * 26;
+      const jy = (Math.random() - 0.5) * 20;
+      chip.style.left = `${src.left - box.left + src.width / 2 + jx}px`;
+      chip.style.top = `${src.top - box.top + src.height / 2 + jy}px`;
+      chip.style.setProperty("--tx", `${cx - src.left - src.width / 2 - jx}px`);
+      chip.style.setProperty("--ty", `${cy - src.top - src.height / 2 - jy}px`);
+      chip.style.animationDelay = `${i * 45}ms`;
+      container.appendChild(chip);
+      setTimeout(() => chip.remove(), 900 + i * 45);
+    }
+  }
+  function confetti(container, pieces = 60) {
+    const wrap = document.createElement("div");
+    wrap.className = "confetti";
+    const colors = ["#d9b45f", "#e8534f", "#4dbd7a", "#5a9de0", "#ffffff"];
+    for (let i = 0; i < pieces; i++) {
+      const p = document.createElement("i");
+      p.style.left = `${Math.random() * 100}%`;
+      p.style.background = colors[i % colors.length];
+      p.style.animationDuration = `${1.4 + Math.random() * 1.2}s`;
+      p.style.animationDelay = `${Math.random() * 0.4}s`;
+      p.style.setProperty("--spin", `${360 + Math.random() * 720}deg`);
+      wrap.appendChild(p);
+    }
+    container.appendChild(wrap);
+    setTimeout(() => wrap.remove(), 3200);
+  }
+  function bumpPot(potEl) {
+    potEl.classList.remove("bump");
+    void potEl.offsetWidth;
+    potEl.classList.add("bump");
+  }
+
+  // solo/ai.ts
+  var PERSONALITIES = {
+    rock: { key: "rock", name: "\u5CA9\u7530", looseness: 0.16, aggression: 0.35, bluff: 0.04, sticky: 0.35, tagline: "\u6EC5\u591A\u306B\u53C2\u52A0\u3057\u306A\u3044\u3002\u53C2\u52A0\u3057\u305F\u3089\u5F37\u3044" },
+    tag: { key: "tag", name: "\u771F\u7530", looseness: 0.26, aggression: 0.68, bluff: 0.16, sticky: 0.5, tagline: "\u5805\u304F\u3001\u305D\u3057\u3066\u92ED\u3044\u3002\u4E00\u756A\u5384\u4ECB" },
+    lag: { key: "lag", name: "\u30AB\u30EC\u30F3", looseness: 0.42, aggression: 0.78, bluff: 0.3, sticky: 0.55, tagline: "\u5E83\u304F\u5165\u3063\u3066\u62BC\u3057\u3066\u304F\u308B" },
+    station: { key: "station", name: "\u5927\u5834", looseness: 0.48, aggression: 0.22, bluff: 0.05, sticky: 0.85, tagline: "\u3068\u306B\u304B\u304F\u964D\u308A\u306A\u3044\u3002\u30D6\u30E9\u30D5\u306F\u52B9\u304B\u306A\u3044" },
+    maniac: { key: "maniac", name: "\u30B8\u30E7\u30FC", looseness: 0.62, aggression: 0.92, bluff: 0.42, sticky: 0.6, tagline: "\u624B\u304C\u4ED8\u3051\u3089\u308C\u306A\u3044\u3002\u4ED8\u304D\u5408\u3046\u3068\u5371\u967A" }
+  };
+  var OpponentModel = class {
+    constructor() {
+      __publicField(this, "hands", 0);
+      __publicField(this, "vpip", 0);
+      __publicField(this, "raises", 0);
+      __publicField(this, "actions", 0);
+      __publicField(this, "foldsToBet", 0);
+      __publicField(this, "facedBets", 0);
+    }
+    noteHandStart() {
+      this.hands++;
+    }
+    noteVoluntary() {
+      this.vpip++;
+    }
+    noteAction(action, facingBet) {
+      this.actions++;
+      if (action === "bet" || action === "raise") this.raises++;
+      if (facingBet) {
+        this.facedBets++;
+        if (action === "fold") this.foldsToBet++;
+      }
+    }
+    /** 事前分布に寄せた推定値。分母に定数を足すのがベイズ的な平滑化 */
+    get vpipRate() {
+      return (this.vpip + 6) / (this.hands + 24);
+    }
+    get aggressionRate() {
+      return (this.raises + 3) / (this.actions + 15);
+    }
+    get foldToBetRate() {
+      return (this.foldsToBet + 5) / (this.facedBets + 12);
+    }
+    get sampleSize() {
+      return this.hands;
+    }
+  };
+  function equity(hole, board, opponents, trials, rng2) {
+    const known = /* @__PURE__ */ new Set([...hole, ...board]);
+    const deck = [];
+    for (const c of freshDeck()) if (!known.has(c)) deck.push(c);
+    const need = 5 - board.length;
+    let wins = 0;
+    let ties = 0;
+    const mine = new Array(7);
+    const theirs = new Array(7);
+    for (let t = 0; t < trials; t++) {
+      const take = need + opponents * 2;
+      for (let i = 0; i < take; i++) {
+        const j = i + rng2.randomInt(deck.length - i);
+        const tmp = deck[i];
+        deck[i] = deck[j];
+        deck[j] = tmp;
+      }
+      let k = 0;
+      const fullBoard = board.slice();
+      for (let i = 0; i < need; i++) fullBoard.push(deck[k++]);
+      mine[0] = hole[0];
+      mine[1] = hole[1];
+      for (let i = 0; i < 5; i++) mine[2 + i] = fullBoard[i];
+      const myScore = scoreBest(mine);
+      let best = -1;
+      for (let o = 0; o < opponents; o++) {
+        theirs[0] = deck[k++];
+        theirs[1] = deck[k++];
+        for (let i = 0; i < 5; i++) theirs[2 + i] = fullBoard[i];
+        const s = scoreBest(theirs);
+        if (s > best) best = s;
+      }
+      if (myScore > best) wins++;
+      else if (myScore === best) ties++;
+    }
+    return (wins + ties * 0.5) / trials;
+  }
+  function preflopStrength(hole) {
+    const r1 = (hole[0] >> 2) + 2;
+    const r2 = (hole[1] >> 2) + 2;
+    const hi = Math.max(r1, r2);
+    const lo = Math.min(r1, r2);
+    const suited = (hole[0] & 3) === (hole[1] & 3);
+    const gap = hi - lo;
+    let pts = (hi - 2) * 0.9;
+    if (r1 === r2) pts = Math.max(10, (hi - 2) * 1.6);
+    if (suited) pts += 3;
+    if (gap === 1 && r1 !== r2) pts += 2;
+    else if (gap === 2) pts += 1;
+    else if (gap >= 4) pts -= gap;
+    if (hi <= 11 && gap <= 2 && r1 !== r2) pts += 1;
+    return Math.max(0, Math.min(1, pts / 22));
+  }
+  function boardDanger(board) {
+    if (board.length === 0) return 0;
+    const suits = new Array(4).fill(0);
+    const ranks = new Array(15).fill(0);
+    for (const c of board) {
+      suits[c & 3]++;
+      ranks[(c >> 2) + 2]++;
+    }
+    let d = 0;
+    const maxSuit = Math.max(...suits);
+    if (maxSuit >= 3) d += 0.3;
+    if (maxSuit >= 4) d += 0.2;
+    if (ranks.some((n) => n >= 2)) d += 0.2;
+    let run = 0;
+    let maxRun = 0;
+    for (let r = 2; r <= 14; r++) {
+      run = ranks[r] > 0 ? run + 1 : 0;
+      maxRun = Math.max(maxRun, run);
+    }
+    if (maxRun >= 3) d += 0.25;
+    if (ranks[14] || ranks[13]) d += 0.1;
+    return Math.min(1, d);
+  }
+  function decideAi(ctx2) {
+    const { hand: hand2, seat, profile: profile2, model: model2, rng: rng2, skill } = ctx2;
+    const legal = hand2.getLegalActions(seat);
+    if (legal.length === 0) return { action: "fold", reason: "\u5408\u6CD5\u624B\u306A\u3057" };
+    const me = hand2.players[seat];
+    const check = legal.find((l) => l.type === "check");
+    const call = legal.find((l) => l.type === "call");
+    const raise = legal.find((l) => l.type === "raise" || l.type === "bet");
+    const activeOpponents = hand2.players.filter((p) => !p.folded && p.seat !== seat).length;
+    const pot = hand2.totalPot;
+    const toCall = call?.amount ?? 0;
+    const trials = hand2.board.length === 0 ? 0 : Math.round(160 + 240 * skill);
+    const raw = hand2.board.length === 0 ? preflopStrength(me.holeCards) : equity(me.holeCards, hand2.board, Math.max(1, activeOpponents), trials, rng2);
+    let eq = hand2.board.length === 0 ? Math.max(0.12, raw * (1 - activeOpponents * 0.06)) : raw;
+    const n = hand2.players.length;
+    const distFromButton = (seat - hand2.buttonIndex + n) % n;
+    const late = distFromButton === 0 || distFromButton >= n - 2;
+    const positionBonus = late ? 0.05 : distFromButton <= 2 ? -0.03 : 0;
+    eq += positionBonus;
+    const foldEquity = Math.min(0.6, model2.foldToBetRate) * (0.5 + skill * 0.5);
+    const bluffable = foldEquity > 0.36 && activeOpponents <= 2;
+    const danger = boardDanger(hand2.board);
+    const myCat = hand2.board.length >= 3 ? Math.floor(scoreBest([...me.holeCards, ...hand2.board]) / 759375) : -1;
+    const hasDraw = hand2.board.length >= 3 && hand2.board.length <= 4 && eq > 0.3 && myCat <= 1 /* Pair */;
+    const potOdds = toCall > 0 ? toCall / (pot + toCall) : 0;
+    const callProfitable = eq > potOdds * (1 - profile2.sticky * 0.15);
+    const roll = () => rng2.randomInt(1e3) / 1e3;
+    const aggression = profile2.aggression * (0.85 + skill * 0.3);
+    const strongThreshold = 0.66 - profile2.looseness * 0.12;
+    if (raise && eq >= strongThreshold) {
+      const frac = 0.55 + (eq - strongThreshold) * 1.2 - danger * 0.2;
+      return sizedRaise(raise, hand2, frac, `\u52DD\u7387 ${eq * 100 | 0}% \u306E\u30D0\u30EA\u30E5\u30FC`);
+    }
+    if (raise && hasDraw && roll() < aggression * 0.55) {
+      return sizedRaise(raise, hand2, 0.5 + roll() * 0.2, "\u30C9\u30ED\u30FC\u3067\u30BB\u30DF\u30D6\u30E9\u30D5");
+    }
+    if (raise && bluffable && eq < 0.35 && roll() < profile2.bluff * (0.6 + foldEquity)) {
+      return sizedRaise(raise, hand2, 0.45 + roll() * 0.25, "\u30D6\u30E9\u30D5\uFF08\u76F8\u624B\u304C\u964D\u308A\u3084\u3059\u3044\uFF09");
+    }
+    if (check && eq < strongThreshold) {
+      if (raise && eq > 0.5 && roll() < aggression * 0.35) {
+        return sizedRaise(raise, hand2, 0.33, "\u8584\u3044\u30D0\u30EA\u30E5\u30FC");
+      }
+      return { action: "check", reason: `\u52DD\u7387 ${eq * 100 | 0}% \u3067\u30B3\u30F3\u30C8\u30ED\u30FC\u30EB` };
+    }
+    if (call) {
+      if (callProfitable) return { action: "call", reason: `\u30AA\u30C3\u30BA ${potOdds * 100 | 0}% \u306B\u5BFE\u3057\u52DD\u7387 ${eq * 100 | 0}%` };
+      if (roll() < profile2.sticky * 0.35 && eq > potOdds * 0.7) {
+        return { action: "call", reason: "\u6027\u683C\u7684\u306B\u964D\u308A\u306A\u3044" };
+      }
+      return { action: "fold", reason: `\u30AA\u30C3\u30BA ${potOdds * 100 | 0}% \u306B\u52DD\u7387 ${eq * 100 | 0}% \u304C\u8DB3\u308A\u306A\u3044` };
+    }
+    if (check) return { action: "check", reason: "\u30C1\u30A7\u30C3\u30AF" };
+    return { action: "fold", reason: "\u30D5\u30A9\u30FC\u30EB\u30C9" };
+  }
+  function sizedRaise(opt, hand2, potFraction, reason) {
+    const target = Math.round(hand2.totalPot * potFraction) + hand2.currentBet;
+    const to = Math.max(opt.min, Math.min(opt.max, target));
+    const unit = hand2.bigBlind;
+    const rounded = Math.max(opt.min, Math.min(opt.max, Math.round(to / unit) * unit));
+    return { action: opt.type, toAmount: rounded, reason };
+  }
+
+  // solo/meta.ts
+  var RANKS = [
+    { key: "rookie", name: "\u30EB\u30FC\u30AD\u30FC", minRp: 0, rechargeAmount: 1e3, rechargeIntervalMs: 8 * 6e4, rechargeCap: 3e3, color: "#8b97a5" },
+    { key: "amateur", name: "\u30A2\u30DE\u30C1\u30E5\u30A2", minRp: 120, rechargeAmount: 2500, rechargeIntervalMs: 6 * 6e4, rechargeCap: 2e4, color: "#4dbd7a" },
+    { key: "semipro", name: "\u30BB\u30DF\u30D7\u30ED", minRp: 350, rechargeAmount: 8e3, rechargeIntervalMs: 5 * 6e4, rechargeCap: 8e4, color: "#5a9de0" },
+    { key: "pro", name: "\u30D7\u30ED", minRp: 800, rechargeAmount: 3e4, rechargeIntervalMs: 4 * 6e4, rechargeCap: 35e4, color: "#a97bff" },
+    { key: "highroller", name: "\u30CF\u30A4\u30ED\u30FC\u30E9\u30FC", minRp: 1600, rechargeAmount: 12e4, rechargeIntervalMs: 3 * 6e4, rechargeCap: 15e5, color: "#d9b45f" },
+    { key: "legend", name: "\u30EC\u30B8\u30A7\u30F3\u30C9", minRp: 2200, rechargeAmount: 5e5, rechargeIntervalMs: 2 * 6e4, rechargeCap: 4e6, color: "#ff7a59" }
+  ];
+  var STAKES = [
+    { key: "micro6", name: "\u30DE\u30A4\u30AF\u30ED 6\u4EBA", smallBlind: 25, bigBlind: 50, buyIn: 2e3, seats: 6, minRankIndex: 0 },
+    { key: "microhu", name: "\u30DE\u30A4\u30AF\u30ED \u30D8\u30C3\u30BA\u30A2\u30C3\u30D7", smallBlind: 50, bigBlind: 100, buyIn: 4e3, seats: 2, minRankIndex: 0 },
+    { key: "low6", name: "\u30ED\u30FC 6\u4EBA", smallBlind: 100, bigBlind: 200, buyIn: 12e3, seats: 6, minRankIndex: 1 },
+    { key: "lowhu", name: "\u30ED\u30FC \u30D8\u30C3\u30BA\u30A2\u30C3\u30D7", smallBlind: 200, bigBlind: 400, buyIn: 24e3, seats: 2, minRankIndex: 1 },
+    { key: "mid6", name: "\u30DF\u30C9\u30EB 6\u4EBA", smallBlind: 500, bigBlind: 1e3, buyIn: 6e4, seats: 6, minRankIndex: 2 },
+    { key: "midhu", name: "\u30DF\u30C9\u30EB \u30D8\u30C3\u30BA\u30A2\u30C3\u30D7", smallBlind: 1e3, bigBlind: 2e3, buyIn: 12e4, seats: 2, minRankIndex: 2 },
+    { key: "high6", name: "\u30CF\u30A4 6\u4EBA", smallBlind: 5e3, bigBlind: 1e4, buyIn: 6e5, seats: 6, minRankIndex: 3 },
+    { key: "nose6", name: "\u30CE\u30FC\u30BA\u30D6\u30EA\u30FC\u30C9 6\u4EBA", smallBlind: 5e4, bigBlind: 1e5, buyIn: 6e6, seats: 6, minRankIndex: 4 }
+  ];
+  var ACHIEVEMENTS = [
+    { id: "play10", name: "\u5EA7\u308A\u6163\u308C\u308B", detail: "10 \u30CF\u30F3\u30C9\u3092\u30D7\u30EC\u30A4", rp: 10, target: 10, stat: "handsPlayed" },
+    { id: "play100", name: "\u5E38\u9023", detail: "100 \u30CF\u30F3\u30C9\u3092\u30D7\u30EC\u30A4", rp: 30, target: 100, stat: "handsPlayed" },
+    { id: "play500", name: "\u30B0\u30E9\u30A4\u30F3\u30C0\u30FC", detail: "500 \u30CF\u30F3\u30C9\u3092\u30D7\u30EC\u30A4", rp: 80, target: 500, stat: "handsPlayed" },
+    { id: "win1", name: "\u521D\u52DD\u5229", detail: "\u30CF\u30F3\u30C9\u306B 1 \u56DE\u52DD\u3064", rp: 10, target: 1, stat: "handsWon" },
+    { id: "win25", name: "\u52DD\u3061\u65B9\u3092\u899A\u3048\u308B", detail: "\u30CF\u30F3\u30C9\u306B 25 \u56DE\u52DD\u3064", rp: 30, target: 25, stat: "handsWon" },
+    { id: "win150", name: "\u52DD\u3061\u7D9A\u3051\u308B", detail: "\u30CF\u30F3\u30C9\u306B 150 \u56DE\u52DD\u3064", rp: 90, target: 150, stat: "handsWon" },
+    { id: "sd10", name: "\u898B\u305B\u3066\u52DD\u3064", detail: "\u30B7\u30E7\u30FC\u30C0\u30A6\u30F3\u3067 10 \u56DE\u52DD\u3064", rp: 25, target: 10, stat: "showdownsWon" },
+    { id: "sd50", name: "\u8AAD\u307F\u52DD\u3061", detail: "\u30B7\u30E7\u30FC\u30C0\u30A6\u30F3\u3067 50 \u56DE\u52DD\u3064", rp: 70, target: 50, stat: "showdownsWon" },
+    { id: "bluff5", name: "\u898B\u305B\u305A\u306B\u52DD\u3064", detail: "\u30B7\u30E7\u30FC\u30C0\u30A6\u30F3\u306A\u3057\u3067 5 \u56DE\u52DD\u3064", rp: 25, target: 5, stat: "bluffWins" },
+    { id: "bluff30", name: "\u99C6\u3051\u5F15\u304D\u5DE7\u8005", detail: "\u30B7\u30E7\u30FC\u30C0\u30A6\u30F3\u306A\u3057\u3067 30 \u56DE\u52DD\u3064", rp: 70, target: 30, stat: "bluffWins" },
+    { id: "bust1", name: "\u6483\u589C", detail: "CPU \u3092 1 \u4EBA\u98DB\u3070\u3059", rp: 20, target: 1, stat: "cpuBusted" },
+    { id: "bust10", name: "\u30C6\u30FC\u30D6\u30EB\u306E\u6355\u98DF\u8005", detail: "CPU \u3092 10 \u4EBA\u98DB\u3070\u3059", rp: 60, target: 10, stat: "cpuBusted" },
+    { id: "bust50", name: "\u5353\u306E\u4E3B", detail: "CPU \u3092 50 \u4EBA\u98DB\u3070\u3059", rp: 150, target: 50, stat: "cpuBusted" },
+    { id: "streak3", name: "3 \u9023\u52DD", detail: "3 \u30CF\u30F3\u30C9\u9023\u7D9A\u3067\u52DD\u3064", rp: 25, target: 3, stat: "bestStreak" },
+    { id: "streak6", name: "\u6CE2\u306B\u4E57\u308B", detail: "6 \u30CF\u30F3\u30C9\u9023\u7D9A\u3067\u52DD\u3064", rp: 60, target: 6, stat: "bestStreak" },
+    { id: "pot20k", name: "\u5927\u304D\u306A\u30DD\u30C3\u30C8", detail: "20,000 \u306E\u30DD\u30C3\u30C8\u3092\u53D6\u308B", rp: 30, target: 2e4, stat: "biggestPot" },
+    { id: "pot200k", name: "\u8A18\u9332\u7684\u306A\u30DD\u30C3\u30C8", detail: "200,000 \u306E\u30DD\u30C3\u30C8\u3092\u53D6\u308B", rp: 90, target: 2e5, stat: "biggestPot" },
+    { id: "pot2m", name: "\u4F1D\u8AAC\u306E\u30DD\u30C3\u30C8", detail: "2,000,000 \u306E\u30DD\u30C3\u30C8\u3092\u53D6\u308B", rp: 200, target: 2e6, stat: "biggestPot" },
+    { id: "chip50k", name: "\u8CC7\u7523\u5F62\u6210", detail: "\u6240\u6301 50,000 \u306B\u5230\u9054", rp: 40, target: 5e4, stat: "peakChips" },
+    { id: "chip500k", name: "\u5BCC\u8C6A", detail: "\u6240\u6301 500,000 \u306B\u5230\u9054", rp: 120, target: 5e5, stat: "peakChips" },
+    { id: "chip5m", name: "\u5927\u5BCC\u8C6A", detail: "\u6240\u6301 5,000,000 \u306B\u5230\u9054", rp: 300, target: 5e6, stat: "peakChips" },
+    { id: "chip50m", name: "\u6841\u304C\u9055\u3046", detail: "\u6240\u6301 50,000,000 \u306B\u5230\u9054", rp: 600, target: 5e7, stat: "peakChips" },
+    { id: "flush", name: "\u30D5\u30E9\u30C3\u30B7\u30E5", detail: "\u30D5\u30E9\u30C3\u30B7\u30E5\u4EE5\u4E0A\u3092\u4F5C\u308B", rp: 25, target: 5, stat: "bestHandCategory" },
+    { id: "boat", name: "\u30D5\u30EB\u30CF\u30A6\u30B9", detail: "\u30D5\u30EB\u30CF\u30A6\u30B9\u4EE5\u4E0A\u3092\u4F5C\u308B", rp: 45, target: 6, stat: "bestHandCategory" },
+    { id: "quads", name: "\u30D5\u30A9\u30FC\u30AB\u30FC\u30C9", detail: "\u30D5\u30A9\u30FC\u30AB\u30FC\u30C9\u4EE5\u4E0A\u3092\u4F5C\u308B", rp: 100, target: 7, stat: "bestHandCategory" },
+    { id: "sf", name: "\u30B9\u30C8\u30EC\u30FC\u30C8\u30D5\u30E9\u30C3\u30B7\u30E5", detail: "\u30B9\u30C8\u30EC\u30FC\u30C8\u30D5\u30E9\u30C3\u30B7\u30E5\u3092\u4F5C\u308B", rp: 300, target: 8, stat: "bestHandCategory" }
+  ];
+  var SAVE_KEY = "poker.solo.v1";
+  var emptyStats = () => ({
+    handsPlayed: 0,
+    handsWon: 0,
+    showdownsWon: 0,
+    bluffWins: 0,
+    cpuBusted: 0,
+    biggestPot: 0,
+    peakChips: 0,
+    bestStreak: 0,
+    streak: 0,
+    bestHandCategory: -1,
+    bestHandCards: "",
+    bestHandName: "\u2014",
+    totalWon: 0
+  });
+  var STARTING_CHIPS = 5e3;
+  var Profile = class {
+    constructor(now = Date.now()) {
+      __publicField(this, "data");
+      this.data = this.load(now);
+      this.applyRecharge(now);
+    }
+    load(now) {
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return {
+            chips: Number.isFinite(parsed.chips) ? parsed.chips : STARTING_CHIPS,
+            lastRechargeAt: parsed.lastRechargeAt ?? now,
+            claimedAchievements: parsed.claimedAchievements ?? [],
+            stats: { ...emptyStats(), ...parsed.stats ?? {} },
+            createdAt: parsed.createdAt ?? now,
+            playerName: parsed.playerName ?? "\u3042\u306A\u305F"
+          };
+        }
+      } catch {
+      }
+      return {
+        chips: STARTING_CHIPS,
+        lastRechargeAt: now,
+        claimedAchievements: [],
+        stats: { ...emptyStats(), peakChips: STARTING_CHIPS },
+        createdAt: now,
+        playerName: "\u3042\u306A\u305F"
+      };
+    }
+    save() {
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+      } catch {
+      }
+    }
+    reset() {
+      try {
+        localStorage.removeItem(SAVE_KEY);
+      } catch {
+      }
+      this.data = this.load(Date.now());
+    }
+    // --- 実績とランク ---
+    get rp() {
+      let n = 0;
+      for (const a of ACHIEVEMENTS) if (this.isAchieved(a)) n += a.rp;
+      return n;
+    }
+    isAchieved(a) {
+      const v = this.data.stats[a.stat];
+      return typeof v === "number" && v >= a.target;
+    }
+    progressOf(a) {
+      const v = this.data.stats[a.stat];
+      return typeof v === "number" ? Math.min(1, v / a.target) : 0;
+    }
+    get rank() {
+      const rp = this.rp;
+      let r = RANKS[0];
+      for (const x of RANKS) if (rp >= x.minRp) r = x;
+      return r;
+    }
+    get rankIndex() {
+      return RANKS.indexOf(this.rank);
+    }
+    get nextRank() {
+      const i = this.rankIndex;
+      return i + 1 < RANKS.length ? RANKS[i + 1] : null;
+    }
+    /** 新しく達成された実績（前回チェックから増えた分）を返し、記録する */
+    collectNewAchievements() {
+      const fresh = [];
+      for (const a of ACHIEVEMENTS) {
+        if (this.isAchieved(a) && !this.data.claimedAchievements.includes(a.id)) {
+          this.data.claimedAchievements.push(a.id);
+          fresh.push(a);
+        }
+      }
+      if (fresh.length) this.save();
+      return fresh;
+    }
+    // --- 時間回復 ---
+    /**
+     * 前回からの経過時間ぶんチップを回復する。
+     *
+     * タブを閉じていた間も進むよう、時刻の差分から計算しています。
+     * 「開いている間だけ進む」設計にすると、放置しておくためにタブを開きっぱなしにさせる
+     * ことになり、プレイヤーにとって損な行動を強いてしまいます。
+     */
+    applyRecharge(now = Date.now()) {
+      const r = this.rank;
+      if (this.data.chips >= r.rechargeCap) {
+        this.data.lastRechargeAt = now;
+        return 0;
+      }
+      const elapsed = now - this.data.lastRechargeAt;
+      const ticks = Math.floor(elapsed / r.rechargeIntervalMs);
+      if (ticks <= 0) return 0;
+      const before = this.data.chips;
+      this.data.chips = Math.min(r.rechargeCap, this.data.chips + ticks * r.rechargeAmount);
+      this.data.lastRechargeAt += ticks * r.rechargeIntervalMs;
+      this.save();
+      return this.data.chips - before;
+    }
+    /** 次の回復までの残り時間（ミリ秒）。上限に達していれば null */
+    msUntilNextRecharge(now = Date.now()) {
+      const r = this.rank;
+      if (this.data.chips >= r.rechargeCap) return null;
+      const elapsed = now - this.data.lastRechargeAt;
+      return Math.max(0, r.rechargeIntervalMs - elapsed % r.rechargeIntervalMs);
+    }
+    // --- チップの出入り ---
+    canAfford(amount) {
+      return this.data.chips >= amount;
+    }
+    /**
+     * now を引数に取るのは applyRecharge と時計を揃えるためです。
+     * ここだけ Date.now() を直に呼ぶと、呼び出し側が別の時刻で計算しているときに
+     * 補充のタイマーが噛み合わなくなります
+     */
+    spend(amount, now = Date.now()) {
+      if (!this.canAfford(amount)) return false;
+      this.data.chips -= amount;
+      if (this.data.chips < this.rank.rechargeCap) {
+        this.data.lastRechargeAt = now;
+      }
+      this.save();
+      return true;
+    }
+    gain(amount) {
+      this.data.chips += amount;
+      this.data.stats.peakChips = Math.max(this.data.stats.peakChips, this.data.chips);
+      this.save();
+    }
+    /** 今の所持で座れる卓 */
+    availableStakes() {
+      return STAKES.filter((s) => s.minRankIndex <= this.rankIndex);
+    }
+    // --- 統計の更新 ---
+    recordHand(r) {
+      const s = this.data.stats;
+      s.handsPlayed++;
+      if (r.won) {
+        s.handsWon++;
+        s.streak++;
+        s.bestStreak = Math.max(s.bestStreak, s.streak);
+        s.totalWon += r.potWon;
+        s.biggestPot = Math.max(s.biggestPot, r.potWon);
+        if (r.showdown) s.showdownsWon++;
+        else s.bluffWins++;
+      } else {
+        s.streak = 0;
+      }
+      s.cpuBusted += r.bustedCpu;
+      if (r.handCategory > s.bestHandCategory) {
+        s.bestHandCategory = r.handCategory;
+        s.bestHandName = r.handName;
+        s.bestHandCards = r.handCards;
+      }
+      this.save();
+    }
+  };
+  var fmtDuration = (ms) => {
+    const s = Math.ceil(ms / 1e3);
+    const m = Math.floor(s / 60);
+    return m > 0 ? `${m}\u5206${String(s % 60).padStart(2, "0")}\u79D2` : `${s}\u79D2`;
+  };
+
+  // solo/share.ts
+  var W = 1200;
+  var H = 630;
+  var SUIT_COLOR = { "\u2660": "#16181c", "\u2665": "#c62233", "\u2666": "#1666c4", "\u2663": "#1e7a3c" };
+  function roundRect(g, x, y, w, h, r) {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  }
+  function drawCard(g, code, x, y, w, h) {
+    const suit = code[0];
+    const rank = code.slice(1);
+    g.save();
+    g.shadowColor = "rgba(0,0,0,.45)";
+    g.shadowBlur = 12;
+    g.shadowOffsetY = 4;
+    g.fillStyle = "#fbfaf6";
+    roundRect(g, x, y, w, h, w * 0.1);
+    g.fill();
+    g.restore();
+    g.fillStyle = SUIT_COLOR[suit] ?? "#16181c";
+    g.textAlign = "center";
+    g.font = `700 ${Math.round(w * 0.52)}px "Hiragino Sans", system-ui, sans-serif`;
+    g.fillText(rank, x + w / 2, y + h * 0.46);
+    g.font = `${Math.round(w * 0.42)}px "Hiragino Sans", system-ui, sans-serif`;
+    g.fillText(suit, x + w / 2, y + h * 0.86);
+  }
+  var fmt = (n) => n.toLocaleString("ja-JP");
+  function compact(n) {
+    if (n >= 1e8) return `${(n / 1e8).toFixed(n >= 1e9 ? 0 : 1)}\u5104`;
+    if (n >= 1e4) return `${(n / 1e4).toFixed(n >= 1e6 ? 0 : 1)}\u4E07`;
+    return fmt(n);
+  }
+  async function renderShareCard(opts) {
+    const { profile: profile2 } = opts;
+    const s = profile2.data.stats;
+    const rank = profile2.rank;
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const g = canvas.getContext("2d");
+    g.fillStyle = "#0b1a14";
+    g.fillRect(0, 0, W, H);
+    try {
+      const tex = await loadImage(FELT_TEXTURE);
+      const pat = g.createPattern(tex, "repeat");
+      if (pat) {
+        g.save();
+        g.globalAlpha = 0.85;
+        g.fillStyle = pat;
+        g.fillRect(0, 0, W, H);
+        g.restore();
+      }
+    } catch {
+    }
+    const vign = g.createRadialGradient(W * 0.5, H * 0.42, 60, W * 0.5, H * 0.5, W * 0.72);
+    vign.addColorStop(0, "rgba(255,255,255,.16)");
+    vign.addColorStop(0.55, "rgba(0,0,0,.15)");
+    vign.addColorStop(1, "rgba(0,0,0,.62)");
+    g.fillStyle = vign;
+    g.fillRect(0, 0, W, H);
+    g.strokeStyle = "rgba(217,180,95,.75)";
+    g.lineWidth = 3;
+    roundRect(g, 18, 18, W - 36, H - 36, 22);
+    g.stroke();
+    g.save();
+    g.font = '600 26px "Hiragino Sans", system-ui, sans-serif';
+    const badgeText = `${rank.name}`;
+    const bw = g.measureText(badgeText).width + 64;
+    g.fillStyle = rank.color;
+    roundRect(g, 62, 62, bw, 52, 26);
+    g.fill();
+    g.fillStyle = "#0d1116";
+    g.textAlign = "center";
+    g.fillText(badgeText, 62 + bw / 2, 96);
+    g.restore();
+    g.fillStyle = "rgba(255,255,255,.75)";
+    g.font = '500 26px "Hiragino Sans", system-ui, sans-serif';
+    g.textAlign = "left";
+    g.fillText(profile2.data.playerName, 62 + bw + 22, 96);
+    g.textAlign = "left";
+    g.fillStyle = "rgba(255,255,255,.62)";
+    g.font = '500 24px "Hiragino Sans", system-ui, sans-serif';
+    g.fillText("\u6240\u6301\u30C1\u30C3\u30D7", 64, 190);
+    const chipStr = compact(profile2.data.chips);
+    g.font = '800 132px "Hiragino Sans", system-ui, sans-serif';
+    const grad = g.createLinearGradient(64, 200, 64, 300);
+    grad.addColorStop(0, "#fff6d8");
+    grad.addColorStop(0.5, "#e8c778");
+    grad.addColorStop(1, "#b98f30");
+    g.fillStyle = grad;
+    g.fillText(chipStr, 62, 296);
+    const chipW = g.measureText(chipStr).width;
+    g.font = '600 30px "Hiragino Sans", system-ui, sans-serif';
+    g.fillStyle = "rgba(255,255,255,.55)";
+    g.fillText("CHIPS", 74 + chipW, 292);
+    if (opts.highlight) {
+      g.fillStyle = "rgba(255,255,255,.9)";
+      g.font = '700 34px "Hiragino Sans", system-ui, sans-serif';
+      g.fillText(opts.highlight.title, 64, 356);
+      g.fillStyle = "rgba(255,255,255,.6)";
+      g.font = '400 24px "Hiragino Sans", system-ui, sans-serif';
+      g.fillText(opts.highlight.detail, 64, 392);
+    }
+    const cards = s.bestHandCards ? s.bestHandCards.split(" ").filter(Boolean) : [];
+    if (cards.length) {
+      g.fillStyle = "rgba(255,255,255,.55)";
+      g.font = '500 22px "Hiragino Sans", system-ui, sans-serif';
+      g.textAlign = "right";
+      g.fillText("\u81EA\u5DF1\u30D9\u30B9\u30C8", W - 66, 172);
+      g.fillStyle = "#ffd76a";
+      g.font = '700 32px "Hiragino Sans", system-ui, sans-serif';
+      g.fillText(s.bestHandName, W - 66, 212);
+      const cw = 88;
+      const ch = 124;
+      const gap = 12;
+      const total = cards.length * cw + (cards.length - 1) * gap;
+      let x = W - 66 - total;
+      for (const c of cards) {
+        drawCard(g, c, x, 236, cw, ch);
+        x += cw + gap;
+      }
+    }
+    const winRate = s.handsPlayed > 0 ? Math.round(s.handsWon / s.handsPlayed * 100) : 0;
+    const stats = [
+      ["\u30CF\u30F3\u30C9", fmt(s.handsPlayed)],
+      ["\u52DD\u7387", `${winRate}%`],
+      ["\u6700\u9AD8\u30DD\u30C3\u30C8", compact(s.biggestPot)],
+      ["\u6483\u589C", `${fmt(s.cpuBusted)}\u4EBA`],
+      ["\u6700\u9AD8\u9023\u52DD", `${s.bestStreak}`]
+    ];
+    const boxY = H - 138;
+    g.save();
+    g.fillStyle = "rgba(0,0,0,.34)";
+    roundRect(g, 62, boxY, W - 124, 84, 16);
+    g.fill();
+    g.restore();
+    const colW = (W - 124) / stats.length;
+    stats.forEach(([label2, value], i) => {
+      const cx = 62 + colW * i + colW / 2;
+      g.textAlign = "center";
+      g.fillStyle = "rgba(255,255,255,.5)";
+      g.font = '500 19px "Hiragino Sans", system-ui, sans-serif';
+      g.fillText(label2, cx, boxY + 30);
+      g.fillStyle = "#ffffff";
+      g.font = '700 30px "Hiragino Sans", system-ui, sans-serif';
+      g.fillText(value, cx, boxY + 66);
+    });
+    g.textAlign = "center";
+    g.fillStyle = "rgba(255,255,255,.34)";
+    g.font = '500 18px "Hiragino Sans", system-ui, sans-serif';
+    g.fillText("\u2660 SOLO POKER", W / 2, H - 26);
+    return canvas;
+  }
+  function loadImage(src) {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = rej;
+      img.src = src;
+    });
+  }
+  function shareText(profile2) {
+    const s = profile2.data.stats;
+    const winRate = s.handsPlayed > 0 ? Math.round(s.handsWon / s.handsPlayed * 100) : 0;
+    return [
+      `\u2660 SOLO POKER`,
+      `${profile2.rank.name}\uFF5C\u6240\u6301 ${compact(profile2.data.chips)} \u30C1\u30C3\u30D7`,
+      `${s.handsPlayed} \u30CF\u30F3\u30C9 / \u52DD\u7387 ${winRate}% / \u6700\u9AD8\u30DD\u30C3\u30C8 ${compact(s.biggestPot)}`,
+      s.bestHandName !== "\u2014" ? `\u81EA\u5DF1\u30D9\u30B9\u30C8: ${s.bestHandName}` : ""
+    ].filter(Boolean).join("\n");
+  }
+  async function downloadCard(canvas, name = "poker-result.png") {
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2e3);
+  }
+  async function copyCard(canvas) {
+    try {
+      const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+      if (!blob || !navigator.clipboard || !("write" in navigator.clipboard)) return false;
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // solo/showdown.ts
+  var EXACT_LIMIT = 3e5;
+  function remainingDeck(players, board, deadCards = []) {
+    const used = new Set(board);
+    for (const p of players) for (const c of p.hole) used.add(c);
+    for (const c of deadCards) used.add(c);
+    return freshDeck().filter((c) => !used.has(c));
+  }
+  function currentLeaders(players, board) {
+    if (board.length < 3) return [];
+    let best = -1;
+    let leaders = [];
+    for (const p of players) {
+      const s = scoreBest([...p.hole, ...board]);
+      if (s > best) {
+        best = s;
+        leaders = [p.seat];
+      } else if (s === best) {
+        leaders.push(p.seat);
+      }
+    }
+    return leaders;
+  }
+  function tally(players, full, wins, ties, share, scratch, scores) {
+    let best = -1;
+    let winners = 0;
+    const holeLen = players[0].hole.length;
+    for (let i = 0; i < full.length; i++) scratch[holeLen + i] = full[i];
+    for (let i = 0; i < players.length; i++) {
+      const hole = players[i].hole;
+      for (let j = 0; j < holeLen; j++) scratch[j] = hole[j];
+      const s = scoreBest(scratch);
+      scores[i] = s;
+      if (s > best) {
+        best = s;
+        winners = 1;
+      } else if (s === best) {
+        winners++;
+      }
+    }
+    const shareEach = 1 / winners;
+    for (let i = 0; i < players.length; i++) {
+      if (scores[i] !== best) continue;
+      if (winners === 1) wins[i]++;
+      else ties[i]++;
+      share[i] += shareEach;
+    }
+  }
+  function choose(n, k) {
+    if (k < 0 || k > n) return 0;
+    let r = 1;
+    for (let i = 0; i < k; i++) r = r * (n - i) / (i + 1);
+    return Math.round(r);
+  }
+  function showdownEquity(players, board, rng2, maxTrials = 2e4, deadCards = [], exactLimit = EXACT_LIMIT) {
+    const n = players.length;
+    const wins = new Array(n).fill(0);
+    const ties = new Array(n).fill(0);
+    const share = new Array(n).fill(0);
+    const deck = remainingDeck(players, board, deadCards);
+    const need = 5 - board.length;
+    const total = choose(deck.length, need);
+    const exact = need === 0 || total <= exactLimit;
+    let samples = 0;
+    const holeLen = players[0].hole.length;
+    const scratch = new Array(holeLen + 5);
+    const scores = new Array(n);
+    if (exact) {
+      const full = [...board, ...new Array(need).fill(0)];
+      const idx = new Array(need).fill(0);
+      const walk = (start, depth) => {
+        if (depth === need) {
+          for (let i = 0; i < need; i++) full[board.length + i] = deck[idx[i]];
+          tally(players, full, wins, ties, share, scratch, scores);
+          samples++;
+          return;
+        }
+        for (let i = start; i <= deck.length - (need - depth); i++) {
+          idx[depth] = i;
+          walk(i + 1, depth + 1);
+        }
+      };
+      walk(0, 0);
+    } else {
+      if (!rng2) throw new Error("\u6570\u3048\u4E0A\u3052\u304C\u91CD\u3044\u5C40\u9762\u3067\u306F rng \u304C\u5FC5\u8981\u3067\u3059");
+      const pool = deck.slice();
+      const full = [...board, ...new Array(need).fill(0)];
+      for (let t = 0; t < maxTrials; t++) {
+        for (let i = 0; i < need; i++) {
+          const j = i + rng2.randomInt(pool.length - i);
+          const tmp = pool[i];
+          pool[i] = pool[j];
+          pool[j] = tmp;
+          full[board.length + i] = pool[i];
+        }
+        tally(players, full, wins, ties, share, scratch, scores);
+        samples++;
+      }
+    }
+    return {
+      exact,
+      samples,
+      seats: players.map((p, i) => ({
+        seat: p.seat,
+        win: wins[i] / samples,
+        tie: ties[i] / samples,
+        equity: share[i] / samples
+      }))
+    };
+  }
+  function outsFor(players, board, deadCards = []) {
+    const leaders = new Set(currentLeaders(players, board));
+    const deck = remainingDeck(players, board, deadCards);
+    if (board.length >= 5) {
+      return players.map((p) => ({ seat: p.seat, cards: [], leading: leaders.has(p.seat) }));
+    }
+    return players.map((p) => {
+      if (leaders.has(p.seat)) return { seat: p.seat, cards: [], leading: true };
+      const cards = [];
+      for (const c of deck) {
+        const next = [...board, c];
+        const after = currentLeaders(players, next);
+        if (after.length === 1 && after[0] === p.seat) cards.push(c);
+      }
+      return { seat: p.seat, cards, leading: false };
+    });
+  }
+  function buildRevealScript(players, board, runout, rng2) {
+    const steps = [];
+    let cur = [...board];
+    let prevLeaders = currentLeaders(players, cur);
+    steps.push({
+      card: null,
+      board: [...cur],
+      equity: showdownEquity(players, cur, rng2).seats,
+      outs: outsFor(players, cur),
+      leaders: prevLeaders,
+      leadChanged: false,
+      final: runout.length === 0
+    });
+    for (let i = 0; i < runout.length; i++) {
+      cur = [...cur, runout[i]];
+      const leaders = currentLeaders(players, cur);
+      const changed = prevLeaders.length > 0 && (leaders.length !== prevLeaders.length || leaders.some((s) => !prevLeaders.includes(s)));
+      steps.push({
+        card: runout[i],
+        board: [...cur],
+        equity: showdownEquity(players, cur, rng2).seats,
+        outs: outsFor(players, cur),
+        leaders,
+        leadChanged: changed,
+        final: i === runout.length - 1
+      });
+      prevLeaders = leaders;
+    }
+    return steps;
+  }
+
+  // solo/audio.ts
+  var MUTE_KEY = "poker.solo.mute";
+  var ctx = null;
+  var master = null;
+  var noiseBuf = null;
+  var muted = false;
+  try {
+    muted = localStorage.getItem(MUTE_KEY) === "1";
+  } catch {
+  }
+  function ensure() {
+    if (typeof AudioContext === "undefined") return null;
+    if (!ctx) {
+      ctx = new AudioContext();
+      master = ctx.createGain();
+      master.gain.value = 0.5;
+      master.connect(ctx.destination);
+      const len = Math.floor(ctx.sampleRate * 0.5);
+      noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (ctx.state === "suspended") void ctx.resume();
+    return ctx;
+  }
+  function unlockAudio() {
+    ensure();
+  }
+  function isMuted() {
+    return muted;
+  }
+  function setMuted(v) {
+    muted = v;
+    try {
+      localStorage.setItem(MUTE_KEY, v ? "1" : "0");
+    } catch {
+    }
+    if (master && ctx) master.gain.setTargetAtTime(v ? 0 : 0.5, ctx.currentTime, 0.02);
+  }
+  function burst(at, dur, freq, q, gain, type = "bandpass") {
+    if (!ctx || !master || !noiseBuf) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuf;
+    src.playbackRate.value = 0.8 + Math.random() * 0.4;
+    const filt = ctx.createBiquadFilter();
+    filt.type = type;
+    filt.frequency.value = freq;
+    filt.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(gain, at + 2e-3);
+    g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+    src.connect(filt).connect(g).connect(master);
+    src.start(at);
+    src.stop(at + dur + 0.02);
+  }
+  function tone(at, dur, from, to, gain, type = "sine") {
+    if (!ctx || !master) return;
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.setValueAtTime(from, at);
+    if (to !== from) osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), at + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(gain, at + Math.min(0.02, dur * 0.2));
+    g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+    osc.connect(g).connect(master);
+    osc.start(at);
+    osc.stop(at + dur + 0.02);
+  }
+  var note = (semitonesFromA4) => 440 * Math.pow(2, semitonesFromA4 / 12);
+  var tensionStop = null;
+  function play(name) {
+    if (muted) return;
+    const c = ensure();
+    if (!c) return;
+    const t = c.currentTime;
+    switch (name) {
+      // チップが数枚ぶつかる。ばらつかせないとチップに聞こえない
+      case "chip":
+        for (let i = 0; i < 4; i++) burst(t + i * 0.014 + Math.random() * 8e-3, 0.05, 2600 + Math.random() * 1400, 6, 0.16);
+        break;
+      // 大量のチップが動く。数を増やし、低い成分を足して重くする
+      case "chipBig":
+        for (let i = 0; i < 11; i++) burst(t + i * 0.022 + Math.random() * 0.014, 0.07, 2200 + Math.random() * 1800, 5, 0.15);
+        tone(t, 0.28, 150, 80, 0.1);
+        break;
+      // カードが滑る音。高い帯域のノイズを短く
+      case "deal":
+        burst(t, 0.09, 5200, 1.2, 0.13, "highpass");
+        break;
+      case "flip":
+        burst(t, 0.05, 3400, 3, 0.16);
+        burst(t + 0.02, 0.04, 1500, 4, 0.09);
+        break;
+      // チェックは卓を叩く音。低くて短い
+      case "check":
+        tone(t, 0.09, 190, 90, 0.24);
+        burst(t, 0.05, 420, 2, 0.1, "lowpass");
+        break;
+      case "fold":
+        burst(t, 0.13, 2400, 1, 0.09, "highpass");
+        tone(t + 0.02, 0.14, 300, 170, 0.07);
+        break;
+      case "call":
+        for (let i = 0; i < 3; i++) burst(t + i * 0.016, 0.05, 2800 + Math.random() * 1e3, 6, 0.14);
+        tone(t, 0.1, 420, 420, 0.07);
+        break;
+      // レイズは上がる 2 音。上向きの動きが「攻めた」感じを作る
+      case "raise":
+        for (let i = 0; i < 6; i++) burst(t + i * 0.018, 0.05, 2800 + Math.random() * 1200, 6, 0.14);
+        tone(t, 0.1, note(0), note(0), 0.12, "triangle");
+        tone(t + 0.09, 0.16, note(7), note(7), 0.12, "triangle");
+        break;
+      // オールインは重い一撃 + 上昇。ここだけ明確に音量と長さを変える
+      case "allIn":
+        tone(t, 0.6, 120, 44, 0.32);
+        tone(t + 0.02, 0.5, 240, 90, 0.14, "triangle");
+        for (let i = 0; i < 16; i++) burst(t + 0.05 + i * 0.02 + Math.random() * 0.01, 0.08, 2e3 + Math.random() * 2200, 5, 0.14);
+        tone(t + 0.18, 0.5, note(-12), note(4), 0.12, "sawtooth");
+        break;
+      // 焦らしのあいだ鳴らし続ける低い揺れ。stopTension で止める
+      case "tension": {
+        if (!ctx || !master) break;
+        const osc = ctx.createOscillator();
+        const lfo = ctx.createOscillator();
+        const lfoGain = ctx.createGain();
+        const g = ctx.createGain();
+        osc.type = "sawtooth";
+        osc.frequency.value = 55;
+        lfo.frequency.value = 5.5;
+        lfoGain.gain.value = 0.05;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.09, t + 0.5);
+        lfo.connect(lfoGain).connect(g.gain);
+        osc.connect(g).connect(master);
+        osc.start(t);
+        lfo.start(t);
+        tensionStop = () => {
+          if (!ctx) return;
+          const now = ctx.currentTime;
+          g.gain.cancelScheduledValues(now);
+          g.gain.setValueAtTime(g.gain.value, now);
+          g.gain.exponentialRampToValueAtTime(1e-4, now + 0.25);
+          osc.stop(now + 0.3);
+          lfo.stop(now + 0.3);
+        };
+        break;
+      }
+      // 1 枚めくる瞬間。息を呑む感じの短い上昇
+      case "reveal":
+        burst(t, 0.07, 4200, 2, 0.12, "highpass");
+        tone(t + 0.03, 0.18, note(-5), note(2), 0.1, "triangle");
+        break;
+      // アウツを引いた瞬間。明るく高い和音
+      case "outHit":
+        tone(t, 0.5, note(12), note(12), 0.15, "triangle");
+        tone(t + 0.05, 0.5, note(16), note(16), 0.12, "triangle");
+        tone(t + 0.1, 0.6, note(19), note(19), 0.12, "sine");
+        break;
+      // 勝利：上がる分散和音
+      case "win":
+        [0, 4, 7, 12].forEach((s, i) => tone(t + i * 0.09, 0.5, note(s), note(s), 0.15, "triangle"));
+        for (let i = 0; i < 8; i++) burst(t + 0.3 + i * 0.03, 0.08, 2400 + Math.random() * 1600, 5, 0.12);
+        break;
+      // 敗北：下がる 2 音。長く引かない（負けを責められている感じになる）
+      case "lose":
+        tone(t, 0.28, note(-3), note(-3), 0.12, "triangle");
+        tone(t + 0.16, 0.42, note(-8), note(-10), 0.12, "triangle");
+        break;
+      case "bust":
+        tone(t, 0.9, 180, 40, 0.26, "sawtooth");
+        tone(t + 0.1, 0.8, 90, 30, 0.16);
+        break;
+      case "achieve":
+        [0, 7, 12, 16, 19].forEach((s, i) => tone(t + i * 0.07, 0.4, note(s), note(s), 0.13, "triangle"));
+        break;
+      case "click":
+        burst(t, 0.03, 3e3, 8, 0.1);
+        break;
+    }
+  }
+  function stopTension() {
+    tensionStop?.();
+    tensionStop = null;
+  }
+  function playAction(action, allIn) {
+    if (allIn) {
+      play("allIn");
+      return;
+    }
+    switch (action) {
+      case "fold":
+        play("fold");
+        break;
+      case "check":
+        play("check");
+        break;
+      case "call":
+        play("call");
+        break;
+      case "bet":
+      case "raise":
+        play("raise");
+        break;
+      default:
+        play("click");
+    }
+  }
+
+  // solo/game.ts
+  var $ = (id) => document.getElementById(id);
+  var each = (sel, fn) => Array.from(document.querySelectorAll(sel)).forEach(fn);
+  var fmt2 = (n) => n.toLocaleString("ja-JP");
+  var rng = createSecureRng();
+  var seatActions = /* @__PURE__ */ new Map();
+  var actionNonce = 0;
+  var reveal = null;
+  var profile = new Profile();
+  var stake = null;
+  var hand = null;
+  var heroStack = 0;
+  var cpus = [];
+  var handNo = 0;
+  var busy = false;
+  var lastSummaryWinners = /* @__PURE__ */ new Set();
+  var lastWinningCards = /* @__PURE__ */ new Set();
+  var lastBoardLen = 0;
+  var theme = "classic";
+  var highlight = null;
+  var model = new OpponentModel();
+  var skillFor = () => 0.8 + Math.min(1.2, profile.rankIndex * 0.28);
+  var CPU_POOL = ["rock", "tag", "lag", "station", "maniac"];
+  function renderHud() {
+    profile.applyRecharge();
+    $("chips").textContent = fmt2(profile.data.chips);
+    const r = profile.rank;
+    const badge = $("rank-badge");
+    badge.textContent = r.name;
+    badge.style.background = r.color;
+    const next = profile.nextRank;
+    const rp = profile.rp;
+    $("rp").textContent = next ? `${rp} / ${next.minRp} RP` : `${rp} RP\uFF08\u6700\u9AD8\u4F4D\uFF09`;
+    const pct = next ? Math.min(100, (rp - r.minRp) / (next.minRp - r.minRp) * 100) : 100;
+    $("rp-bar").style.width = `${pct}%`;
+    $("rp-bar").style.background = r.color;
+    const ms = profile.msUntilNextRecharge();
+    const cap = r.rechargeCap;
+    const el = $("recharge");
+    if (profile.data.chips >= cap) {
+      el.innerHTML = `<span class="ok">\u88DC\u5145\u4E0A\u9650\u306B\u5230\u9054\uFF08${fmt2(cap)}\uFF09</span><br><span class="sub">\u3053\u308C\u4EE5\u4E0A\u306F\u52DD\u3063\u3066\u5897\u3084\u3059\u3057\u304B\u3042\u308A\u307E\u305B\u3093</span>`;
+    } else {
+      el.innerHTML = `\u6B21\u306E\u88DC\u5145\u307E\u3067 <b>${fmtDuration(ms ?? 0)}</b>\uFF08+${fmt2(r.rechargeAmount)}\uFF09<br>
+      <span class="sub">\u88DC\u5145\u306F ${fmt2(cap)} \u307E\u3067\u3002${next ? `${next.name} \u306B\u306A\u308B\u3068 ${fmt2(next.rechargeAmount)} / ${Math.round(next.rechargeIntervalMs / 6e4)}\u5206\u30FB\u4E0A\u9650 ${fmt2(next.rechargeCap)}` : ""}</span>`;
+    }
+  }
+  function renderLobby() {
+    renderHud();
+    const avail = new Set(profile.availableStakes().map((s) => s.key));
+    $("stakes").innerHTML = STAKES.map((s) => {
+      const unlocked = avail.has(s.key);
+      const affordable = profile.data.chips >= s.buyIn;
+      const need = RANKS[s.minRankIndex];
+      return `<div class="tcard ${unlocked ? "" : "locked"}">
+      <h3>${s.name}</h3>
+      <div class="blinds">${fmt2(s.smallBlind)} / ${fmt2(s.bigBlind)}</div>
+      <dl>
+        <dt>\u30D0\u30A4\u30A4\u30F3</dt><dd>${fmt2(s.buyIn)}</dd>
+        <dt>\u5E2D</dt><dd>${s.seats === 2 ? "\u30D8\u30C3\u30BA\u30A2\u30C3\u30D7" : `${s.seats} \u4EBA`}</dd>
+        <dt>\u89E3\u7981</dt><dd>${need.name}</dd>
+      </dl>
+      <button class="${unlocked && affordable ? "primary" : ""}" data-stake="${s.key}"
+        ${unlocked && affordable ? "" : "disabled"}>
+        ${!unlocked ? `${need.name}\u3067\u89E3\u7981` : !affordable ? "\u30C1\u30C3\u30D7\u4E0D\u8DB3" : "\u5EA7\u308B"}
+      </button>
+    </div>`;
+    }).join("");
+    each("[data-stake]", (b) => {
+      b.onclick = () => sitDown(STAKES.find((s) => s.key === b.dataset.stake));
+    });
+    renderAchievements();
+  }
+  function renderAchievements() {
+    const done = ACHIEVEMENTS.filter((a) => profile.isAchieved(a));
+    const todo = ACHIEVEMENTS.filter((a) => !profile.isAchieved(a));
+    todo.sort((a, b) => profile.progressOf(b) - profile.progressOf(a));
+    $("ach-count").textContent = `${done.length} / ${ACHIEVEMENTS.length}`;
+    $("achievements").innerHTML = [...todo.slice(0, 6), ...done.slice(-4).reverse()].map((a) => {
+      const p = profile.progressOf(a);
+      const cleared = p >= 1;
+      const cur = profile.data.stats[a.stat];
+      return `<div class="ach ${cleared ? "done" : ""}">
+        <div class="grow">
+          <div class="nm">${a.name} <span class="rp">+${a.rp} RP</span></div>
+          <div class="bar"><div style="width:${Math.round(p * 100)}%"></div></div>
+          <div class="sub">${a.detail}\u3000${cleared ? "\u9054\u6210" : `${fmt2(Math.min(cur, a.target))} / ${fmt2(a.target)}`}</div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+  function sitDown(s) {
+    if (!profile.spend(s.buyIn)) return;
+    stake = s;
+    heroStack = s.buyIn;
+    handNo = 0;
+    const pool = [...CPU_POOL];
+    cpus = [];
+    for (let i = 1; i < s.seats; i++) {
+      const pick = pool.splice(rng.randomInt(pool.length), 1)[0] ?? CPU_POOL[rng.randomInt(CPU_POOL.length)];
+      cpus.push({ seat: i, name: PERSONALITIES[pick].name, profile: PERSONALITIES[pick], stack: s.buyIn });
+    }
+    $("lobby").classList.add("hidden");
+    $("table-view").classList.remove("hidden");
+    $("log").innerHTML = "";
+    $("stake-name").textContent = `${s.name}\u3000${fmt2(s.smallBlind)}/${fmt2(s.bigBlind)}`;
+    log(`${s.name} \u306B\u7740\u5E2D\uFF08${fmt2(s.buyIn)} \u6301\u3061\u8FBC\u307F\uFF09`, "hl");
+    startHand();
+  }
+  function leaveTable() {
+    if (hand && !hand.isComplete) return;
+    if (heroStack > 0) {
+      profile.gain(heroStack);
+      log(`${fmt2(heroStack)} \u3092\u6301\u3063\u3066\u5353\u3092\u964D\u308A\u307E\u3057\u305F`, "win");
+    }
+    heroStack = 0;
+    hand = null;
+    stake = null;
+    $("table-view").classList.add("hidden");
+    $("lobby").classList.remove("hidden");
+    renderLobby();
+  }
+  function startHand() {
+    if (!stake) return;
+    profile.applyRecharge();
+    if (heroStack < stake.bigBlind) {
+      log("\u30C1\u30C3\u30D7\u304C\u5C3D\u304D\u307E\u3057\u305F\u3002\u5353\u3092\u964D\u308A\u307E\u3059", "ng");
+      setTimeout(() => {
+        showBustDialog();
+      }, 600);
+      return;
+    }
+    let busted = 0;
+    for (const c of cpus) {
+      if (c.stack < stake.bigBlind) {
+        busted++;
+        const pick = CPU_POOL[rng.randomInt(CPU_POOL.length)];
+        c.profile = PERSONALITIES[pick];
+        c.name = PERSONALITIES[pick].name;
+        c.stack = stake.buyIn;
+      }
+    }
+    if (busted > 0) log(`${busted} \u4EBA\u304C\u5E2D\u3092\u7ACB\u3061\u307E\u3057\u305F\u3002\u65B0\u3057\u3044\u76F8\u624B\u304C\u6765\u307E\u3059`);
+    handNo++;
+    const seats = [
+      { id: "hero", name: profile.data.playerName, stack: heroStack },
+      ...cpus.map((c) => ({ id: `cpu${c.seat}`, name: c.name, stack: c.stack }))
+    ];
+    hand = new Hand({
+      seats,
+      buttonIndex: (handNo - 1) % seats.length,
+      smallBlind: stake.smallBlind,
+      bigBlind: stake.bigBlind,
+      rng
+    });
+    model.noteHandStart();
+    lastSummaryWinners = /* @__PURE__ */ new Set();
+    lastWinningCards = /* @__PURE__ */ new Set();
+    lastBoardLen = 0;
+    highlight = null;
+    seatActions.clear();
+    reveal = null;
+    play("deal");
+    log(`\u2014 \u30CF\u30F3\u30C9 #${handNo} \u2014`, "hl");
+    render();
+    scheduleCpu();
+  }
+  function scheduleCpu() {
+    const h = hand;
+    if (!h || h.isComplete) return;
+    if (h.actingSeat === 0) {
+      busy = false;
+      render();
+      return;
+    }
+    busy = true;
+    render();
+    const delay = 420 + rng.randomInt(520);
+    setTimeout(() => {
+      const cur = hand;
+      if (!cur || cur.isComplete || cur.actingSeat === null || cur.actingSeat === 0) return;
+      const seat = cur.actingSeat;
+      const cpu = cpus.find((c) => c.seat === seat);
+      if (!cpu) return;
+      const d = decideAi({ hand: cur, seat, profile: cpu.profile, model, rng, skill: skillFor() });
+      const beforeBoard = [...cur.board];
+      let done = d.action;
+      try {
+        cur.act(seat, d.action, d.toAmount);
+      } catch {
+        done = cur.getLegalActions(seat).some((l) => l.type === "check") ? "check" : "fold";
+        cur.act(seat, done);
+      }
+      logAction(seat, done, cur);
+      afterAction(beforeBoard);
+    }, delay);
+  }
+  function heroAct(action, toAmount) {
+    const h = hand;
+    if (!h || h.isComplete || h.actingSeat !== 0 || busy) return;
+    const facingBet = h.currentBet > h.players[0].streetBet;
+    const beforeBoard = [...h.board];
+    try {
+      h.act(0, action, toAmount);
+    } catch {
+      return;
+    }
+    model.noteAction(action, facingBet);
+    if (action !== "fold" && action !== "check") model.noteVoluntary();
+    logAction(0, action, h);
+    afterAction(beforeBoard);
+  }
+  function afterAction(beforeBoard) {
+    const h = hand;
+    if (!h.isComplete) {
+      if (h.board.length !== beforeBoard.length) {
+        seatActions.clear();
+        for (let i = beforeBoard.length; i < h.board.length; i++) play("deal");
+      }
+      render();
+      scheduleCpu();
+      return;
+    }
+    const runout = h.board.slice(beforeBoard.length);
+    const live = h.players.map((p, i) => ({ p, i })).filter((x) => !x.p.folded);
+    if (h.result?.showdown && runout.length > 0 && live.length >= 2) {
+      startReveal(beforeBoard, runout, live.map((x) => ({ seat: x.i, hole: x.p.holeCards })));
+    } else {
+      finishHand();
+    }
+  }
+  function startReveal(board, runout, players) {
+    busy = true;
+    seatActions.clear();
+    const steps = buildRevealScript(players, board, runout, rng);
+    reveal = { steps, index: 0, board: [...board], open: /* @__PURE__ */ new Set() };
+    const rand = (lo, hi) => lo + rng.randomInt(hi - lo + 1);
+    const PRE = {
+      flop: [1200, 2200],
+      // 手札公開 → フロップ（3枚まとめて一気に）
+      turn: [1500, 2500],
+      // フロップ → ターン
+      river: [2e3, 3600]
+      // ターン → リバー（ここが最大の焦らし）
+    };
+    const streetOf = (len) => len <= 3 ? "flop" : len === 4 ? "turn" : "river";
+    const segments = [];
+    for (let i = 1; i < steps.length; i++) {
+      const st = streetOf(steps[i].board.length);
+      const last = segments[segments.length - 1];
+      if (last && last.street === st) last.index = i;
+      else segments.push({ street: st, index: i, from: i - 1 });
+    }
+    const beats = [];
+    beats.push({
+      delay: rand(1e3, 1700),
+      // コール成立 → 両者の手札公開
+      apply: () => {
+        for (const p of players) reveal.open.add(p.seat);
+        play("tension");
+      }
+    });
+    for (const seg of segments) {
+      beats.push({
+        delay: rand(...PRE[seg.street]),
+        apply: () => {
+          reveal.index = seg.index;
+          reveal.board = [...steps[seg.index].board];
+          play(seg.street === "flop" ? "deal" : "reveal");
+          const before = steps[seg.from].leaders;
+          const after = steps[seg.index].leaders;
+          if (before.length > 0 && (after.length !== before.length || after.some((s) => !before.includes(s)))) {
+            setTimeout(() => play("outHit"), 180);
+            const names = after.map((s) => hand?.players[s]?.name ?? "").filter(Boolean);
+            log(`\u9006\u8EE2\uFF01 ${names.join(" / ")} \u304C\u524D\u306B\u51FA\u305F`, "hl");
+          }
+        }
+      });
+    }
+    beats.push({ delay: rand(1500, 2500), apply: () => {
+    } });
+    const endReveal = () => {
+      if (!reveal) return;
+      stopTension();
+      const last = reveal.steps[reveal.steps.length - 1];
+      reveal.board = [...last.board];
+      reveal = null;
+      finishHand();
+    };
+    let bi = 0;
+    const run = () => {
+      if (!reveal) return;
+      const beat = beats[bi++];
+      setTimeout(() => {
+        if (!reveal) return;
+        try {
+          beat.apply();
+        } catch {
+        }
+        try {
+          render();
+        } catch {
+        }
+        if (bi >= beats.length) endReveal();
+        else run();
+      }, beat.delay);
+    };
+    play("allIn");
+    render();
+    run();
+    const budget = beats.reduce((a, b) => a + b.delay, 0) + 5e3;
+    setTimeout(() => {
+      if (!reveal) return;
+      try {
+        reveal.index = reveal.steps.length - 1;
+        reveal.board = [...reveal.steps[reveal.steps.length - 1].board];
+        render();
+      } catch {
+      }
+      endReveal();
+    }, budget);
+  }
+  function finishHand() {
+    const h = hand;
+    const r = h.result;
+    busy = true;
+    const winners = /* @__PURE__ */ new Set();
+    for (const p of r.pots) for (const w of p.winners) winners.add(w);
+    lastSummaryWinners = winners;
+    lastWinningCards = /* @__PURE__ */ new Set();
+    for (let e = 0; e < h.players.length; e++) {
+      const hv = r.hands[e];
+      if (hv && winners.has(e)) for (const c of hv.cards) lastWinningCards.add(cardToDisplay(c));
+    }
+    const before = heroStack;
+    heroStack = h.players[0].stack;
+    for (const c of cpus) c.stack = h.players[c.seat].stack;
+    const heroWon = winners.has(0);
+    const potTotal = r.pots.reduce((a, p) => a + p.pot.amount, 0);
+    const bustedCpu = cpus.filter((c) => c.stack < (stake?.bigBlind ?? 1)).length;
+    const heroHv = r.hands[0];
+    profile.recordHand({
+      won: heroWon,
+      showdown: r.showdown,
+      potWon: heroWon ? potTotal : 0,
+      bustedCpu,
+      handCategory: heroHv ? heroHv.category : -1,
+      handName: heroHv ? describeHand(heroHv) : "\u2014",
+      handCards: heroHv ? heroHv.cards.map(cardToDisplay).join(" ") : ""
+    });
+    profile.data.stats.peakChips = Math.max(profile.data.stats.peakChips, profile.data.chips + heroStack);
+    profile.save();
+    const diff = heroStack - before;
+    log(`\u7D50\u679C ${diff >= 0 ? "+" : ""}${fmt2(diff)}\uFF08\u6B8B\u308A ${fmt2(heroStack)}\uFF09`, diff > 0 ? "win" : "");
+    render();
+    play(heroWon ? "win" : "lose");
+    if (heroWon && potTotal > 0) setTimeout(() => play("chipBig"), 220);
+    celebrate(potTotal, heroWon, r.showdown, heroHv ? describeHand(heroHv) : "");
+    const fresh = profile.collectNewAchievements();
+    if (fresh.length) {
+      setTimeout(() => {
+        play("achieve");
+        showAchievementToast(fresh);
+      }, 900);
+    }
+    setTimeout(() => {
+      busy = false;
+      startHand();
+    }, 2600);
+  }
+  function celebrate(pot, won, showdown, handName) {
+    const felt = $("felt");
+    if (won) {
+      const el = felt.querySelector('.seat[data-seat="0"]');
+      if (el) flyChips(felt, el, 6);
+      if (showdown && handName) showHandBanner(felt, handName);
+      const big = pot > heroStack * 0.6;
+      const strong = /ロイヤル|ストレートフラッシュ|フォーカード|フルハウス/.test(handName);
+      if (big || strong) {
+        confetti(felt, strong ? 90 : 50);
+        highlight = {
+          title: strong ? handName : `${fmt2(pot)} \u306E\u30DD\u30C3\u30C8\u3092\u7372\u5F97`,
+          detail: strong ? `${fmt2(pot)} \u306E\u30DD\u30C3\u30C8\u3092\u7372\u5F97` : `${stake?.name ?? ""} \u3067\u70B8\u88C2`
+        };
+      }
+    }
+  }
+  var STREET_LABEL = {
+    preflop: "\u30D7\u30EA\u30D5\u30ED\u30C3\u30D7",
+    flop: "\u30D5\u30ED\u30C3\u30D7",
+    turn: "\u30BF\u30FC\u30F3",
+    river: "\u30EA\u30D0\u30FC",
+    showdown: "\u30B7\u30E7\u30FC\u30C0\u30A6\u30F3",
+    complete: "\u7D50\u679C"
+  };
+  function render() {
+    renderHud();
+    const h = hand;
+    const felt = $("felt");
+    if (!h) {
+      felt.innerHTML = "";
+      return;
+    }
+    const n = h.players.length;
+    const showdownOpen = h.isComplete && h.result?.showdown === true;
+    const shownBoard = reveal ? reveal.board : h.board;
+    const step = reveal ? reveal.steps[reveal.index] : null;
+    const board = shownBoard.map((c, i) => cardFace(cardToDisplay(c), {
+      size: "md",
+      highlight: !reveal && lastWinningCards.has(cardToDisplay(c)),
+      extra: i >= lastBoardLen ? "dealing" : ""
+    })).join("");
+    lastBoardLen = shownBoard.length;
+    const slots = cardSlot("md").repeat(Math.max(0, 5 - shownBoard.length));
+    const tag = reveal ? `<div class="street-tag hot">\u30AA\u30FC\u30EB\u30A4\u30F3 \u2014 \u6B8B\u308A ${5 - shownBoard.length} \u679A</div>` : `<div class="street-tag">${STREET_LABEL[h.street] ?? h.street}</div>`;
+    let html = `<div class="center">
+    ${tag}
+    <div class="board">${board + slots}</div>
+    <div class="pot">\u30DD\u30C3\u30C8 <b>${fmt2(h.totalPot)}</b></div>
+  </div>`;
+    for (let i = 0; i < n; i++) {
+      const p = h.players[i];
+      const k = i;
+      const a = (180 + k * 360 / n) * Math.PI / 180;
+      const x = 50 + 40 * Math.sin(a);
+      const y = 47 - 36 * Math.cos(a);
+      const isMe = i === 0;
+      const open = isMe || (reveal ? reveal.open.has(i) : showdownOpen && !p.folded);
+      const cards = p.folded && h.isComplete && !reveal ? "" : open ? p.holeCards.map((c) => cardFace(cardToDisplay(c), {
+        size: isMe ? "lg" : "sm",
+        highlight: !reveal && lastWinningCards.has(cardToDisplay(c)),
+        extra: (showdownOpen || reveal) && !isMe ? "flipping" : ""
+      })).join("") : cardBack({ size: "sm" }) + cardBack({ size: "sm" });
+      const cpu = cpus.find((c) => c.seat === i);
+      const badges = (i === h.buttonIndex ? '<span class="badge">D</span>' : "") + (isMe ? '<span class="badge you">YOU</span>' : "") + (p.allIn ? '<span class="badge allin">ALL IN</span>' : "") + (!reveal && lastSummaryWinners.has(i) ? '<span class="badge win">WIN</span>' : "");
+      const act = seatActions.get(i);
+      const bubble = act ? `<div class="act-bubble ${act.kind}" data-nonce="${act.nonce}">${act.label}</div>` : "";
+      let eq = "";
+      if (step) {
+        const e = step.equity.find((x2) => x2.seat === i);
+        const o = step.outs.find((x2) => x2.seat === i);
+        if (e) {
+          const percent = Math.round(e.equity * 100);
+          const leading = step.leaders.includes(i);
+          eq = `<div class="eq ${leading ? "lead" : ""}">
+          <div class="eq-bar"><div style="width:${percent}%"></div></div>
+          <div class="eq-num">${percent}%${o && !o.leading && o.cards.length ? ` <span class="outs">\u30A2\u30A6\u30C4 ${o.cards.length}</span>` : ""}${leading ? ' <span class="lead-tag">\u9996\u4F4D</span>' : ""}</div>
+        </div>`;
+        }
+      }
+      html += `<div class="seat ${h.actingSeat === i && !reveal ? "acting" : ""} ${p.folded && !reveal ? "folded" : ""}"
+        data-seat="${i}" style="left:${x}%;top:${y}%">
+      ${bubble}
+      <div class="cards">${cards}</div>
+      <div class="box">
+        <div class="nm">${escapeHtml(p.name)}${badges}</div>
+        <div class="st">${fmt2(p.stack)}</div>
+        ${eq}
+      </div>
+      <div class="bet">${p.streetBet > 0 ? `\u25B8 ${fmt2(p.streetBet)}` : cpu && !p.folded ? `<span class="tag">${cpu.profile.tagline.slice(0, 10)}</span>` : ""}</div>
+    </div>`;
+    }
+    felt.innerHTML = html;
+    const potEl = felt.querySelector(".pot");
+    if (potEl) bumpPot(potEl);
+    renderActions();
+  }
+  function renderActions() {
+    const box = $("actions");
+    const h = hand;
+    const leave = $("btn-leave");
+    const inHand = !!(h && !h.isComplete);
+    leave.disabled = inHand;
+    leave.title = inHand ? "\u30CF\u30F3\u30C9\u304C\u7D42\u308F\u3063\u3066\u304B\u3089\u964D\u308A\u3089\u308C\u307E\u3059" : "";
+    if (!h || h.isComplete || h.actingSeat !== 0 || busy) {
+      box.innerHTML = h?.isComplete ? '<div class="hint">\u6B21\u306E\u30CF\u30F3\u30C9\u3092\u914D\u3063\u3066\u3044\u307E\u3059\u2026</div>' : '<div class="hint">\u76F8\u624B\u304C\u8003\u3048\u3066\u3044\u307E\u3059\u2026</div>';
+      return;
+    }
+    const legal = h.getLegalActions(0);
+    const check = legal.find((a) => a.type === "check");
+    const call = legal.find((a) => a.type === "call");
+    const raise = legal.find((a) => a.type === "raise" || a.type === "bet");
+    let html = '<div class="btnrow main">';
+    html += `<button class="danger" data-act="fold">\u30D5\u30A9\u30FC\u30EB\u30C9</button>`;
+    if (check) html += `<button data-act="check">\u30C1\u30A7\u30C3\u30AF</button>`;
+    if (call) html += `<button data-act="call">\u30B3\u30FC\u30EB ${fmt2(call.amount ?? 0)}</button>`;
+    if (raise) html += `<button class="primary" data-act="raise">${raise.type === "bet" ? "\u30D9\u30C3\u30C8" : "\u30EC\u30A4\u30BA"} <span id="rv">${fmt2(raise.min)}</span></button>`;
+    html += "</div>";
+    if (raise) {
+      const clamp = (v) => Math.max(raise.min, Math.min(raise.max, Math.round(v)));
+      const presets = [
+        ["1/2", clamp(h.totalPot * 0.5 + h.currentBet)],
+        ["2/3", clamp(h.totalPot * 0.66 + h.currentBet)],
+        ["\u30DD\u30C3\u30C8", clamp(h.totalPot + h.currentBet)],
+        ["\u30AA\u30FC\u30EB\u30A4\u30F3", raise.max]
+      ];
+      html += `<div class="slider-wrap">
+      <input type="range" id="rs" min="${raise.min}" max="${raise.max}" step="1" value="${raise.min}">
+      <div class="btnrow">${presets.map(([l, v]) => `<button class="chip" data-set="${v}">${l}<br><span class="sub">${fmt2(v)}</span></button>`).join("")}</div>
+    </div>`;
+    }
+    box.innerHTML = html;
+    const slider = document.getElementById("rs");
+    if (slider) {
+      slider.oninput = () => {
+        const v = document.getElementById("rv");
+        if (v) v.textContent = fmt2(+slider.value);
+      };
+    }
+    each("[data-act]", (b) => {
+      b.onclick = () => {
+        const a = b.dataset.act;
+        if (a === "raise" && raise && slider) heroAct(raise.type, +slider.value);
+        else heroAct(a);
+      };
+    });
+    each("[data-set]", (b) => {
+      b.onclick = () => {
+        if (!slider) return;
+        slider.value = b.dataset.set;
+        const v = document.getElementById("rv");
+        if (v) v.textContent = fmt2(+slider.value);
+      };
+    });
+  }
+  var ACTION_JA = {
+    fold: "\u30D5\u30A9\u30FC\u30EB\u30C9",
+    check: "\u30C1\u30A7\u30C3\u30AF",
+    call: "\u30B3\u30FC\u30EB",
+    bet: "\u30D9\u30C3\u30C8",
+    raise: "\u30EC\u30A4\u30BA"
+  };
+  function logAction(seat, action, h) {
+    const p = h.players[seat];
+    const amt = p.streetBet > 0 && (action === "bet" || action === "raise" || action === "call") ? ` ${fmt2(p.streetBet)}` : "";
+    log(`${p.name} ${ACTION_JA[action]}${amt}${p.allIn ? "\uFF08ALL IN\uFF09" : ""}`);
+    const kind = p.allIn ? "allin" : action === "bet" || action === "raise" ? action : action === "call" ? "call" : action === "check" ? "check" : "fold";
+    const label2 = p.allIn ? `ALL IN ${fmt2(p.streetBet)}` : action === "fold" ? "\u30D5\u30A9\u30FC\u30EB\u30C9" : action === "check" ? "\u30C1\u30A7\u30C3\u30AF" : `${ACTION_JA[action]} ${fmt2(p.streetBet)}`;
+    seatActions.set(seat, { kind, label: label2, nonce: ++actionNonce });
+    playAction(action, p.allIn);
+    if (p.allIn) flashAllIn($("felt"));
+  }
+  function log(text, cls = "") {
+    const box = $("log");
+    const div = document.createElement("div");
+    div.className = cls;
+    div.textContent = text;
+    box.appendChild(div);
+    while (box.childElementCount > 150) box.removeChild(box.firstChild);
+    box.scrollTop = box.scrollHeight;
+  }
+  function modal(html, wire) {
+    const root = $("modal-root");
+    root.innerHTML = `<div class="modal-bg"><div class="modal">${html}</div></div>`;
+    const close = () => root.innerHTML = "";
+    wire(close);
+  }
+  function showBustDialog() {
+    play("bust");
+    const r = profile.rank;
+    const ms = profile.msUntilNextRecharge();
+    const canSitAgain = profile.data.chips >= (STAKES[0]?.buyIn ?? 0);
+    modal(
+      `<h3>\u30C1\u30C3\u30D7\u304C\u5C3D\u304D\u307E\u3057\u305F</h3>
+     <p class="lead">\u624B\u6301\u3061\u306F <b>${fmt2(profile.data.chips)}</b>\u3002\u88DC\u5145\u306F <b>${Math.round(r.rechargeIntervalMs / 6e4)}\u5206\u3054\u3068\u306B ${fmt2(r.rechargeAmount)}</b>\u3001\u4E0A\u9650\u306F <b>${fmt2(r.rechargeCap)}</b> \u3067\u3059\u3002</p>
+     <p class="lead sub">${ms !== null ? `\u6B21\u306E\u88DC\u5145\u307E\u3067 ${fmtDuration(ms)}\u3002` : ""}\u88DC\u5145\u3060\u3051\u3067\u306F\u4E0A\u306E\u5353\u306B\u306F\u623B\u308C\u307E\u305B\u3093\u3002\u4E0B\u306E\u5353\u3067\u7D44\u307F\u7ACB\u3066\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002</p>
+     <div class="row">
+       <button id="bd-ok" class="${canSitAgain ? "primary" : ""}">${canSitAgain ? "\u30ED\u30D3\u30FC\u3078" : "\u5F85\u3064"}</button>
+     </div>`,
+      (close) => {
+        $("bd-ok").onclick = () => {
+          close();
+          leaveTable();
+        };
+      }
+    );
+  }
+  function showAchievementToast(list) {
+    const box = $("toast");
+    for (const a of list) {
+      const el = document.createElement("div");
+      el.className = "toast-item";
+      el.innerHTML = `<b>\u5B9F\u7E3E\u89E3\u9664</b> ${a.name}<span class="rp">+${a.rp} RP</span>`;
+      box.appendChild(el);
+      setTimeout(() => el.remove(), 4200);
+    }
+    renderHud();
+  }
+  async function openShare() {
+    modal(
+      `<h3>\u6210\u7E3E\u30AB\u30FC\u30C9</h3>
+     <div id="share-preview" class="share-preview">\u751F\u6210\u4E2D\u2026</div>
+     <div class="row">
+       <button id="sh-copy">\u753B\u50CF\u3092\u30B3\u30D4\u30FC</button>
+       <button id="sh-save" class="primary">\u4FDD\u5B58</button>
+     </div>
+     <div class="row">
+       <button id="sh-text">\u6587\u9762\u3092\u30B3\u30D4\u30FC</button>
+       <button id="sh-close">\u9589\u3058\u308B</button>
+     </div>`,
+      (close) => {
+        $("sh-close").onclick = close;
+        void (async () => {
+          const canvas = await renderShareCard({ profile, highlight });
+          const prev = $("share-preview");
+          prev.innerHTML = "";
+          canvas.style.width = "100%";
+          canvas.style.borderRadius = "10px";
+          prev.appendChild(canvas);
+          $("sh-save").onclick = () => downloadCard(canvas, `poker-${profile.rank.key}-${Date.now()}.png`);
+          $("sh-copy").onclick = async () => {
+            const ok = await copyCard(canvas);
+            $("sh-copy").textContent = ok ? "\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F" : "\u30B3\u30D4\u30FC\u975E\u5BFE\u5FDC\uFF08\u4FDD\u5B58\u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044\uFF09";
+          };
+          $("sh-text").onclick = async () => {
+            try {
+              await navigator.clipboard.writeText(shareText(profile));
+              $("sh-text").textContent = "\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F";
+            } catch {
+              $("sh-text").textContent = "\u30B3\u30D4\u30FC\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F";
+            }
+          };
+        })();
+      }
+    );
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  }
+  var styleEl = document.createElement("style");
+  styleEl.textContent = VISUAL_CSS;
+  document.head.appendChild(styleEl);
+  function applyTheme(next) {
+    theme = next;
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      localStorage.setItem("poker.solo.theme", next);
+    } catch {
+    }
+    $("btn-theme").textContent = next === "classic" ? "\u{1F3A8} \u30AF\u30E9\u30B7\u30C3\u30AF" : "\u{1F3A8} \u30CD\u30AA\u30F3";
+  }
+  var savedTheme = "classic";
+  try {
+    savedTheme = localStorage.getItem("poker.solo.theme") ?? "classic";
+  } catch {
+  }
+  applyTheme(savedTheme);
+  document.documentElement.setAttribute("data-suits", "four");
+  $("btn-theme").onclick = () => applyTheme(theme === "classic" ? "neon" : "classic");
+  function syncMuteButton() {
+    const b = $("btn-mute");
+    b.textContent = isMuted() ? "\u{1F507} \u97F3\u30AA\u30D5" : "\u{1F50A} \u97F3\u30AA\u30F3";
+    b.title = isMuted() ? "\u52B9\u679C\u97F3\u3092\u9CF4\u3089\u3059" : "\u52B9\u679C\u97F3\u3092\u6B62\u3081\u308B";
+  }
+  $("btn-mute").onclick = () => {
+    setMuted(!isMuted());
+    syncMuteButton();
+    if (!isMuted()) play("click");
+  };
+  syncMuteButton();
+  document.addEventListener("pointerdown", () => unlockAudio(), { once: true });
+  $("btn-share").onclick = () => void openShare();
+  $("btn-leave").onclick = leaveTable;
+  $("btn-reset").onclick = () => {
+    modal(
+      `<h3>\u8A18\u9332\u3092\u6D88\u53BB\u3057\u307E\u3059\u304B</h3>
+     <p class="lead">\u30C1\u30C3\u30D7\u30FB\u5B9F\u7E3E\u30FB\u79F0\u53F7\u304C\u3059\u3079\u3066\u521D\u671F\u72B6\u614B\u306B\u623B\u308A\u307E\u3059\u3002\u5143\u306B\u306F\u623B\u305B\u307E\u305B\u3093\u3002</p>
+     <div class="row"><button id="rs-no">\u3084\u3081\u308B</button><button id="rs-yes" class="danger">\u6D88\u53BB\u3059\u308B</button></div>`,
+      (close) => {
+        $("rs-no").onclick = close;
+        $("rs-yes").onclick = () => {
+          profile.reset();
+          close();
+          renderLobby();
+        };
+      }
+    );
+  };
+  var nameInput = $("player-name");
+  nameInput.value = profile.data.playerName;
+  nameInput.onchange = () => {
+    profile.data.playerName = nameInput.value.trim().slice(0, 16) || "\u3042\u306A\u305F";
+    nameInput.value = profile.data.playerName;
+    profile.save();
+  };
+  setInterval(() => {
+    if (!$("lobby").classList.contains("hidden")) renderHud();
+  }, 1e3);
+  renderLobby();
+})();
+</script>
+</body>
+</html>
