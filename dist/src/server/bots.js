@@ -88,7 +88,7 @@ class Bot {
         aggr: 0.15 + rnd() * 0.65,
         bluff: rnd() * 0.28,
         err: rnd() * 0.2,
-        thinkMul: 0.6 + rnd() * 1.6,
+        thinkMul: 0.5 + rnd() * 1.0,
     };
     /** 参加中のトーナメントID(トーナメントbotのみ) */
     tourId = null;
@@ -254,18 +254,23 @@ class Bot {
         if (m.t === 'table.state' && m.state)
             this.onState(m.state);
         if (m.t === 'error') {
-            // 手番のままエラーになった場合の安全弁
+            // 手番のままエラーになった場合の安全弁。
+            // decide() 実行後(pendingSt=null)に act が弾かれたケースでは pendingSt が無いので、
+            // latestSt で「今も自分の手番か」を確認してから安全行動を取る。
+            // (これが無いと、無効な額のレイズ等が弾かれたbotが60秒タイムアウトまで固まる)
             this.after(500, () => {
-                if (this.pendingSt) {
-                    const st = this.pendingSt;
-                    this.pendingSt = null;
-                    const check = st.legalActions.find((a) => a.type === 'check');
-                    this.act(st, check ? 'check' : 'fold');
-                }
+                const st = this.pendingSt ?? this.latestSt;
+                this.pendingSt = null;
+                if (!st || st.yourSeat === null || st.actingSeat !== st.yourSeat || !st.legalActions?.length || !st.handId)
+                    return;
+                const check = st.legalActions.find((a) => a.type === 'check');
+                this.act(st, check ? 'check' : 'fold');
             });
         }
     }
     pendingSt = null;
+    /** 最後に受け取った卓状態。エラー時・行動不発時の安全弁が「今も自分の手番か」を確認するのに使う */
+    latestSt = null;
     aloneSince = 0;
     /** GTO用: このストリートで自分が最後の攻撃側か / 前ストリートで攻撃側だったか */
     aggro = false;
@@ -284,6 +289,7 @@ class Bot {
     onState(st) {
         if (st.tableId !== this.tableId)
             return;
+        this.latestSt = st;
         // ハンド区切りの検知
         if (st.handId && st.handId !== this.lastHandId) {
             this.lastHandId = st.handId;
@@ -397,8 +403,8 @@ class Bot {
         // 思考時間(仕様書§66-68): ストリートで基準を変え、「決断の重さ」でだけ長考する。
         // ハンドの強弱では変えない(タイミングテル防止)
         const range = st.street === 'preflop' ? [400, 1500] :
-            st.street === 'flop' ? [800, 3000] :
-                st.street === 'turn' ? [1000, 4000] : [1500, 6000];
+            st.street === 'flop' ? [700, 2200] :
+                st.street === 'turn' ? [900, 2800] : [1100, 3200];
         let think = (range[0] + rnd() * (range[1] - range[0])) * this.p.thinkMul;
         const toCallNow = st.legalActions.find((a) => a.type === 'call')?.amount ?? 0;
         // 「大勝負の長考」判定。ポット比の条件はポストフロップ限定にする。
@@ -409,17 +415,30 @@ class Bot {
         const bigDecision = toCallNow > stackNow * 0.35 ||
             (st.street !== 'preflop' && toCallNow > Math.max(st.pot, 1) * 0.6);
         if (bigDecision)
-            think += 1500 + rnd() * 4500;
+            think += 1200 + rnd() * 2300;
         else if (st.street !== 'preflop' && rnd() < 0.05)
-            think += 2000 + rnd() * 4000;
+            think += 1200 + rnd() * 1800;
         // プリフロップの通常判断は上限2.2秒(思考倍率が高い性格でもテンポを守る)
         if (st.street === 'preflop' && !bigDecision)
             think = Math.min(think, 2200);
-        this.after(Math.min(think, 11000), () => {
+        // 全体上限6秒(以前は11秒。「botが長考しすぎる」報告を受けテンポ優先に)
+        this.after(Math.min(think, 6000), () => {
             if (this.pendingSt !== st)
                 return;
             this.pendingSt = null;
             this.decide(st);
+            // 行動不発の監視: 送った手が無効で弾かれる等で手番が進まなかったら、
+            // 4秒後に安全行動(チェック/フォールド)で必ず前へ進める。
+            // 60秒タイムアウトまで卓が止まる事故の最終防衛線。
+            this.after(4000, () => {
+                const cur = this.latestSt;
+                if (!cur || cur.yourSeat === null || cur.actingSeat !== cur.yourSeat || !cur.legalActions?.length || !cur.handId)
+                    return;
+                if (`${cur.handId}:${cur.street}:${cur.currentBet}:${cur.pot}` !== key)
+                    return;
+                const check = cur.legalActions.find((a) => a.type === 'check');
+                this.act(cur, check ? 'check' : 'fold');
+            });
         });
     }
     decide(st) {
