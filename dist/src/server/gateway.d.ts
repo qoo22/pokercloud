@@ -59,6 +59,8 @@ export declare class Gateway {
      */
     private serveAdmin;
     private serveStatic;
+    /** 静的ファイルのgzip済みキャッシュ(ETagが変わったら作り直す) */
+    private gzipCache;
     listen(): Promise<number>;
     close(): Promise<void>;
 }

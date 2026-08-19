@@ -12,7 +12,8 @@
  *   - 送信キューが詰まった接続の切断
  */
 import { createServer } from 'node:http';
-import { readFileSync, existsSync, writeFileSync, renameSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { extname, join, normalize } from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Lobby } from './lobby.js';
@@ -206,7 +207,7 @@ export class Gateway {
     }
     serveStatic(req, res) {
         const adminPath = (req.url ?? '/').split('?')[0];
-        if (adminPath === '/admin/backup' || adminPath === '/admin/restore' || adminPath === '/admin/ghpush') {
+        if (adminPath.startsWith('/admin/')) {
             this.serveAdmin(req, res, adminPath);
             return;
         }
@@ -229,14 +230,47 @@ export class Gateway {
             return;
         }
         try {
-            const body = readFileSync(file);
-            res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
-            res.end(body);
+            // クライアントHTMLは4MB超(画像埋め込み)あり、素朴に毎回全送信すると
+            // スマホ回線で開くのが目に見えて重い。次の2段で軽くする:
+            //   1. ETag: 変わっていなければ 304 を返して転送ゼロ(2回目以降はほぼ一瞬)
+            //   2. gzip: 初回もbase64部が縮む(実測 4.2MB→約3.1MB)。mtimeが変わるまでメモリに保持
+            const st = statSync(file);
+            const etag = `"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
+            if (req.headers['if-none-match'] === etag) {
+                res.writeHead(304, { etag, 'cache-control': 'no-cache' });
+                res.end();
+                return;
+            }
+            const headers = {
+                'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+                etag,
+                // no-cache = 使う前に毎回 If-None-Match で確認(=デプロイ即反映と304の両立)
+                'cache-control': 'no-cache',
+            };
+            const acceptsGzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+            if (acceptsGzip && st.size > 10_240) {
+                const cached = this.gzipCache.get(file);
+                let gz;
+                if (cached && cached.etag === etag) {
+                    gz = cached.body;
+                }
+                else {
+                    gz = gzipSync(readFileSync(file), { level: 6 });
+                    this.gzipCache.set(file, { etag, body: gz });
+                }
+                res.writeHead(200, { ...headers, 'content-encoding': 'gzip', vary: 'accept-encoding' });
+                res.end(gz);
+                return;
+            }
+            res.writeHead(200, headers);
+            res.end(readFileSync(file));
         }
         catch {
             res.writeHead(500).end('error');
         }
     }
+    /** 静的ファイルのgzip済みキャッシュ(ETagが変わったら作り直す) */
+    gzipCache = new Map();
     listen() {
         return new Promise((resolve) => {
             this.http.listen(this.opts.port, () => {
