@@ -2488,22 +2488,29 @@
     } catch (e) { return false; }
   }
   // スマホなら向きに応じて html.force-portrait / force-landscape を付ける
-  var __deskBannerShown = false;
-  function __showDesktopBanner() {
-    if (__deskBannerShown) return;
-    if (sessionStorage && sessionStorage.getItem("poker.deskBannerDismissed")) return;
-    __deskBannerShown = true;
+  var __deskBannerKind = null;
+  function __showDesktopBanner(kind, detail) {
+    kind = kind || "desk";
+    if (__deskBannerKind === kind) return;
+    try { if (sessionStorage.getItem("poker.deskBannerDismissed." + kind)) return; } catch (e) {}
+    __hideDesktopBanner();
+    __deskBannerKind = kind;
     var bar = document.createElement("div");
     bar.id = "desk-mode-banner";
-    bar.innerHTML = '<span>スマホ表示に最適化するには、Safari下部の <b>\u3041\u3042</b> \u2192 <b>\u30E2\u30D0\u30A4\u30EB\u7528Web\u30B5\u30A4\u30C8\u3092\u8868\u793A</b></span><button aria-label="\u9589\u3058\u308B">\u2715</button>';
+    var msg = kind === "zoom"
+      ? '<span>ページが <b>' + detail + '</b> \u8868\u793A\u306B\u306A\u3063\u3066\u3044\u307E\u3059\u3002Safari\u4E0B\u90E8\u306E <b>\u3041\u3042</b> \u2192 \u4E0A\u306E <b>\u3042</b> \u3067 <b>100%</b> \u306B\u623B\u3059\u3068\u6B63\u3057\u3044\u5927\u304D\u3055\u306B\u306A\u308A\u307E\u3059</span>'
+      : '<span>スマホ表示に最適化するには、Safari下部の <b>\u3041\u3042</b> \u2192 <b>\u30E2\u30D0\u30A4\u30EB\u7528Web\u30B5\u30A4\u30C8\u3092\u8868\u793A</b></span>';
+    bar.innerHTML = msg + '<button aria-label="\u9589\u3058\u308B">\u2715</button>';
     var btn = bar.querySelector("button");
     if (btn) btn.onclick = function () {
       bar.remove();
-      try { sessionStorage.setItem("poker.deskBannerDismissed", "1"); } catch (e) {}
+      __deskBannerKind = null;
+      try { sessionStorage.setItem("poker.deskBannerDismissed." + kind, "1"); } catch (e) {}
     };
     document.body.appendChild(bar);
   }
   function __hideDesktopBanner() {
+    __deskBannerKind = null;
     var el = document.getElementById("desk-mode-banner");
     if (el) el.remove();
   }
@@ -2514,8 +2521,20 @@
     var phone = __realIsPhone();
     var vw = window.innerWidth;
     // スマホなのに幅が広い = Safariのデスクトップ表示ON。設定変更を案内する
-    if (phone && vw > 820) __showDesktopBanner();
-    else __hideDesktopBanner();
+    if (phone && vw > 820) { __showDesktopBanner("desk"); return; }
+    // ページの拡大/縮小(サイトごとに記憶)が100%以外だと全UIが一律に縮む/はみ出す。
+    // 物理画面幅(screen)とレイアウト幅(innerWidth)のズレで検知する(縦持ちのみ、±8%閾値)。
+    if (phone && window.innerHeight >= window.innerWidth) {
+      try {
+        var sw = Math.min(screen.width, screen.height);
+        var ratio = sw > 0 ? vw / sw : 1;
+        if (ratio > 1.08 || ratio < 0.92) {
+          __showDesktopBanner("zoom", Math.round(100 / ratio) + "%");
+          return;
+        }
+      } catch (e) {}
+    }
+    __hideDesktopBanner();
   }
   if (typeof window !== "undefined" && window.addEventListener) {
     window.addEventListener("resize", __forceOrientSync);
