@@ -1040,289 +1040,7 @@
     transform:translateX(-50%) !important; bottom:auto !important; white-space:nowrap;
     max-width:92%; overflow:hidden; text-overflow:ellipsis; }
 </style>
-<style id="force-orient-css">
-/* スマホ強制レイアウト(Safariのデスクトップ表示対策)。JSが html.force-portrait/force-landscape を付ける */
-html.force-landscape header{ padding:5px 10px; }
-html.force-landscape #table-view{ grid-template-columns:1fr 240px; padding:6px; gap:8px; max-width:none; }
-html.force-landscape .felt{ min-height:0; aspect-ratio:16/8; border-width:8px; }
-html.force-landscape .seat{ width:104px; }
-html.force-landscape .card.lg{ --cw:40px; width:40px; height:56px; }
-html.force-landscape .card.md{ --cw:34px; width:34px; height:48px; }
-html.force-landscape .actions{ min-height:0; margin-top:6px; }
-html.force-landscape details.panel .log{ height:84px; }
-html.force-landscape .dealer{ height:170px; margin-bottom:-58px; }
-html.force-portrait #table-view{ grid-template-columns:1fr; padding:6px 6px calc(128px + env(safe-area-inset-bottom)); gap:8px; }
-html.force-portrait .felt{ aspect-ratio:auto; height:min(70vh, 560px); min-height:380px;
-      border-radius:46% / 38%; border-width:7px; }
-html.force-portrait .center{ top:41%; }
-html.force-portrait .board{ min-height:56px; }
-html.force-portrait .dealer{ height:175px; margin-bottom:-58px; }
-html.force-portrait .seat{ width:82px; }
-html.force-portrait .seat .cards{ min-height:34px; margin-bottom:2px; }
-html.force-portrait .seat .nm{ font-size:10px; }
-html.force-portrait .seat .st{ font-size:12px; }
-html.force-portrait .seat .bet{ font-size:10px; min-height:14px; margin-top:2px; }
-html.force-portrait .seat.me{ width:118px; z-index:3; }
-html.force-portrait .seat.me .box{ background:rgba(14,10,24,.93);
-      border-color:color-mix(in srgb, var(--gold) 45%, rgba(255,255,255,.14));
-      box-shadow:0 4px 14px rgba(0,0,0,.5); }
-html.force-portrait .seat.me .st{ font-size:15px; }
-html.force-portrait .seat.me .cards{ min-height:74px; }
-html.force-portrait .card.lg{ --cw:52px; width:52px; height:73px; }
-html.force-portrait .card.md{ --cw:37px; width:37px; height:52px; }
-html.force-portrait .card.sm{ --cw:22px; width:22px; height:31px; }
-html.force-portrait /* アクションは画面下部に固定（親指で届く位置・セーフエリア考慮） */
-    .actions{ position:fixed; left:0; right:0; bottom:0; z-index:20; margin:0; min-height:0;
-      padding:10px 10px calc(10px + env(safe-area-inset-bottom));
-      background:linear-gradient(180deg, rgba(5,3,8,0), rgba(5,3,8,.94) 26%);
-      -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
-html.force-portrait .btnrow.main{ gap:6px; flex-wrap:nowrap; }
-html.force-portrait .btnrow.main button{ min-width:0; padding:15px 4px; font-size:15px; border-radius:12px; }
-html.force-portrait .slider-wrap{ margin-top:7px; }
-html.force-portrait .hint{ margin-top:4px; }
-html.force-portrait /* 役バッジはアクションバーの上に退避 */
-    .myhand{ position:fixed; right:8px; bottom:calc(126px + env(safe-area-inset-bottom));
-      z-index:19; padding:4px 10px; font-size:13px; }
-html.force-landscape #table-view{ padding:4px 8px; }
-html.force-landscape .felt{ aspect-ratio:16/7.6; border-width:7px; }
-html.force-landscape .center{ top:40%; }
-html.force-landscape .seat{ width:96px; }
-html.force-landscape .seat .cards{ min-height:34px; }
-html.force-landscape .seat.me{ width:112px; z-index:3; }
-html.force-landscape .card.lg{ --cw:44px; width:44px; height:62px; }
-html.force-landscape .btnrow.main button{ padding:10px 6px; font-size:13px; }
-html.force-landscape .myhand{ right:8px; bottom:8px; padding:4px 10px; font-size:13px; }
-html.force-landscape .panel, html.force-landscape details.panel{ padding:9px; }
-html.force-landscape details.panel > summary{ padding:9px 10px; }
-html.force-landscape .dealer{ height:80px; margin-bottom:-24px; }
-html.force-landscape header{ padding:3px 10px; }
-html.force-portrait .fab{ width:38px; height:38px; font-size:15px; }
-html.force-landscape .fab{ width:34px; height:34px; font-size:13px; }
-html.force-landscape .felt{ aspect-ratio:auto; height:calc(100vh - 225px); min-height:190px;
-      max-width:calc((100vh - 225px) * 2.3); margin:0 auto; }
-html.force-landscape .felt{ aspect-ratio:auto; height:calc(100dvh - 225px); min-height:190px;
-      max-width:calc((100dvh - 225px) * 2.3); margin:0 auto; }
-html.force-landscape .actions{ position:fixed; right:10px; bottom:10px; left:auto; z-index:20; margin:0; min-height:0;
-      width:min(320px, 46vw); background:rgba(8,5,12,.8); border:1px solid var(--line);
-      border-radius:14px; padding:8px; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
-      box-shadow:0 6px 24px rgba(0,0,0,.5); }
-html.force-landscape .btnrow.main button{ padding:9px 4px; font-size:12px; }
-html.force-landscape .actions button.chip{ padding:4px 8px; font-size:11px; }
-html.force-landscape .actions .hint{ display:none; }
-html.force-landscape .slider-wrap{ margin-top:6px; }
-html.force-landscape .myhand{ right:auto; left:10px; bottom:10px; }
-html.force-landscape body:has(#table-view:not(.hidden)) header{ display:none; }
-html.force-landscape .felt{ height:calc(100vh - 152px); max-width:calc((100vh - 152px) * 2.3); }
-html.force-landscape .felt{ height:calc(100dvh - 152px); max-width:calc((100dvh - 152px) * 2.3); }
-html.force-landscape .dealer{ height:140px; margin-bottom:-48px; }
-html.force-portrait body:has(#table-view:not(.hidden)) header{ display:none; }
-html.force-portrait .felt{ height:calc(100vh - 348px); min-height:355px; }
-html.force-portrait .felt{ height:calc(100dvh - 348px); min-height:355px; }
-html.force-portrait #table-view{ padding-top:4px; }
-html.force-landscape .actions{ background:transparent; border:none; box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none; padding:0; width:auto; }
-html.force-landscape .btnrow.main{ display:flex; gap:20px; align-items:flex-end; flex-wrap:nowrap; }
-html.force-landscape .btnrow.main button{ display:flex; align-items:center; justify-content:center;
-      width:56px; height:56px; border-radius:50%; padding:0; position:relative; flex:none; min-width:0;
-      background:rgba(18,10,24,.85); border:2px solid rgba(255,255,255,.35); font-size:22px;
-      box-shadow:0 4px 14px rgba(0,0,0,.5); }
-html.force-landscape .btnrow.main button .ico{ display:block; font-weight:900; }
-html.force-landscape .btnrow.main button .txt{ display:block; position:absolute; bottom:calc(100% + 6px); left:50%;
-      transform:translateX(-50%); white-space:nowrap; font-size:12px; font-weight:700;
-      text-shadow:0 1px 4px rgba(0,0,0,.85); pointer-events:none; }
-html.force-landscape .btnrow.main button[data-act="fold"]{ border-color:#e05a5a; color:#ff9f9f; background:rgba(60,14,20,.85); }
-html.force-landscape .btnrow.main button[data-act="fold"] .txt{ color:#ff9f9f; }
-html.force-landscape .btnrow.main button[data-act="check"], html.force-landscape .btnrow.main button[data-act="call"]{ border-color:#2fc3ad; color:#8ff2e2; background:rgba(8,44,40,.85); }
-html.force-landscape .btnrow.main button[data-act="check"] .txt, html.force-landscape .btnrow.main button[data-act="call"] .txt{ color:#8ff2e2; }
-html.force-landscape .btnrow.main button[data-act="raise"]{ border-color:var(--gold); color:#ffe9a8;
-      background:linear-gradient(180deg, rgba(96,68,20,.92), rgba(52,34,10,.92)); }
-html.force-landscape .btnrow.main button[data-act="raise"] .txt{ color:#ffe9a8; }
-html.force-landscape #raise-pane{ display:none; }
-html.force-landscape body.raise-open #raise-pane{ display:flex; flex-direction:column; gap:10px; margin:0;
-      position:fixed; top:0; right:0; bottom:0; z-index:34; width:min(300px,42vw);
-      background:linear-gradient(180deg, rgba(64,14,34,.97), rgba(38,8,20,.97));
-      border-left:1px solid rgba(255,255,255,.18); padding:14px; overflow-y:auto;
-      box-shadow:-10px 0 34px rgba(0,0,0,.5); }
-html.force-landscape body.raise-open .rp-amt{ display:block; text-align:center; font-size:24px; font-weight:800; color:#ffe9a8;
-      background:rgba(0,0,0,.32); border-radius:10px; padding:8px; }
-html.force-landscape body.raise-open .rp-presets{ flex-direction:column; }
-html.force-landscape body.raise-open .rp-presets .chip{ width:100%; padding:9px; border-radius:99px;
-      border:1px solid color-mix(in srgb, var(--gold) 65%, transparent); color:#ffe9a8; font-size:13px; }
-html.force-landscape body.raise-open .rp-step{ display:flex; gap:12px; justify-content:center; }
-html.force-landscape body.raise-open .rp-step .chip{ width:58px; font-size:18px; padding:7px 0; }
-html.force-landscape body.raise-open #rconfirm{ display:block; margin-top:auto; padding:12px; border-radius:12px; font-size:16px; font-weight:800; }
-html.force-landscape body.raise-open .actions{ right:calc(min(300px,42vw) + 10px); }
-html.force-landscape .card.lg{ --cw:46px; width:46px; height:64px; }
-html.force-landscape .card.md{ --cw:34px; width:34px; height:48px; }
-html.force-landscape .card.sm{ --cw:20px; width:20px; height:28px; }
-html.force-landscape .seat.me .cards{ min-height:66px; }
-html.force-landscape .myhand{ position:fixed; left:10px; bottom:10px; right:auto; white-space:nowrap; z-index:21; }
-html.force-landscape body.raise-open #raise-pane{ gap:8px; padding:10px 14px calc(10px + env(safe-area-inset-bottom)); }
-html.force-landscape body.raise-open .rp-amt{ font-size:20px; padding:6px; }
-html.force-landscape body.raise-open .rp-presets{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:0; }
-html.force-landscape body.raise-open .rp-presets .chip{ padding:6px 4px; font-size:12px; }
-html.force-landscape body.raise-open .rp-step .chip{ padding:6px 0; }
-html.force-landscape body.raise-open #rconfirm{ padding:10px; font-size:15px; }
-html.force-landscape .felt{ border-radius:999px;
-      height:calc(100vh - 225px); max-width:calc((100vh - 225px) * 2.7);
-      height:calc(100dvh - 225px); max-width:calc((100dvh - 225px) * 2.7); }
-html.force-landscape .seat .cards{ height:24px; min-height:0; overflow:hidden; align-items:flex-start; margin-bottom:3px; }
-html.force-landscape .seat.me .cards{ height:34px; min-height:0; }
-html.force-landscape .seat .cards .card{ flex:none; }
-html.force-landscape .felt{ height:calc(100vh - 152px); max-width:calc((100vh - 152px) * 2.7); }
-html.force-landscape .felt{ height:calc(100dvh - 152px); max-width:calc((100dvh - 152px) * 2.7); }
-html.force-portrait .felt{ overflow:visible; }
-html.force-portrait .seat.me{ display:flex; align-items:flex-end; gap:8px; width:auto; z-index:5; }
-html.force-portrait .seat.me .box{ order:1; min-width:104px; margin-bottom:6px; }
-html.force-portrait .seat.me .cards{ order:2; min-height:0; margin-bottom:0; }
-html.force-portrait .seat.me .bet{ position:absolute; top:-26px; left:50%; transform:translateX(-50%); margin:0; }
-html.force-portrait .card.lg{ --cw:64px; width:64px; height:90px; }
-html.force-landscape .seat .nm{ font-size:0; line-height:10px; }
-html.force-landscape .seat .nm .badge{ font-size:9px; margin-left:2px; }
-html.force-landscape .seat .st{ font-size:13px; }
-html.force-landscape .seat .box{ padding:3px 6px; }
-html.force-landscape .seat .cards{ height:30px; }
-html.force-landscape .seat.me{ z-index:5; }
-html.force-landscape .seat.me .cards{ height:46px; }
-html.force-landscape .card.lg{ --cw:56px; width:56px; height:78px; }
-html.force-portrait .felt-surface{ border-radius:46%/40%; transform:perspective(950px) rotateX(13deg) scaleY(1.05); }
-html.force-landscape .felt-surface{ border-radius:999px; border-width:8px; transform:perspective(950px) rotateX(19deg) scaleY(1.1); }
-html.force-landscape .seat .cards{ height:auto; min-height:30px; overflow:visible; align-items:flex-end; margin-bottom:3px; }
-html.force-landscape /* 横画面も手札メイン：プロフィールは手札の左横、自席は卓の縁の外へ */
-    .seat.me{ display:flex; align-items:flex-end; gap:8px; width:auto; z-index:6; }
-html.force-landscape .seat.me .box{ order:1; min-width:104px; margin-bottom:5px; }
-html.force-landscape .seat.me .cards{ order:2; min-height:0; height:auto; overflow:visible; margin-bottom:0; }
-html.force-landscape .seat.me .bet{ position:absolute; top:-24px; left:50%; transform:translateX(-50%); margin:0; }
-html.force-landscape .card.lg{ --cw:62px; width:62px; height:87px; }
-html.force-portrait .felt-surface{
-      background:
-        radial-gradient(ellipse at 50% 38%, rgba(255,255,255,.10), rgba(0,0,0,0) 52%, rgba(0,0,0,.32) 100%),
-        var(--img-felt-red-p) center/cover no-repeat; }
-html.force-portrait [data-theme="neon"] .felt-surface{
-      background:
-        radial-gradient(ellipse at 50% 38%, rgba(255,255,255,.10), rgba(0,0,0,0) 52%, rgba(0,0,0,.35) 100%),
-        var(--img-felt-pur-p) center/cover no-repeat; }
-html.force-portrait .seat.me{ display:block; width:auto; }
-html.force-portrait .seat.me .cards{ justify-content:center; margin:0; }
-html.force-portrait .seat.me .box{ position:absolute; right:calc(50% + 74px); bottom:8px; min-width:104px; margin:0; }
-html.force-landscape .seat.me{ display:block; width:auto; }
-html.force-landscape .seat.me .cards{ justify-content:center; margin:0; }
-html.force-landscape .seat.me .box{ position:absolute; right:calc(50% + 72px); bottom:6px; min-width:104px; margin:0; }
-html.force-landscape .center{ top:47%; }
-html.force-landscape .felt{ height:calc(100vh - 245px); min-height:190px; max-width:calc((100vh - 245px) * 2.7); }
-html.force-landscape .felt{ height:calc(100dvh - 245px); min-height:190px; max-width:calc((100dvh - 245px) * 2.7); }
-html.force-landscape .center{ top:42%; }
-html.force-landscape .felt{ height:calc(100vh - 125px); max-width:calc((100vh - 125px) * 2.7); }
-html.force-landscape .felt{ height:calc(100dvh - 125px); max-width:calc((100dvh - 125px) * 2.7); }
-html.force-portrait .seat.me .box{ max-width:calc(50vw - 82px); }
-html.force-landscape .seat.me .box{ max-width:180px; }
-html.force-landscape .seat.me .winbar{ position:absolute; left:calc(50% + 72px); bottom:52px; margin:0; }
-html.force-landscape .wb-t{ width:78px; }
-html.force-landscape .wb-k{ display:none; }
-html.force-portrait .center{ z-index:4; pointer-events:none; }
-html.force-portrait /* 相手のカード束は名札の裏に畳んで席の高さを圧縮(裏向きのとき) */
-    .seat:not(.me) .cards{ min-height:0; height:24px; margin-bottom:-4px; overflow:visible; align-items:flex-start; }
-html.force-portrait .seat:not(.me) .cards .card{ flex:none; }
-html.force-portrait .seat .box{ position:relative; z-index:1; }
-html.force-portrait /* ショーダウン/オールイン公開時: 公開カードは名札の横(卓の中央側)に大きく展開。
-       席の高さが増えないため9人卓でも上下の席・役名バナーと衝突しない */
-    .seat:not(.me).sd .cards{ position:absolute; top:50%; transform:translateY(-50%); height:auto;
-      margin:0; z-index:2; overflow:visible; }
-html.force-portrait .seat:not(.me).sd.ls .cards{ left:calc(100% - 8px); }
-html.force-portrait .seat:not(.me).sd.rs .cards{ left:auto; right:calc(100% - 8px); }
-html.force-portrait .seat:not(.me) .cards .card.rv{ --cw:40px; width:40px; height:56px;
-      filter:drop-shadow(0 3px 8px rgba(0,0,0,.55)); }
-html.force-portrait /* ボード5枚は左右の席カラム(x7%+枠46px)の内側に必ず収まる幅に自動調整。
-       後段のカードスプライトCSS(.card.md 52px)より詳細度で勝つこと */
-    .board .card.md{ --cw:clamp(30px, calc((100vw - 120px) / 5), 56px);
-      width:var(--cw); height:calc(var(--cw) * 1.4); }
-html.force-portrait /* ポットはボードの下に少し離して表示(その分カードを大きく) */
-    .center{ top:39%; }
-html.force-portrait .center .pot{ margin-top:14px; }
-html.force-portrait .center{ top:43.5%; }
-html.force-portrait .board{ gap:4px; min-height:52px; }
-html.force-portrait .board .card.md{ --cw:clamp(28px, calc((100vw - 152px) / 5), 44px);
-      width:var(--cw); height:calc(var(--cw) * 1.4); }
-html.force-portrait .seat .cards .card.sm{ --cw:20px; width:20px; height:28px; }
-html.force-portrait .seat:not(.me) .cards .card.rv{ --cw:34px; width:34px; height:48px; }
-html.force-portrait .seat{ width:84px; }
-html.force-portrait .seat .box{ padding:2px 3px; }
-html.force-portrait .seat .nm{ font-size:10px; }
-html.force-portrait .seat .st{ font-size:12px; }
-html.force-portrait .street-tag{ font-size:9px; padding:0 8px; margin-bottom:2px; }
-html.force-portrait .pot{ font-size:11px; margin-top:4px; }
-html.force-portrait .pot b{ font-size:14px; }
-html.force-portrait .actions{ display:flex; flex-direction:column; }
-html.force-portrait #raise-pane{ display:none; order:-1; }
-html.force-portrait /* レイズUI: 全画面透過オーバーレイ。右=メインスライダー、下=プリセット横一列 */
-    body.raise-open #raise-pane{ display:block; position:fixed; inset:0; z-index:30;
-      background:none; border:none; padding:0; margin:0; pointer-events:none; }
-html.force-portrait body.raise-open .rp-amt{ display:none; }
-html.force-portrait body.raise-open #raise-pane #rs{ display:none; }
-html.force-portrait body.raise-open .vsl-scale{ display:none; }
-html.force-portrait /* レイズボタンの上に伸びるメインスライダー */
-    body.raise-open .vsl-wrap{ display:block; position:fixed; right:6px;
-      bottom:calc(152px + env(safe-area-inset-bottom)); height:min(420px, 54vh);
-      width:58px; pointer-events:auto; }
-html.force-portrait body.raise-open .vsl{ display:block; position:absolute; inset:0; width:auto; margin:0;
-      touch-action:none; cursor:pointer;
-      background:linear-gradient(180deg, rgba(255,150,50,.40), rgba(120,60,190,.48) 40%, rgba(32,17,58,.85));
-      border:1px solid rgba(255,255,255,.42); border-radius:20px;
-      box-shadow:inset 0 2px 8px rgba(0,0,0,.45), 0 4px 18px rgba(0,0,0,.5); }
-html.force-portrait body.raise-open .vsl-fill{ position:absolute; left:3px; right:3px; bottom:3px; border-radius:17px;
-      background:linear-gradient(180deg, #ffb54d, #a55bd6 55%, #5a2f9e);
-      box-shadow:0 0 12px rgba(190,120,255,.45); pointer-events:none; }
-html.force-portrait body.raise-open .vsl-stack{ position:absolute; inset:0; pointer-events:none; z-index:1; overflow:hidden; border-radius:20px; }
-html.force-portrait body.raise-open .vsl-chip{ position:absolute; width:34px; transform:translateX(-50%); pointer-events:none;
-      filter:drop-shadow(0 2px 3px rgba(0,0,0,.55));
-      animation:vslChipIn .16s cubic-bezier(.2,1.5,.4,1); }
-html.force-portrait /* 上端キャップ=オールイン(タップで最大)、下端に最小額 */
-    body.raise-open .vsl-cap{ position:absolute; top:-1px; left:-1px; right:-1px; z-index:3;
-      text-align:center; font-size:9px; font-weight:800; letter-spacing:.04em; color:#5a2703;
-      background:linear-gradient(180deg,#ffd98a,#ff9f3d); border-radius:19px 19px 8px 8px;
-      padding:4px 2px 5px; pointer-events:auto; box-shadow:0 2px 8px rgba(0,0,0,.4); }
-html.force-portrait body.raise-open .vsl-cap b{ display:block; font-size:10.5px; letter-spacing:0; }
-html.force-portrait body.raise-open .vsl-min{ position:absolute; bottom:5px; left:0; right:0; z-index:3; text-align:center;
-      font-size:9px; font-weight:700; color:rgba(255,255,255,.8); pointer-events:none; }
-html.force-portrait /* バー内の目盛り(金額+ドット)。チップの上・ピルの下のレイヤー */
-    body.raise-open .vsl-marks{ position:absolute; inset:0; z-index:2; pointer-events:none; }
-html.force-portrait body.raise-open .vsl-marks .vm{ position:absolute; left:0; right:0; transform:translateY(50%); text-align:center;
-      font-size:9.5px; font-weight:800; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 6px rgba(0,0,0,.6); }
-html.force-portrait body.raise-open .vsl-marks .vd{ position:absolute; left:50%; transform:translate(-50%,50%); width:4px; height:4px;
-      border-radius:50%; background:rgba(255,255,255,.6); box-shadow:0 1px 2px rgba(0,0,0,.6); }
-html.force-portrait /* 値ピル(バーの左に張り付き、▲▼で微調整) */
-    body.raise-open .vsl-thumb{ z-index:4; position:absolute; left:auto; right:calc(100% - 8px); transform:none;
-      min-width:76px; padding:1px 8px 2px; border-radius:16px; pointer-events:auto;
-      display:flex; flex-direction:column; align-items:center;
-      background:linear-gradient(180deg,#8a4ae0,#5a2f9e); color:#fff;
-      font-size:14px; font-weight:900; text-align:center; white-space:nowrap;
-      border:2px solid rgba(255,255,255,.95); box-shadow:0 3px 12px rgba(0,0,0,.6); }
-html.force-portrait body.raise-open .vsl-thumb .vt{ font-size:8px; line-height:1.1; opacity:.9; font-style:normal; padding:1px 16px; cursor:pointer; }
-html.force-portrait /* プリセットはカードとアクションボタンの間の横一列(オールインはキャップにあるので非表示) */
-    body.raise-open .rp-presets{ display:flex; flex-direction:row; gap:8px; margin:0; pointer-events:auto;
-      position:fixed; left:8px; right:74px; bottom:calc(94px + env(safe-area-inset-bottom)); }
-html.force-portrait body.raise-open .rp-presets .chip{ flex:1 1 0; min-width:0; padding:8px 2px 9px; font-size:12.5px; line-height:1.3;
-      border-radius:12px; background:rgba(46,20,66,.94); border:1px solid rgba(190,130,255,.55); color:#e9d9ff; }
-html.force-portrait body.raise-open .rp-presets .chip span{ font-size:11px !important; color:#c9b3e8 !important; }
-html.force-portrait body.raise-open .rp-presets .chip:last-child{ display:none; }
-html.force-portrait body.raise-open .rp-step{ display:none; }
-html.force-portrait body.raise-open #rconfirm{ display:none; }
-html.force-portrait .actions .hint{ display:none; }
-html.force-portrait body.raise-open #raise-pane .hint{ display:none; }
-html.force-portrait /* 手札はプリセット行と被らないよう少し上げ、役バッジは一時的に隠す */
-    body.raise-open .seat.me{ transform:translate(-50%,-50%) translateY(-56px); }
-html.force-portrait body.raise-open .myhand{ display:none; }
-html.force-portrait /* backdrop-filter が position:fixed の基準を .actions に変えてしまうため無効化 */
-    body.raise-open .actions{ -webkit-backdrop-filter:none; backdrop-filter:none; }
-html.force-portrait /* 空いたスペース分、卓を拡大 */
-    #table-view{ padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
-html.force-portrait .felt{ height:calc(100vh - 275px); height:calc(100dvh - 275px); min-height:360px; }
-html.force-portrait .myhand{ bottom:calc(96px + env(safe-area-inset-bottom)); }
-html.force-portrait body[data-felt="2"] .felt-surface{ background:radial-gradient(ellipse at 50% 38%, rgba(255,255,255,.08), rgba(0,0,0,0) 52%, rgba(0,0,0,.34) 100%), var(--felt-t2-p) center/cover no-repeat !important; }
-html.force-portrait body[data-felt="3"] .felt-surface{ background:radial-gradient(ellipse at 50% 38%, rgba(255,255,255,.08), rgba(0,0,0,0) 52%, rgba(0,0,0,.34) 100%), var(--felt-t3-p) center/cover no-repeat !important; }
-html.force-portrait body[data-felt="4"] .felt-surface{ background:radial-gradient(ellipse at 50% 38%, rgba(255,255,255,.08), rgba(0,0,0,0) 52%, rgba(0,0,0,.34) 100%), var(--felt-t4-p) center/cover no-repeat !important; }
-html.force-portrait body[data-felt="5"] .felt-surface{ background:radial-gradient(ellipse at 50% 38%, rgba(255,255,255,.06), rgba(0,0,0,0) 52%, rgba(0,0,0,.3) 100%), var(--felt-t5-p) center/cover no-repeat !important; }
-html.force-portrait body[data-felt="6"] .felt-surface, html.force-portrait body[data-felt="arena"] .felt-surface{ background:radial-gradient(ellipse at 50% 40%, rgba(255,255,255,.05), rgba(0,0,0,0) 55%, rgba(0,0,0,.25) 100%), var(--felt-arena-p) center/cover no-repeat !important; }
-</style>
+
 <style id="desk-banner-css">
   #desk-mode-banner { position:fixed; top:0; left:0; right:0; z-index:100000;
     background:#7a1f1f; color:#ffe; font-size:13px; line-height:1.4;
@@ -11091,22 +10809,14 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (el) el.remove();
   }
   function __forceOrientSync() {
+    // 強制レイアウトは第47弾で撤去(縦画面崩壊の原因)。メディアクエリに任せる。
     var h = document.documentElement;
+    h.classList.remove("force-portrait", "force-landscape");
     var phone = __realIsPhone();
     var vw = window.innerWidth;
-    // 実スマホ かつ ビューポートがスマホ幅のときだけ強制する。
-    // 幅が広い(デスクトップ表示ON)ときに縦CSSを当てると寸法前提が崩れるので当てない。
-    if (phone && vw <= 820) {
-      var portrait = window.innerHeight >= window.innerWidth;
-      h.classList.toggle("force-portrait", portrait);
-      h.classList.toggle("force-landscape", !portrait);
-      __hideDesktopBanner();
-    } else {
-      h.classList.remove("force-portrait", "force-landscape");
-      // スマホなのに幅が広い = デスクトップ表示ON。設定変更を案内する
-      if (phone && vw > 820) __showDesktopBanner();
-    }
-    try { if (typeof state !== "undefined" && state && typeof renderTable === "function") renderTable(); } catch (e) {}
+    // スマホなのに幅が広い = Safariのデスクトップ表示ON。設定変更を案内する
+    if (phone && vw > 820) __showDesktopBanner();
+    else __hideDesktopBanner();
   }
   if (typeof window !== "undefined" && window.addEventListener) {
     window.addEventListener("resize", __forceOrientSync);
@@ -11117,8 +10827,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   }
 
   function isPortraitPhone() {
-    return document.documentElement.classList.contains("force-portrait")
-      || (window.matchMedia && window.matchMedia("(max-width:640px) and (orientation: portrait)").matches);
+    return window.matchMedia && window.matchMedia("(max-width:640px) and (orientation: portrait)").matches;
   }
   function seatXY(k, n) {
     let x, y;
@@ -11636,8 +11345,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     }
   }
   function isLsAct() {
-    return document.documentElement.classList.contains("force-landscape")
-      || (window.matchMedia && window.matchMedia("(orientation:landscape) and (max-height:560px)").matches);
+    return window.matchMedia && window.matchMedia("(orientation:landscape) and (max-height:560px)").matches;
   }
   function isMobileAct() {
     return isLsAct() || isPortraitPhone();
