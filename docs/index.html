@@ -1108,9 +1108,13 @@
   .seat.folded { opacity:.5; }
 
   @media (max-width:640px) and (orientation:portrait) {
-    /* 自分のベット額も柄の上で読めるようにピル化 */
-    .seat.me .bet:not(:empty) { background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.16);
-      border-radius:11px; padding:2px 8px; }
+    /* 自分のベット額は最重要。柄の上でも一目で読めるよう大きく金縁のピルにする */
+    .seat.me .bet:not(:empty) { background:rgba(0,0,0,.74); border:1px solid rgba(230,196,90,.62);
+      border-radius:13px; padding:3px 11px; font-size:13px; font-weight:800; color:#ffe9a8;
+      letter-spacing:.02em; box-shadow:0 2px 9px rgba(0,0,0,.6); }
+    .seat.me .bet .bet-chip { width:22px; vertical-align:-6px; margin-right:5px; }
+    /* 相手席の額も少しだけ大きく */
+    .seat:not(.me) .bet:not(:empty) { font-size:11px; font-weight:700; }
 
     /* C. 下段の側面席: 横に出すと自分の手札に被るので、名札の上(ポット方向)へ逃がす */
     .seat:not(.me).lo .bet { left:50%; right:auto; top:auto; bottom:calc(100% + 2px);
