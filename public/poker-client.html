@@ -1123,6 +1123,132 @@
       transform:translateX(-50%); }
   }
 </style>
+<style id="chip-slider-all-css">
+  /* ③ 自分のベット額は必ず手札の外(上)へ。ピルの高さが変わっても被らない */
+  .seat.me .bet:not(:empty) { top:auto; bottom:calc(100% + 5px); }
+
+  /* ===== ① 横画面(スマホ): 右のレイズパネル内に、丈を詰めた縦チップスライダー ===== */
+  @media (orientation:landscape) and (max-height:560px) {
+    body.raise-open #raise-pane #rs, body.raise-open .vsl-scale { display:none; }
+    body.raise-open .vsl-wrap { display:block; position:relative; align-self:flex-end;
+      width:46px; height:min(134px, 35vh); flex:0 0 auto; margin:2px 22px 2px 0; pointer-events:auto; }
+
+    body.raise-open .vsl { display:block; position:absolute; inset:0; width:auto; margin:0;
+      touch-action:none; cursor:pointer;
+      background:linear-gradient(180deg, rgba(255,150,50,.40), rgba(120,60,190,.48) 40%, rgba(32,17,58,.85));
+      border:1px solid rgba(255,255,255,.42); border-radius:16px;
+      box-shadow:inset 0 2px 8px rgba(0,0,0,.45), 0 4px 18px rgba(0,0,0,.5); }
+    body.raise-open .vsl-fill { position:absolute; left:3px; right:3px; bottom:3px; border-radius:13px;
+      background:linear-gradient(180deg, #ffb54d, #a55bd6 55%, #5a2f9e);
+      box-shadow:0 0 12px rgba(190,120,255,.45); pointer-events:none; }
+    body.raise-open .vsl-stack { position:absolute; inset:0; pointer-events:none; z-index:1; overflow:hidden; border-radius:16px; }
+    body.raise-open .vsl-chip { position:absolute; width:27px; transform:translateX(-50%); pointer-events:none;
+      filter:drop-shadow(0 2px 3px rgba(0,0,0,.55)); animation:vslChipIn .16s cubic-bezier(.2,1.5,.4,1); }
+    body.raise-open .vsl-cap { position:absolute; top:-1px; left:-1px; right:-1px; z-index:3;
+      text-align:center; font-size:8px; font-weight:800; letter-spacing:.04em; color:#5a2703;
+      background:linear-gradient(180deg,#ffd98a,#ff9f3d); border-radius:15px 15px 8px 8px;
+      padding:4px 2px 5px; pointer-events:auto; box-shadow:0 2px 8px rgba(0,0,0,.4); }
+    body.raise-open .vsl-cap b { display:block; font-size:9.5px; letter-spacing:0; }
+    body.raise-open .vsl-min { position:absolute; bottom:5px; left:0; right:0; z-index:3; text-align:center;
+      font-size:8px; font-weight:700; color:rgba(255,255,255,.8); pointer-events:none; }
+    body.raise-open .vsl-marks { position:absolute; inset:0; z-index:2; pointer-events:none; }
+    body.raise-open .vsl-marks .vm { position:absolute; left:0; right:0; transform:translateY(50%); text-align:center;
+      font-size:8.5px; font-weight:800; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 6px rgba(0,0,0,.6); }
+    body.raise-open .vsl-marks .vd { position:absolute; left:50%; transform:translate(-50%,50%); width:4px; height:4px;
+      border-radius:50%; background:rgba(255,255,255,.6); box-shadow:0 1px 2px rgba(0,0,0,.6); }
+    body.raise-open .vsl-thumb { z-index:4; position:absolute; left:auto; right:calc(100% - 8px); transform:none;
+      min-width:64px; padding:1px 8px 2px; border-radius:16px; pointer-events:auto;
+      display:flex; flex-direction:column; align-items:center;
+      background:linear-gradient(180deg,#8a4ae0,#5a2f9e); color:#fff;
+      font-size:12px; font-weight:900; text-align:center; white-space:nowrap;
+      border:2px solid rgba(255,255,255,.95); box-shadow:0 3px 12px rgba(0,0,0,.6); }
+    body.raise-open .vsl-thumb .vt { font-size:8px; line-height:1.1; opacity:.9; font-style:normal; padding:1px 14px; cursor:pointer; }
+    /* プリセットは2列にして縦を節約(パネルをスクロールさせない) */
+    body.raise-open .rp-presets { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    body.raise-open .rp-presets .chip { width:auto; padding:6px 4px; font-size:12px; }
+    body.raise-open .rp-amt { font-size:20px; padding:5px; }
+    body.raise-open .rp-step .chip { width:48px; font-size:16px; padding:5px 0; }
+    body.raise-open #rconfirm { padding:10px; font-size:15px; }
+  }
+
+  /* ===== ② PC: 画面右に常設のチップスライダー(レイズが選べるときだけ出る) ===== */
+  @media (min-width:641px) and (min-height:561px) {
+    #raise-pane #rs, .vsl-scale { display:none; }
+    .vsl-wrap { display:block; position:fixed; right:20px; bottom:186px;
+      width:54px; height:min(300px, 38vh); pointer-events:auto; z-index:8; }
+
+    #raise-pane .vsl { display:block; position:absolute; inset:0; width:auto; margin:0;
+      touch-action:none; cursor:pointer;
+      background:linear-gradient(180deg, rgba(255,150,50,.40), rgba(120,60,190,.48) 40%, rgba(32,17,58,.85));
+      border:1px solid rgba(255,255,255,.42); border-radius:19px;
+      box-shadow:inset 0 2px 8px rgba(0,0,0,.45), 0 4px 18px rgba(0,0,0,.5); }
+    #raise-pane .vsl-fill { position:absolute; left:3px; right:3px; bottom:3px; border-radius:16px;
+      background:linear-gradient(180deg, #ffb54d, #a55bd6 55%, #5a2f9e);
+      box-shadow:0 0 12px rgba(190,120,255,.45); pointer-events:none; }
+    #raise-pane .vsl-stack { position:absolute; inset:0; pointer-events:none; z-index:1; overflow:hidden; border-radius:19px; }
+    #raise-pane .vsl-chip { position:absolute; width:32px; transform:translateX(-50%); pointer-events:none;
+      filter:drop-shadow(0 2px 3px rgba(0,0,0,.55)); animation:vslChipIn .16s cubic-bezier(.2,1.5,.4,1); }
+    #raise-pane .vsl-cap { position:absolute; top:-1px; left:-1px; right:-1px; z-index:3;
+      text-align:center; font-size:9px; font-weight:800; letter-spacing:.04em; color:#5a2703;
+      background:linear-gradient(180deg,#ffd98a,#ff9f3d); border-radius:18px 18px 8px 8px;
+      padding:4px 2px 5px; pointer-events:auto; box-shadow:0 2px 8px rgba(0,0,0,.4); }
+    #raise-pane .vsl-cap b { display:block; font-size:10.5px; letter-spacing:0; }
+    #raise-pane .vsl-min { position:absolute; bottom:5px; left:0; right:0; z-index:3; text-align:center;
+      font-size:9px; font-weight:700; color:rgba(255,255,255,.8); pointer-events:none; }
+    #raise-pane .vsl-marks { position:absolute; inset:0; z-index:2; pointer-events:none; }
+    #raise-pane .vsl-marks .vm { position:absolute; left:0; right:0; transform:translateY(50%); text-align:center;
+      font-size:9.5px; font-weight:800; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 6px rgba(0,0,0,.6); }
+    #raise-pane .vsl-marks .vd { position:absolute; left:50%; transform:translate(-50%,50%); width:4px; height:4px;
+      border-radius:50%; background:rgba(255,255,255,.6); box-shadow:0 1px 2px rgba(0,0,0,.6); }
+    #raise-pane .vsl-thumb { z-index:4; position:absolute; left:auto; right:calc(100% - 8px); transform:none;
+      min-width:76px; padding:1px 8px 2px; border-radius:16px; pointer-events:auto;
+      display:flex; flex-direction:column; align-items:center;
+      background:linear-gradient(180deg,#8a4ae0,#5a2f9e); color:#fff;
+      font-size:14px; font-weight:900; text-align:center; white-space:nowrap;
+      border:2px solid rgba(255,255,255,.95); box-shadow:0 3px 12px rgba(0,0,0,.6); }
+    #raise-pane .vsl-thumb .vt { font-size:8px; line-height:1.1; opacity:.9; font-style:normal; padding:1px 14px; cursor:pointer; }
+  }
+</style>
+<style id="pc-compact-bet-css">
+  /* ===== PC: ベット欄は1行に圧縮。空いた縦は卓に回す ===== */
+  @media (min-width:641px) and (min-height:561px) {
+    /* 金額はスライダーのピルとレイズボタンに出るので、パネル内の大きな金額表示と注釈は畳む */
+    #raise-pane .rp-amt, #raise-pane .hint { display:none; }
+    #raise-pane { display:inline-flex; flex-wrap:nowrap; align-items:center; gap:10px;
+      width:auto; max-width:100%; margin:7px auto 0; padding:6px 14px; vertical-align:middle; }
+    .actions { text-align:center; }
+    #raise-pane .rp-presets { flex-basis:auto; margin:0; gap:8px; flex-wrap:nowrap; }
+    #raise-pane .rp-presets .chip { padding:4px 11px; font-size:12px; line-height:1.2; }
+    #raise-pane .rp-step { gap:6px; }
+    #raise-pane .rp-step .chip { padding:4px 13px; font-size:14px; }
+    /* 空いたぶん卓を大きく(ディーラーも少し詰める) */
+    .dealer { height:168px; margin-bottom:-58px; }
+    .felt { height:clamp(340px, calc(100vh - 330px), 700px); }
+  }
+</style>
+<style id="fullscreen-css">
+  #fs-guide { position:fixed; inset:0; z-index:100001; background:rgba(0,0,0,.62);
+    display:flex; align-items:center; justify-content:center; padding:16px; }
+  #fs-guide .fsg-card { width:100%; max-width:340px; max-height:86dvh; overflow:auto;
+    background:linear-gradient(180deg,#1b1526,#120e1c); border:1px solid rgba(212,175,55,.42);
+    border-radius:14px; padding:16px; color:#e9ecf2; font-size:13px; line-height:1.65;
+    box-shadow:0 18px 50px rgba(0,0,0,.7); }
+  #fs-guide h3 { margin:0 0 8px; font-size:16px; color:#ffd76a; }
+  #fs-guide p { margin:0 0 10px; }
+  #fs-guide ol { margin:0 0 10px; padding-left:1.35em; }
+  #fs-guide li { margin-bottom:4px; }
+  #fs-guide .fsg-sub { color:#b9c0cc; font-size:12px; }
+  #fs-guide b { color:#ffd76a; }
+  #fs-guide button { width:100%; margin-top:4px; }
+
+  /* 横画面: iOSの 100vh はツールバーが隠れた高さなので、見えている高さ(dvh)に合わせる */
+  @media (orientation:landscape) and (max-height:560px) {
+    .felt { height:calc(100dvh - 245px); }
+  }
+  @media (orientation:landscape) and (max-height:430px) {
+    .felt { height:calc(100dvh - 125px); max-width:calc((100dvh - 125px) * 2.7); }
+  }
+</style>
 </head>
 <body>
 <header>
@@ -1213,6 +1339,7 @@
     <div class="actions" id="actions"></div>
   </div>
   <div id="side-fabs">
+    <button class="fab" id="fab-full" title="全画面" aria-label="全画面">⛶</button>
     <button class="fab" id="fab-info" title="公正性（Provably Fair）" aria-label="公正性">🛡️</button>
     <button class="fab" id="fab-log" title="ログ" aria-label="ログ">📜</button>
     <button class="fab" id="fab-seat" title="席の操作" aria-label="席の操作">🪑</button>
@@ -4508,6 +4635,59 @@
   document.getElementById('fab-log').onclick = function(){ openSide('log-panel'); };
   document.getElementById('fab-seat').onclick = function(){ openSide('seat-panel'); };
   document.getElementById('fab-lobby').onclick = function(){ closeSide(); document.getElementById('btn-lobby').click(); };
+  // ===== 全画面表示 =====
+  function __isStandalone(){
+    try {
+      return window.navigator.standalone === true
+        || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    } catch (e) { return false; }
+  }
+  function __fsElement(){ return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function __canFullscreen(){
+    var d = document.documentElement;
+    return !!(d.requestFullscreen || d.webkitRequestFullscreen) && document.fullscreenEnabled !== false;
+  }
+  // iPhone の Safari は Fullscreen API 非対応。ホーム画面に追加すれば完全な全画面になる
+  function __showFsGuide(){
+    if (document.getElementById('fs-guide')) return;
+    var g = document.createElement('div');
+    g.id = 'fs-guide';
+    g.innerHTML = '<div class="fsg-card">'
+      + '<h3>全画面で遊ぶ</h3>'
+      + '<p>iPhone の Safari は全画面ボタンに対応していません。<b>ホーム画面に追加</b>すると、アドレスバー・タブ・ブックマークがすべて消えて全画面になります。</p>'
+      + '<ol><li>画面下の<b>共有ボタン</b>（□に↑）をタップ</li>'
+      + '<li><b>ホーム画面に追加</b>をタップ</li>'
+      + '<li>追加されたアイコンから開く</li></ol>'
+      + '<p class="fsg-sub">Safari のまま遊ぶ場合：<br>'
+      + '設定 → Safari → <b>タブバー</b>を「シングルタブ」にするとタブ列が消えます。<br>'
+      + '「ぁあ」→ <b>ブックマークバーを非表示</b> も有効です。</p>'
+      + '<button class="primary" id="fsg-close">閉じる</button></div>';
+    document.body.appendChild(g);
+    var close = function(){ g.remove(); };
+    g.querySelector('#fsg-close').onclick = close;
+    g.onclick = function(e){ if (e.target === g) close(); };
+  }
+  function __toggleFullscreen(){
+    if (!__canFullscreen()) { __showFsGuide(); return; }
+    try {
+      var d = document.documentElement;
+      if (__fsElement()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      else {
+        // 端末が拒否した場合(iOSなど)は Promise が reject されるのでガイドに切り替える
+        var p = (d.requestFullscreen || d.webkitRequestFullscreen).call(d);
+        if (p && p.catch) p.catch(function(){ __showFsGuide(); });
+      }
+    } catch (e) { __showFsGuide(); }
+  }
+  var __fabFull = document.getElementById('fab-full');
+  if (__fabFull) {
+    // 既にホーム画面から起動していれば消すものが無い
+    if (__isStandalone()) __fabFull.style.display = 'none';
+    __fabFull.onclick = __toggleFullscreen;
+    document.addEventListener('fullscreenchange', function(){
+      __fabFull.title = __fsElement() ? '全画面を終了' : '全画面';
+    });
+  }
   document.getElementById('side-close').onclick = closeSide;
   backdrop.onclick = closeSide;
 })();
