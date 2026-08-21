@@ -1249,6 +1249,32 @@
     .felt { height:calc(100dvh - 125px); max-width:calc((100dvh - 125px) * 2.7); }
   }
 </style>
+<style id="safe-area-css">
+  /* ===== ホーム画面起動(standalone)でステータスバーに潜り込むのを防ぐ =====
+     black-translucent + viewport-fit=cover では上端まで描画されるため、
+     セーフエリアぶんを自前で確保する。ブラウザ表示では env(...) は 0。 */
+  header { padding-top:calc(10px + env(safe-area-inset-top));
+      padding-left:calc(16px + env(safe-area-inset-left));
+      padding-right:calc(16px + env(safe-area-inset-right)); }
+  @media (max-width:640px) {
+    header { padding-top:calc(8px + env(safe-area-inset-top));
+      padding-left:calc(10px + env(safe-area-inset-left));
+      padding-right:calc(10px + env(safe-area-inset-right)); }
+  }
+  @media (orientation:landscape) and (max-height:560px) {
+    header { padding-top:calc(5px + env(safe-area-inset-top));
+      padding-left:calc(10px + env(safe-area-inset-left));
+      padding-right:calc(10px + env(safe-area-inset-right)); }
+  }
+  @media (orientation:landscape) and (max-height:430px) {
+    header { padding-top:calc(3px + env(safe-area-inset-top));
+      padding-left:calc(10px + env(safe-area-inset-left));
+      padding-right:calc(10px + env(safe-area-inset-right)); }
+  }
+  /* 卓画面はヘッダーが消えるので、丸ボタン列を直接下げる */
+  #side-fabs { top:calc(10px + env(safe-area-inset-top));
+    left:calc(10px + env(safe-area-inset-left)); }
+</style>
 <script>
 "use strict";
 var PokerOffline = (() => {
