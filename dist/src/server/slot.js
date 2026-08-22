@@ -58,16 +58,18 @@ export const LINES = PAYLINES.length;
 export const PAY_SYMBOLS = [
     // 下位3種は「4個から配当」。3個で当たる絵柄を絞ることでヒット率を業界水準(20〜30%)まで
     // 落としつつ、1回の当たりの価値を残している(243waysは放っておくと当たりすぎる)
-    // 第69弾: スタックドWILD導入で通常時の期待値が上がったため全体を約0.63倍に調整。
-    // 第75弾: WILD倍率を「WILDを含む全ライン」に広げた(仕様)ぶんフリー寄与が42%まで上がり、
-    // さらに約0.81倍(0.833×0.97)へ再調整。当たりの体験は絵柄の配当よりWILDイベントに寄る設計になった
-    { key: 'chip', name: 'チップ', pay: [0.0, 0.272, 1.009], weight: 100 },
-    { key: 'club', name: 'クラブ', pay: [0.0, 0.407, 1.416], weight: 88 },
-    { key: 'diamond', name: 'ダイヤ', pay: [0.0, 0.611, 1.979], weight: 76 },
-    { key: 'heart', name: 'ハート', pay: [0.0, 0.805, 3.046], weight: 62 },
-    { key: 'spade', name: 'スペード', pay: [0.32, 1.387, 5.422], weight: 48 },
-    { key: 'crown', name: '王冠', pay: [0.611, 2.784, 10.35], weight: 32 },
-    { key: 'seven', name: 'セブン', pay: [1.62, 7.605, 34.454], weight: 18 },
+    // 第76弾: **全リールにスタックドWILDを配置**したことでWILDが大幅に増え、素の期待値が
+    // 218% まで上がった。そこで全体を約0.432倍に再調整し、目標RTP 99.99% に合わせてある。
+    // (第69弾で0.63倍、第75弾で0.81倍にした経緯の続き。当たりの体験は絵柄の配当よりWILDイベントに寄る)
+    // **触ったら必ず 6〜10シード × 30万スピン以上で検算すること**。
+    // tune-slot.mjs の N=160,000 はフリーゲームの分散に対して足りず、数pt単位で誤判定する。
+    { key: 'chip', name: 'チップ', pay: [0.0, 0.1175, 0.4359], weight: 100 },
+    { key: 'club', name: 'クラブ', pay: [0.0, 0.1758, 0.6117], weight: 88 },
+    { key: 'diamond', name: 'ダイヤ', pay: [0.0, 0.264, 0.8549], weight: 76 },
+    { key: 'heart', name: 'ハート', pay: [0.0, 0.3478, 1.3159], weight: 62 },
+    { key: 'spade', name: 'スペード', pay: [0.1382, 0.5992, 2.3423], weight: 48 },
+    { key: 'crown', name: '王冠', pay: [0.264, 1.2027, 4.4712], weight: 32 },
+    { key: 'seven', name: 'セブン', pay: [0.6998, 3.2854, 14.8841], weight: 18 },
 ];
 /**
  * 抽選パラメータ。**オブジェクトにしてあるのは調整スクリプトから差し替えるため**
@@ -155,23 +157,31 @@ function newGrid(rnd, scatterWeight) {
 }
 const PAY_BY_KEY = new Map(PAY_SYMBOLS.map((s) => [s.key, s]));
 /**
- * リール1の帯(3連WILDブロック入り)を盤面に重ねる。戻り値は窓に入ったWILDの数。
+ * **全リール**の帯(3連WILDブロック入り)を盤面に重ねる。戻り値はフル停止したリール番号。
  * 帯のどこで止まったかで 0〜3 個が決まる:
- *   フル(3個) … 1positions / 2個 … 2 / 1個 … 2 / なし … 残り全部
- * 3個そろったときだけ特別扱い(通常時はリスピン、フリーは固定WILD)。1〜2個はただのWILD。
+ *   フル(3個) … 1箇所 / 2個 … 2箇所 / 1個 … 2箇所 / なし … 残り全部
+ * 3個そろったリールだけ特別扱い(通常時はロック+リスピン、フリーは固定WILD)。1〜2個はただのWILD。
+ *
+ * 第76弾で全リールに広げたので、**理論上は5リール全部がWILDになる**(確率 (1/L)^5)。
+ * 各リールは独立に引くので、L=64 なら全面WILDは約 1/10億。出れば MAX WIN に届く。
  */
-function overlayReel0Wilds(grid, rnd, stripScale = 1) {
+function overlayStackedWilds(grid, rnd, stripScale = 1) {
     const L = SLOT_CFG.stackedStripLen * stripScale;
-    const pos = Math.floor(rnd() * L);
-    // WILDブロックを帯の 0,1,2 に置いたとして、窓は strip[pos+y] (y=0..2) を見せる
-    let n = 0;
-    for (let y = 0; y < ROWS; y++) {
-        if ((pos + y) % L <= 2) {
-            grid[0][y] = 'wild';
-            n++;
+    const full = [];
+    for (let r = 0; r < REELS; r++) {
+        const pos = Math.floor(rnd() * L);
+        // WILDブロックを帯の 0,1,2 に置いたとして、窓は strip[pos+y] (y=0..2) を見せる
+        let n = 0;
+        for (let y = 0; y < ROWS; y++) {
+            if ((pos + y) % L <= 2) {
+                grid[r][y] = 'wild';
+                n++;
+            }
         }
+        if (n >= ROWS)
+            full.push(r);
     }
-    return n;
+    return full;
 }
 /** WILD絡み当選の倍率を引く(フリーゲーム用) */
 function drawWildMult(rnd) {
@@ -245,14 +255,14 @@ function countScatter(grid) {
 }
 /**
  * 当たった位置を消して上から詰め、空きを新しい絵柄で埋める。
- * lockReel0 のとき(スタックドWILD)はリール1に手を付けない — WILDは消えずに残り続ける
+ * lockReels に入っているリール(スタックドWILD)には手を付けない — WILDは消えずに残り続ける
  */
-function tumble(grid, hits, rnd, scatterWeight, lockReel0) {
+function tumble(grid, hits, rnd, scatterWeight, lockReels) {
     const dead = new Set(hits.map(([r, y]) => `${r},${y}`));
     const out = [];
     for (let r = 0; r < REELS; r++) {
-        if (r === 0 && lockReel0) {
-            out.push([...grid[0]]);
+        if (lockReels && lockReels.indexOf(r) >= 0) {
+            out.push([...grid[r]]);
             continue;
         }
         const keep = [];
@@ -305,7 +315,7 @@ function runTumbles(grid0, rnd, scatterWeight, opts) {
         // フリーゲームは当たるたびに永続マルチプライヤーが伸びる
         if (opts.persistent)
             mult += opts.persistent.step;
-        grid = tumble(grid, hits, rnd, scatterWeight, opts.lockReel0);
+        grid = tumble(grid, hits, rnd, scatterWeight, opts.lockReels);
         chain++;
     }
     return { steps, payX, multAfter: mult };
@@ -318,16 +328,16 @@ export function spin(rnd, opts = {}) {
     const sw = opts.ante ? SLOT_CFG.scatterWeightAnte : SLOT_CFG.scatterWeight;
     const grid0 = newGrid(rnd, sw);
     // リール1の帯にWILDブロックが重なったか。3個フルで停止したときだけ「スタックドWILD」
-    const stacked = overlayReel0Wilds(grid0, rnd) >= ROWS;
+    const stackedReels = overlayStackedWilds(grid0, rnd);
     const scatters = countScatter(grid0);
-    const baseRun = runTumbles(grid0, rnd, sw, { ladder: TUMBLE_LADDER, lockReel0: stacked });
+    const baseRun = runTumbles(grid0, rnd, sw, { ladder: TUMBLE_LADDER, lockReels: stackedReels });
     let basePayX = baseRun.payX + (SCATTER_PAY[Math.min(scatters, 5)] ?? 0);
     const out = {
         grid0,
         base: baseRun.steps,
         basePayX,
         scatters,
-        stacked,
+        stackedReels,
         freeEntered: scatters >= 3,
         totalPayX: 0,
         maxWin: false,
@@ -335,11 +345,13 @@ export function spin(rnd, opts = {}) {
     // スタックドWILDのリスピン(通常時のみ・必ず1回で終わり)。
     // リール1をWILDのまま固定し、リール2〜5だけ引き直す。初回の当選とは別に払う。
     // 上限を設けないと同じWILDから何度も発生し得るため、仕様として1回に固定してある。
-    if (stacked) {
+    // 全リールがWILDのときは引き直す相手がいないのでリスピンしない
+    if (stackedReels.length > 0 && stackedReels.length < REELS) {
         const rg = newGrid(rnd, 0); // スキャッター無しで引く(リスピンからはフリーに入らない)
-        rg[0] = ['wild', 'wild', 'wild'];
-        const rrun = runTumbles(rg, rnd, 0, { ladder: TUMBLE_LADDER, lockReel0: true });
-        out.respin = { grid0: rg, steps: rrun.steps, payX: rrun.payX };
+        for (const r of stackedReels)
+            rg[r] = ['wild', 'wild', 'wild'];
+        const rrun = runTumbles(rg, rnd, 0, { ladder: TUMBLE_LADDER, lockReels: stackedReels });
+        out.respin = { grid0: rg, steps: rrun.steps, payX: rrun.payX, lockedReels: stackedReels };
     }
     if (out.freeEntered) {
         const mode = FREE_MODES.find((m) => m.key === (opts.mode ?? 'many')) ?? FREE_MODES[0];
@@ -354,22 +366,29 @@ export function spin(rnd, opts = {}) {
         const wildMult = drawWildMult(rnd);
         // フリーゲーム中に3連WILDが停止すると、リール1が3スピンのあいだ固定WILDになる。
         // リスピンはさせず「固定WILD+WILD絡み×2〜×5」で通常時と役割を分ける
-        let stickyLeft = 0;
+        const stickyLeft = new Array(REELS).fill(0);
         // 安全弁: リトリガーが続いても止まるように上限を置く
         for (let guard = 0; left > 0 && guard < 200; guard++) {
             left--;
             const g = newGrid(rnd, sw);
-            if (stickyLeft > 0)
-                g[0] = ['wild', 'wild', 'wild'];
-            else if (overlayReel0Wilds(g, rnd, SLOT_CFG.freeStripScale) >= ROWS)
-                stickyLeft = SLOT_CFG.stickySpins;
-            const sticky = stickyLeft > 0;
-            if (sticky)
-                stickyLeft--;
+            // 継続中の固定を先に貼ってから、新しくフル停止したリールを固定に加える
+            for (let r = 0; r < REELS; r++)
+                if (stickyLeft[r] > 0)
+                    g[r] = ['wild', 'wild', 'wild'];
+            for (const r of overlayStackedWilds(g, rnd, SLOT_CFG.freeStripScale)) {
+                if (stickyLeft[r] <= 0)
+                    stickyLeft[r] = SLOT_CFG.stickySpins;
+            }
+            const stickyReels = [];
+            for (let r = 0; r < REELS; r++)
+                if (stickyLeft[r] > 0) {
+                    stickyReels.push(r);
+                    stickyLeft[r]--;
+                }
             const sc = countScatter(g);
             const run = runTumbles(g, rnd, sw, {
                 persistent: { mult, step: mode.step },
-                lockReel0: sticky,
+                lockReels: stickyReels,
                 wildMult,
             });
             mult = run.multAfter;
@@ -379,7 +398,7 @@ export function spin(rnd, opts = {}) {
                 left += RETRIGGER_SPINS;
                 total += RETRIGGER_SPINS;
             }
-            spins.push({ grid0: g, steps: run.steps, multAfter: mult, payX: run.payX, retrigger, sticky });
+            spins.push({ grid0: g, steps: run.steps, multAfter: mult, payX: run.payX, retrigger, stickyReels });
             if (payX + basePayX + (out.respin?.payX ?? 0) >= MAX_WIN_X)
                 break; // 上限到達で打ち切り
         }

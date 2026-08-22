@@ -139,11 +139,11 @@ export interface FreeSpinStep {
     /** リトリガーしたか */
     retrigger: boolean;
     /**
-     * このスピンでリール1が固定WILDだったか(第69弾)。
-     * フリーゲーム中に3連WILDが停止すると、以降のスピンでずっと true になる。
+     * このスピンで固定WILDになっていたリールの番号(第76弾で複数リール対応)。
+     * フリーゲーム中に3連WILDが停止したリールは stickySpins のあいだ固定される。
      * リスピンは発生させない(通常時の役割と分けて、フリーは「固定WILD+倍率」にする)
      */
-    sticky: boolean;
+    stickyReels: number[];
 }
 export interface SlotOutcome {
     /** 最初に出た盤面。**当たりが1つも無いスピンでも盤面を描けるように必ず入れる** */
@@ -154,8 +154,11 @@ export interface SlotOutcome {
     basePayX: number;
     /** スキャッター個数 */
     scatters: number;
-    /** リール1に3連WILDが停止したか(第69弾: スタックドWILD) */
-    stacked: boolean;
+    /**
+     * 3連WILDがフル停止したリールの番号(第76弾で全リール対象に拡張)。
+     * 空なら通常のスピン。全リール(5本)そろうと盤面すべてがWILDになる
+     */
+    stackedReels: number[];
     /**
      * スタックドWILDのリスピン(通常時のみ・1スピンにつき最大1回)。
      * リール1をWILDで固定したままリール2〜5だけ引き直した結果。初回分とは別に払う。
@@ -165,6 +168,7 @@ export interface SlotOutcome {
         grid0: Grid;
         steps: TumbleStep[];
         payX: number;
+        lockedReels: number[];
     };
     /** フリーゲームに入ったか */
     freeEntered: boolean;

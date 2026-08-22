@@ -1563,11 +1563,34 @@
   .sl-band { width:100%; display:block; flex:none;
     filter:url(#slvblur) brightness(.82); }
   .sl-strip.clear .sl-scell img, .sl-strip.clear .sl-band { filter:none; transform:none; transition:filter .1s ease; }
-  /* リール1固定(スタックドWILD/固定WILD) */
+  /* 固定WILD(スタックドWILD)。**リールより前面のレイヤー**に貼り、本体は後ろで回り続ける */
   .sl-reel.locked { box-shadow:0 0 0 2px #ffd76a, 0 0 18px rgba(255,215,106,.75); border-radius:6px; z-index:2; }
   .sl-reel.locked::after { content:"\1F512 \56FA\5B9A"; position:absolute; top:-9px; left:50%; transform:translateX(-50%);
     background:linear-gradient(180deg,#ffd76a,#c9992e); color:#241503; font-size:10px; font-weight:700;
-    padding:1px 7px; border-radius:8px; white-space:nowrap; z-index:3; }
+    padding:1px 7px; border-radius:8px; white-space:nowrap; z-index:4; }
+  .sl-lockwild { position:absolute; inset:0; z-index:3; display:grid; grid-template-rows:repeat(3,1fr);
+    gap:2px; pointer-events:none; }
+  .sl-lockwild img { width:100%; height:100%; object-fit:contain; display:block;
+    filter:drop-shadow(0 0 8px rgba(255,215,106,.8)); }
+  /* 新規に固定されたときだけ、1.12倍→戻る(資料の 0〜550ms のシーケンス) */
+  .sl-lockwild.fresh img { animation:slLockIn .55s cubic-bezier(.2,1.5,.4,1); }
+  @keyframes slLockIn {
+    0%   { transform:scale(1); }
+    20%  { transform:scale(1.12); filter:brightness(1.5) drop-shadow(0 0 18px rgba(255,215,106,1)); }
+    64%  { transform:scale(1.12); }
+    100% { transform:scale(1); }
+  }
+  .sl-lockmsg { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    z-index:5; padding:4px 10px; border-radius:8px; white-space:nowrap;
+    background:rgba(20,10,30,.9); border:1px solid rgba(255,215,106,.8);
+    color:#ffd76a; font-size:11px; font-weight:800;
+    animation:slLockMsg 1s ease-out forwards; pointer-events:none; }
+  @keyframes slLockMsg {
+    0% { opacity:0; transform:translate(-50%,-30%); }
+    25% { opacity:1; transform:translate(-50%,-50%); }
+    75% { opacity:1; }
+    100% { opacity:0; }
+  }
   /* WILD RE-SPIN の告知帯と停止直後の暗転 */
   .sl-respin { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     background:rgba(8,4,14,.55); z-index:4; border-radius:10px; animation:slRsIn .3s ease-out; pointer-events:none; }
@@ -4685,7 +4708,8 @@
   var slotCaf = (typeof cancelAnimationFrame === "function") ? (h) => cancelAnimationFrame(h) : (h) => clearTimeout(h);
 
   var slotSpinSndTimer = null;
-  var slotLock0 = false;       // スタックドWILD/固定WILD中はリール1に金枠ロックを出す
+  var slotLockedReels = [];    // スタックドWILD/固定WILD中のリール番号(第76弾で複数対応)
+  const slotIsLocked = (r) => slotLockedReels.indexOf(r) >= 0;
 
   function slotRandKey() { return SYM_KEYS[Math.floor(Math.random() * SYM_KEYS.length)]; }
 
@@ -4748,15 +4772,16 @@
     slotReelState[idx] = st;
   }
 
-  /** 回し始め(左から60msずつ遅らせて始動)。skipReel0=true はリスピン用 */
+  /** 回し始め(左から60msずつ遅らせて始動)。固定WILDのリールも後ろで回す */
   function slotSpinAnimStart(opts) {
     const o = opts || {};
     slotSpinAnimAbort();
     const grid = document.getElementById("sl-grid");
     if (!grid) return;
     grid.classList.add("spinning");
+    // 固定WILDのリールも**後ろで回す**(前面のWILDレイヤーはそのまま残るので固定に見える)。
+    // skipReels は「結果を差し替えない」ためのもので、回転そのものは全リールで行う
     grid.querySelectorAll(".sl-reel").forEach((el, r) => {
-      if (o.skipReel0 && r === 0) return;           // リスピンはリール1を固定したまま
       setTimeout(() => { if (grid.classList.contains("spinning")) slotReelStart(el, r); }, r * 60);
     });
     // 回転音: 一定リズムで刻む(抽選中であることが音で分かるように)
@@ -4848,7 +4873,6 @@
     const done = [];
     let scatters = 0;
     for (let r = 0; r < 5; r++) {
-      if (o.skipReel0 && r === 0) continue;
       const col = finalGrid && finalGrid[r];
       // 煽りは「止まった4本までに2つ見えている」ときだけ(5本目を先に覗かない)
       const anticipate = !o.fast && scatters >= 2 && r === 4;
@@ -5279,7 +5303,7 @@
           + (k === "scatter" ? " sc" : "") + (k === "wild" ? " wd" : "");
         col += '<div class="' + cls + '"><img src="' + (SLOT_IMG[k] || SLOT_IMG.chip) + '" alt=""></div>';
       }
-      html += '<div class="sl-reel" data-reel="' + r + '"' + (r === 0 && slotLock0 ? ' style="z-index:2"' : "") + '>' + col + "</div>";
+      html += '<div class="sl-reel" data-reel="' + r + '"' + (slotIsLocked(r) ? ' style="z-index:2"' : "") + '>' + col + "</div>";
     }
     return html;
   }
@@ -5296,9 +5320,40 @@
           reel.querySelectorAll(".sl-cell").forEach((c, y) => { if (y < n) c.classList.add("drop"); });
         });
       }
-      // スタックドWILD/固定WILD中はリール1に金枠ロックを出し続ける(盤面を描き直しても消えない)
-      if (slotLock0) { const r0 = g.querySelector(".sl-reel"); if (r0) r0.classList.add("locked"); }
+      // 固定WILD中のリールには、**リールより前面のレイヤー**にWILDを貼る。
+      // こうするとリール本体は後ろで回り続けられる(資料のレイヤー構成)
+      slotApplyLocks(g);
     }
+  }
+
+  /**
+   * 固定WILDのリールに、リール本体より前面のレイヤーを貼る。
+   * fresh に入れたリールだけ「1.12倍に膨らんで戻る」新規固定の演出を再生する。
+   */
+  function slotApplyLocks(grid, fresh) {
+    if (!grid) return;
+    grid.querySelectorAll(".sl-reel").forEach((reel, r) => {
+      const had = reel.querySelector(".sl-lockwild");
+      if (had) had.remove();
+      reel.classList.toggle("locked", slotIsLocked(r));
+      if (!slotIsLocked(r)) return;
+      const layer = document.createElement("div");
+      layer.className = "sl-lockwild" + (fresh && fresh.indexOf(r) >= 0 ? " fresh" : "");
+      // 3段ぶん。**カッコを付けないと repeat が最後の文字列にしか掛からない**
+      layer.innerHTML = ('<img src="' + SLOT_IMG.wild + '" alt="">').repeat(3);
+      reel.appendChild(layer);
+    });
+  }
+
+  /** 新規に固定されたときの合図(資料の 350ms「固定WILD＋1」) */
+  function slotLockMessage(n) {
+    const grid = document.getElementById("sl-grid");
+    if (!grid) return;
+    const el = document.createElement("div");
+    el.className = "sl-lockmsg";
+    el.textContent = "\u56FA\u5B9AWILD +" + n;
+    grid.appendChild(el);
+    setTimeout(() => el.remove(), 1100);
   }
 
   function slotSetMult(m) {
@@ -5705,29 +5760,43 @@
 
     // --- 通常時 ---
     // まず今回出た盤面を必ず見せる(ハズレでもリールが止まって見えるように)
-    slotLock0 = !!oc.stacked;                     // 3連WILDはこの瞬間からリール1を金枠で固定
+    // 3連WILDが止まったリールを、この瞬間から金枠+前面レイヤーで固定する
+    const stacked = oc.stackedReels || [];
+    slotLockedReels = stacked.slice();
     if (oc.grid0) slotSetGrid(oc.grid0, []);
-    if (oc.stacked) await slotStackedIntro();     // 暗転→ロック→「WILD RE-SPIN」
+    if (stacked.length) {
+      slotApplyLocks(document.getElementById("sl-grid"), stacked);   // 新規なので拡大演出つき
+      slotLockMessage(stacked.length);
+      await slotStackedIntro();                   // 暗転→ロック→「WILD RE-SPIN」
+    }
     if (oc.base && oc.base.length) {
       await slotPlaySteps(oc.base, r.bet, sv, false);
       // 最後の連鎖のあとの盤面は残らないので、最終ステップの盤面を出しておく
       slotSetGrid(oc.base[oc.base.length - 1].grid, []);
-    } else if (!oc.stacked) {
+    } else if (!stacked.length) {
       slotSetWin("\u30CF\u30BA\u30EC", "");
     }
 
     // --- スタックドWILDのリスピン(リール1固定・リール2〜5だけ短く再回転・1回だけ) ---
-    if (oc.stacked && oc.respin) {
-      slotSetWin("WILD RE-SPIN\u3000\u30EA\u30FC\u30EB1\u56FA\u5B9A", "big");
-      slotSpinAnimStart({ skipReel0: true });
+    if (stacked.length && oc.respin) {
+      const locked = oc.respin.lockedReels || [];
+      slotSetWin("WILD RE-SPIN\u3000\u30EA\u30FC\u30EB"
+        + locked.map((r) => r + 1).join("\u30FB") + "\u56FA\u5B9A", "big");
+      slotSpinAnimStart();
       await slotSleep(950);                       // リスピンは通常より短い(約1秒)
-      await slotSpinAnimStop(oc.respin.grid0, { skipReel0: true, fast: true });
+      await slotSpinAnimStop(oc.respin.grid0, { fast: true });
       slotSetGrid(oc.respin.grid0, []);
       if (oc.respin.steps.length) {
         await slotPlaySteps(oc.respin.steps, r.bet, sv, false);
         slotSetGrid(oc.respin.steps[oc.respin.steps.length - 1].grid, []);
       }
-      slotLock0 = false;                          // リスピンが終わったらロック解除
+      slotSetGrid(slotGrid, []);
+    }
+    // ロックの解除は**リスピンの有無にかかわらず**必ず行う。
+    // 全リールWILDのときはリスピンが無い(引き直す相手がいない)ので、
+    // リスピン内で解除していると固定表示が次のスピン以降も残り続ける
+    if (slotLockedReels.length) {
+      slotLockedReels = [];
       slotSetGrid(slotGrid, []);
     }
 
@@ -5740,7 +5809,7 @@
       const ov = slotFsOverlay(modeName ? modeName.name : "", oc.free.spinsTotal, oc.free.wildMult);
       await slotSleep(500);
       let i = 0;
-      let prevSticky = false;
+      let prevSticky = [];
       let acc = 0;
       for (const fsp of oc.free.spins) {
         i++;
@@ -5749,15 +5818,23 @@
         const bar = document.getElementById("slfs-bar");
         const tot = Number(ov.dataset.total) || oc.free.spinsTotal || i;
         if (bar) bar.style.width = Math.min(100, Math.round(i / tot * 100)) + "%";
-        // 固定WILD(3スピン): リール1をロック表示。初回だけ音で知らせる
-        slotLock0 = !!fsp.sticky;
-        if (fsp.sticky && !prevSticky) play("bigwin");
-        prevSticky = !!fsp.sticky;
-        // ③**毎ゲーム、実際にリールを回す**。差し替えるだけだと「動いていない」ように見える
-        slotSpinAnimStart({ skipReel0: fsp.sticky });
+        // 固定WILD(3スピン): 該当リールをロック表示。新しく固定されたぶんだけ演出する
+        const sticky = fsp.stickyReels || [];
+        const fresh = sticky.filter((r) => prevSticky.indexOf(r) < 0);
+        slotLockedReels = sticky.slice();
+        // ③**毎ゲーム、実際にリールを回す**。差し替えるだけだと「動いていない」ように見える。
+        // 固定リールも後ろで回るが、前面のWILDレイヤーが残るので固定に見える
+        slotSpinAnimStart();
         await slotSleep(300);
-        await slotSpinAnimStop(fsp.grid0, { skipReel0: fsp.sticky, fast: true });
+        await slotSpinAnimStop(fsp.grid0, { fast: true });
         if (fsp.grid0) slotSetGrid(fsp.grid0, []);
+        if (fresh.length) {
+          play("bigwin");
+          slotApplyLocks(document.getElementById("sl-grid"), fresh);
+          slotLockMessage(fresh.length);
+          await slotSleep(560);                   // 新規固定の演出(1.12倍→戻る)を見せる
+        }
+        prevSticky = sticky.slice();
         await slotPlaySteps(fsp.steps, r.bet, sv, true);
         const mc = document.getElementById("slfs-m");
         if (mc) { mc.textContent = fsp.multAfter; mc.classList.remove("pop"); void mc.offsetWidth; mc.classList.add("pop"); }
@@ -5769,7 +5846,7 @@
         if (fsp.retrigger) play("win");
         await slotSleep(fsp.steps.length ? 260 : 340);
       }
-      slotLock0 = false;
+      slotLockedReels = [];
       const wc = document.getElementById("slfs-w");
       if (wc) wc.textContent = "+" + fmt(r.won);
       await slotSleep(700);
