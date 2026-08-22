@@ -9,6 +9,7 @@
  * という骨格だけで、Apple / Google のサーバー検証に差し替えられる形にしてあります。
  * クライアントの申告だけで付与する実装は、改造クライアントで無限にチップが増えます。
  */
+import { spin as spinReels, PAY_SYMBOLS, SLOT_CFG, FREE_MODES, MAX_WIN_X, TUMBLE_LADDER, SCATTER_PAY, REELS, ROWS, } from './slot.js';
 /** 恒常チップパック。単価差は最大 4.8 倍に抑えている（Zynga の約 10 倍は初回転換率を下げる） */
 export const CHIP_PACKS = [
     { sku: 'chips_160', name: 'スターター', priceJpy: 160, chips: 15_000_000, vipPoints: 160, kind: 'chips' },
@@ -93,32 +94,91 @@ export function dailyBonusBase(chips) {
     const raw = c <= DAILY_KNEE ? linear : DAILY_KNEE * DAILY_RATE * Math.sqrt(c / DAILY_KNEE);
     return Math.round(Math.min(DAILY_BASE_CAP, Math.max(DAILY_FLOOR, raw)));
 }
-/**
- * 絵柄表(重みの合計は100)。
- *
- * 設計の狙い:
- *   - 総当たり率 約48% … 半分近く何か当たるので回していて退屈しない
- *   - 3つ揃い 約4.1%    … 「おっ」となる当たりが数十回に一度
- *   - セブン揃い 約1/15,600 … 到達しうる頻度のジャックポット
- *     (最初は 1/1,000,000 にしていたが、一生出ない当たりは表示する意味がないので緩めた)
- *   - 期待配当 約0.70 … 賭け1ゴールドあたり約 14,000 チップ(倍率1.0のとき)
- * 揃いにくい絵柄ほど配当が跳ねるので、当たりの手応えを残しつつ長期の払い出しは一定に保てる。
- */
-export const SLOT_SYMBOLS = [
-    { key: 'chip', name: 'チップ', weight: 28, payout3: 3, payout2: 0.5 },
-    { key: 'club', name: 'クラブ', weight: 22, payout3: 5, payout2: 0.8 },
-    { key: 'diamond', name: 'ダイヤ', weight: 17, payout3: 9, payout2: 1.2 },
-    { key: 'heart', name: 'ハート', weight: 13, payout3: 16, payout2: 1.6 },
-    { key: 'spade', name: 'スペード', weight: 10, payout3: 28, payout2: 2.2 },
-    { key: 'crown', name: '王冠', weight: 6, payout3: 60, payout2: 3.5 },
-    { key: 'seven', name: 'セブン', weight: 4, payout3: 150, payout2: 6 },
-];
+// ---------------------------------------------------------------------------
+// デイリーミッション（仕様書 4.6 のソース）
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ゴールドスロット
+//
+// ゴールドはこれまで「貯まるだけで使い道がない」通貨だった。
+// ゴールドを賭けてチップを狙うスロットを唯一の消費先にし、
+// 「VIPランク」と「連続ログイン日数」で払い出し倍率が上がるようにして、
+// 課金と継続の両方に報いる。
+// ---------------------------------------------------------------------------
+/** リールの絵柄。weight が大きいほど出やすい */
 /** 賭けられるゴールドの単位 */
 export const SLOT_BETS = [1, 5, 10, 50];
-/** 賭け1ゴールドあたりの基準チップ(倍率1.0のときの目安払い出し) */
-export const SLOT_CHIPS_PER_GOLD = 20_000;
+/**
+ * 賭け1ゴールドあたりの基準チップ。
+ * 第58弾で抽選が 243ways+タンブル+フリーゲームに変わりRTPが 0.70→0.96(×賭け金)に上がったため、
+ * **1ゴールドあたりの期待払い出しを従来と同じ 14,076 チップに保つ** よう換算レートを下げてある
+ * (0.96 × 14,666 ≒ 14,076)。ここを触ると経済の蛇口が動くので必ず sim-slot.mjs で確認すること。
+ */
+export const SLOT_CHIPS_PER_GOLD = 14_666;
 /** 1日に回せる上限(ゴールド量ではなく回数。無限回しの防止) */
 export const SLOT_DAILY_SPINS = 100;
+/**
+ * チップ建てスロットの設定(第59弾)。
+ *
+ * **重要**: ゴールド建ては「ゴールドを払ってチップをもらう蛇口」なので VIP/連続ログインの
+ * 払い出し倍率(最大約1.87倍)を掛けても破綻しない。一方チップ建ては **チップを払って
+ * チップをもらう閉じたループ** なので、倍率を掛けると RTP が 96% × 1.87 = 179% となり
+ * **無限にチップを増やせてしまう**。よってチップ建てでは倍率を掛けない(RTP 96% 固定 =
+ * 4% がシンク)。倍率はゴールド建て専用として残す。
+ */
+export const SLOT_CHIP_MIN_BET = 1_000;
+/** チップ建ての1日の上限。蛇口ではないので緩めでよいが、暴走時の被害を抑える安全弁として置く */
+export const SLOT_CHIP_DAILY_SPINS = 300;
+/**
+ * 賭け金の選択肢(第61弾)。
+ *
+ * オンラインスロットは「自由入力」ではなく **ゲーム側が用意した選択肢から選ぶ** のが主流。
+ * ただし所持が兆まで伸びる経済なので、固定の一覧だと上位帯で意味がなくなる。
+ * そこで **1-2-5-10 の刻みを、所持額に合わせて上下にスライドさせる**。
+ *   - 下限は SLOT_CHIP_MIN_BET
+ *   - 上限は所持額(それ以上は賭けられないので出さない)
+ *   - 出す段数は最大 12。多すぎると選べないので、所持に近い側を残す
+ */
+export function chipBetLadder(balance) {
+    const bal = Math.max(0, Math.floor(balance));
+    if (bal < SLOT_CHIP_MIN_BET)
+        return [];
+    const out = [];
+    // 1-2-5 × 10^k を小さい方から並べ、所持額を超えたら打ち切る
+    for (let k = 0; k < 20 && out.length < 60; k++) {
+        for (const m of [1, 2, 5]) {
+            const v = m * Math.pow(10, k);
+            if (v < SLOT_CHIP_MIN_BET)
+                continue;
+            if (v > bal) {
+                k = 99;
+                break;
+            }
+            out.push(v);
+        }
+    }
+    if (!out.length)
+        return [];
+    // 段数が多すぎるときは「所持に近い側」を12段だけ残す(小さすぎる額は選ぶ意味が薄い)
+    const MAX_STEPS = 12;
+    return out.length <= MAX_STEPS ? out : out.slice(out.length - MAX_STEPS);
+}
+/** ゴールド建ての選択肢。所持に合わせて同じ考え方で刻む(下限1) */
+export function goldBetLadder(balance) {
+    const bal = Math.max(0, Math.floor(balance));
+    const out = [];
+    for (let k = 0; k < 12 && out.length < 40; k++) {
+        for (const m of [1, 2, 5]) {
+            const v = m * Math.pow(10, k);
+            if (v > bal) {
+                k = 99;
+                break;
+            }
+            out.push(v);
+        }
+    }
+    return out.length <= 10 ? out : out.slice(out.length - 10);
+}
 /**
  * 払い出し倍率。VIPランクと連続ログイン日数で上がる(ユーザー要望の中核)。
  *   VIP: ブロンズ1.0 → 最上位で +0.5 程度
@@ -640,14 +700,16 @@ export class Economy {
         const day = today(this.now());
         const spun = this.store.getProgress(userId, 'slot:spins');
         const used = spun && spun.day === day ? spun.value : 0;
+        const spunChip = this.store.getProgress(userId, 'slot:chipspins');
+        const usedChip = spunChip && spunChip.day === day ? spunChip.value : 0;
         const streak = u?.loginStreak ?? 0;
         const tier = tierOf(u?.vipPoints ?? 0);
         return {
             gold: u?.gold ?? 0,
-            bets: [...SLOT_BETS],
-            symbols: SLOT_SYMBOLS.map((s) => ({ key: s.key, name: s.name, payout3: s.payout3, payout2: s.payout2 })),
+            bets: goldBetLadder(u?.gold ?? 0),
+            // 配当表(3/4/5個)。下位絵柄は4個からなので pay[0] が 0 になる
+            symbols: PAY_SYMBOLS.map((x) => ({ key: x.key, name: x.name, pay: x.pay })),
             multiplier: slotMultiplier(u?.vipPoints ?? 0, streak),
-            // 倍率の内訳を見せると「ランクを上げる/毎日ログインする」動機が伝わる
             vipTierName: tier.name,
             vipPart: Math.round(Math.sqrt(tier.dailyMultiplier) * 100) / 100,
             streak,
@@ -655,72 +717,87 @@ export class Economy {
             chipsPerGold: SLOT_CHIPS_PER_GOLD,
             spinsLeft: Math.max(0, SLOT_DAILY_SPINS - used),
             dailySpins: SLOT_DAILY_SPINS,
+            // --- チップ建て(第59弾) ---
+            chips: u?.chips ?? 0,
+            chipBets: chipBetLadder(u?.chips ?? 0),
+            chipMinBet: SLOT_CHIP_MIN_BET,
+            chipSpinsLeft: Math.max(0, SLOT_CHIP_DAILY_SPINS - usedChip),
+            chipDailySpins: SLOT_CHIP_DAILY_SPINS,
+            // --- 第58弾で追加した遊びの骨格 ---
+            reels: REELS,
+            rows: ROWS,
+            ways: Math.pow(ROWS, REELS),
+            tumbleLadder: [...TUMBLE_LADDER],
+            scatterPay: { ...SCATTER_PAY },
+            freeModes: FREE_MODES.map((m) => ({ key: m.key, name: m.name, desc: m.desc, spins: m.spins, startMult: m.startMult, step: m.step })),
+            anteCost: SLOT_CFG.anteCost,
+            maxWinX: MAX_WIN_X,
         };
-    }
-    /** 重み付き抽選で 1 つの絵柄を引く */
-    drawSymbol(rnd) {
-        const total = SLOT_SYMBOLS.reduce((s, x) => s + x.weight, 0);
-        let x = rnd() * total;
-        for (const s of SLOT_SYMBOLS) {
-            x -= s.weight;
-            if (x <= 0)
-                return s;
-        }
-        return SLOT_SYMBOLS[0];
     }
     /**
      * スロットを 1 回まわす。ゴールドを消費してチップを払い出す。
-     * 3 つ揃い > 2 つ揃い > ハズレ。倍率は VIP ランクと連続ログインで上がる。
+     * 抽選そのものは slot.ts の純粋関数(243ways+タンブル+フリーゲーム)に任せ、
+     * ここは「支払い・上限・倍率・記録」だけを見る。
      * rnd を差し替えられるようにしてあるのはテストで出目を固定するため。
      */
-    spinSlot(userId, bet, rnd = Math.random) {
+    spinSlot(userId, bet, rnd = Math.random, opts = {}) {
         const u = this.store.getUser(userId);
         if (!u)
             return { ok: false, error: 'ユーザーが見つかりません' };
-        if (!SLOT_BETS.includes(bet)) {
-            return { ok: false, error: '賭け金が不正です' };
-        }
+        const currency = opts.currency === 'chips' ? 'chips' : 'gold';
         const day = today(this.now());
-        const spun = this.store.getProgress(userId, 'slot:spins');
+        // 賭け金は自由額(第60弾)。決まった単位に縛らず「整数・下限以上・残高以内」だけを見る。
+        // 残高の判定は後段(cost を出したあと)で行う。
+        const minBet = currency === 'gold' ? 1 : SLOT_CHIP_MIN_BET;
+        if (!Number.isFinite(bet) || !Number.isInteger(bet) || bet < minBet) {
+            return {
+                ok: false,
+                error: currency === 'gold'
+                    ? '賭け金は 1 ゴールド以上の整数です'
+                    : `賭け金は ${SLOT_CHIP_MIN_BET.toLocaleString()} チップ以上の整数です`,
+            };
+        }
+        // 回数上限は通貨ごとに別管理(ゴールド建ては蛇口なので厳しめのまま)
+        const progKey = currency === 'gold' ? 'slot:spins' : 'slot:chipspins';
+        const cap = currency === 'gold' ? SLOT_DAILY_SPINS : SLOT_CHIP_DAILY_SPINS;
+        const spun = this.store.getProgress(userId, progKey);
         const used = spun && spun.day === day ? spun.value : 0;
-        if (used >= SLOT_DAILY_SPINS)
+        if (used >= cap)
             return { ok: false, error: '本日の上限に達しました' };
-        if (u.gold < bet)
-            return { ok: false, error: 'ゴールドが足りません' };
-        // 先にゴールドを引く。引けなければ(競合等)何も起きない
-        if (this.store.post(userId, 'gold', -bet, 'slot_spin', `day:${day}`) === null) {
-            return { ok: false, error: 'ゴールドが足りません' };
+        // アンティベットは賭け金が増える(そのぶんフリーゲーム突入率が上がる)
+        const cost = Math.ceil(bet * (opts.ante ? SLOT_CFG.anteCost : 1));
+        const have = currency === 'gold' ? u.gold : u.chips;
+        if (have < cost)
+            return { ok: false, error: currency === 'gold' ? 'ゴールドが足りません' : 'チップが足りません' };
+        // 先に賭け金を引く。引けなければ(競合等)何も起きない
+        if (this.store.post(userId, currency, -cost, 'slot_spin', `day:${day}`) === null) {
+            return { ok: false, error: currency === 'gold' ? 'ゴールドが足りません' : 'チップが足りません' };
         }
-        this.store.setProgress(userId, 'slot:spins', used + 1, day);
-        const reels = [this.drawSymbol(rnd), this.drawSymbol(rnd), this.drawSymbol(rnd)];
-        const mult = slotMultiplier(u.vipPoints, u.loginStreak);
-        // 配当判定: 3つ揃い → 2つ揃い → ハズレ
-        let payout = 0;
-        let kind = 'none';
-        if (reels[0].key === reels[1].key && reels[1].key === reels[2].key) {
-            payout = reels[0].payout3;
-            kind = reels[0].key === 'seven' ? 'jackpot' : 'three';
-        }
-        else {
-            // 2つ揃いは「同じ絵柄が2枚ある」こと。どの位置でもよい
-            const pair = reels.find((s, i) => reels.findIndex((o) => o.key === s.key) !== i);
-            if (pair) {
-                payout = pair.payout2;
-                kind = 'two';
-            }
-        }
-        const won = Math.round(payout * bet * SLOT_CHIPS_PER_GOLD * mult);
+        this.store.setProgress(userId, progKey, used + 1, day);
+        const outcome = spinReels(rnd, { ante: opts.ante, mode: opts.mode });
+        // **チップ建てでは払い出し倍率を掛けない**。
+        // チップ→チップの閉じたループなので、倍率を掛けると RTP が 100% を超えて
+        // 無限にチップを増やせてしまう(倍率はゴールド建て=蛇口のときだけ意味を持つ)。
+        const mult = currency === 'gold' ? slotMultiplier(u.vipPoints, u.loginStreak) : 1;
+        const won = currency === 'gold'
+            ? Math.round(outcome.totalPayX * bet * SLOT_CHIPS_PER_GOLD * mult)
+            : Math.round(outcome.totalPayX * bet);
         if (won > 0)
             this.store.post(userId, 'chips', won, 'slot_win', `day:${day}`);
+        // 演出の出し分け用。賭け金に対する倍率で段階を切る
+        const x = outcome.totalPayX;
+        const kind = outcome.maxWin ? 'max' : x >= 100 ? 'mega' : x >= 20 ? 'big' : x > 0 ? 'small' : 'none';
         return {
             ok: true,
-            reels: reels.map((s) => s.key),
+            outcome,
             bet,
+            currency,
+            cost,
             won,
             multiplier: mult,
             kind,
             goldLeft: this.store.balance(userId, 'gold'),
-            spinsLeft: Math.max(0, SLOT_DAILY_SPINS - used - 1),
+            spinsLeft: Math.max(0, cap - used - 1),
         };
     }
     // --- チャレンジパス ---------------------------------------------------------

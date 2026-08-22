@@ -10,6 +10,7 @@
  * クライアントの申告だけで付与する実装は、改造クライアントで無限にチップが増えます。
  */
 import type { Store, Currency, LedgerReason } from './store.js';
+import { type SlotOutcome, type FreeMode } from './slot.js';
 export interface Sku {
     sku: string;
     name: string;
@@ -74,33 +75,42 @@ export declare const DAILY_FLOOR = 5000;
  */
 export declare function dailyBonusBase(chips: number): number;
 /** リールの絵柄。weight が大きいほど出やすい */
-export interface SlotSymbol {
-    key: string;
-    name: string;
-    weight: number;
-    /** 3 つ揃ったときの配当(賭けゴールド1あたりのチップ)。ベース倍率に掛かる */
-    payout3: number;
-    /** 2 つ揃ったときの配当 */
-    payout2: number;
-}
-/**
- * 絵柄表(重みの合計は100)。
- *
- * 設計の狙い:
- *   - 総当たり率 約48% … 半分近く何か当たるので回していて退屈しない
- *   - 3つ揃い 約4.1%    … 「おっ」となる当たりが数十回に一度
- *   - セブン揃い 約1/15,600 … 到達しうる頻度のジャックポット
- *     (最初は 1/1,000,000 にしていたが、一生出ない当たりは表示する意味がないので緩めた)
- *   - 期待配当 約0.70 … 賭け1ゴールドあたり約 14,000 チップ(倍率1.0のとき)
- * 揃いにくい絵柄ほど配当が跳ねるので、当たりの手応えを残しつつ長期の払い出しは一定に保てる。
- */
-export declare const SLOT_SYMBOLS: SlotSymbol[];
 /** 賭けられるゴールドの単位 */
 export declare const SLOT_BETS: readonly [1, 5, 10, 50];
-/** 賭け1ゴールドあたりの基準チップ(倍率1.0のときの目安払い出し) */
-export declare const SLOT_CHIPS_PER_GOLD = 20000;
+/**
+ * 賭け1ゴールドあたりの基準チップ。
+ * 第58弾で抽選が 243ways+タンブル+フリーゲームに変わりRTPが 0.70→0.96(×賭け金)に上がったため、
+ * **1ゴールドあたりの期待払い出しを従来と同じ 14,076 チップに保つ** よう換算レートを下げてある
+ * (0.96 × 14,666 ≒ 14,076)。ここを触ると経済の蛇口が動くので必ず sim-slot.mjs で確認すること。
+ */
+export declare const SLOT_CHIPS_PER_GOLD = 14666;
 /** 1日に回せる上限(ゴールド量ではなく回数。無限回しの防止) */
 export declare const SLOT_DAILY_SPINS = 100;
+/**
+ * チップ建てスロットの設定(第59弾)。
+ *
+ * **重要**: ゴールド建ては「ゴールドを払ってチップをもらう蛇口」なので VIP/連続ログインの
+ * 払い出し倍率(最大約1.87倍)を掛けても破綻しない。一方チップ建ては **チップを払って
+ * チップをもらう閉じたループ** なので、倍率を掛けると RTP が 96% × 1.87 = 179% となり
+ * **無限にチップを増やせてしまう**。よってチップ建てでは倍率を掛けない(RTP 96% 固定 =
+ * 4% がシンク)。倍率はゴールド建て専用として残す。
+ */
+export declare const SLOT_CHIP_MIN_BET = 1000;
+/** チップ建ての1日の上限。蛇口ではないので緩めでよいが、暴走時の被害を抑える安全弁として置く */
+export declare const SLOT_CHIP_DAILY_SPINS = 300;
+/**
+ * 賭け金の選択肢(第61弾)。
+ *
+ * オンラインスロットは「自由入力」ではなく **ゲーム側が用意した選択肢から選ぶ** のが主流。
+ * ただし所持が兆まで伸びる経済なので、固定の一覧だと上位帯で意味がなくなる。
+ * そこで **1-2-5-10 の刻みを、所持額に合わせて上下にスライドさせる**。
+ *   - 下限は SLOT_CHIP_MIN_BET
+ *   - 上限は所持額(それ以上は賭けられないので出さない)
+ *   - 出す段数は最大 12。多すぎると選べないので、所持に近い側を残す
+ */
+export declare function chipBetLadder(balance: number): number[];
+/** ゴールド建ての選択肢。所持に合わせて同じ考え方で刻む(下限1) */
+export declare function goldBetLadder(balance: number): number[];
 /**
  * 払い出し倍率。VIPランクと連続ログイン日数で上がる(ユーザー要望の中核)。
  *   VIP: ブロンズ1.0 → 最上位で +0.5 程度
@@ -111,16 +121,20 @@ export declare function slotMultiplier(vipPoints: number, loginStreak: number): 
 export interface SlotSpinResult {
     ok: boolean;
     error?: string;
-    /** 出目(絵柄キー3つ) */
-    reels?: string[];
+    /** 抽選結果そのもの(盤面・連鎖・フリーゲーム)。演出はこれを再生する */
+    outcome?: SlotOutcome;
     bet?: number;
+    /** 賭けた通貨 */
+    currency?: 'gold' | 'chips';
+    /** 実際に支払った額(アンティなら bet の1.5倍) */
+    cost?: number;
     /** 獲得チップ(0 ならハズレ) */
     won?: number;
     multiplier?: number;
     goldLeft?: number;
     spinsLeft?: number;
-    /** 当たりの種類。演出の出し分けに使う */
-    kind?: 'none' | 'two' | 'three' | 'jackpot';
+    /** 当たりの規模。演出の出し分けに使う */
+    kind?: 'none' | 'small' | 'big' | 'mega' | 'max';
 }
 export interface MissionDef {
     id: string;
@@ -352,12 +366,11 @@ export declare class Economy {
     /** スロット画面に出す現在の状態(倍率の内訳・残り回数・絵柄表) */
     slotState(userId: string): {
         gold: number;
-        bets: (1 | 5 | 10 | 50)[];
+        bets: number[];
         symbols: {
-            key: string;
+            key: import("./slot.js").SlotSymKey;
             name: string;
-            payout3: number;
-            payout2: number;
+            pay: [number, number, number];
         }[];
         multiplier: number;
         vipTierName: string;
@@ -367,15 +380,40 @@ export declare class Economy {
         chipsPerGold: number;
         spinsLeft: number;
         dailySpins: number;
+        chips: number;
+        chipBets: number[];
+        chipMinBet: number;
+        chipSpinsLeft: number;
+        chipDailySpins: number;
+        reels: number;
+        rows: number;
+        ways: number;
+        tumbleLadder: number[];
+        scatterPay: {
+            [x: number]: number;
+        };
+        freeModes: {
+            key: "many" | "few";
+            name: string;
+            desc: string;
+            spins: number;
+            startMult: number;
+            step: number;
+        }[];
+        anteCost: number;
+        maxWinX: number;
     };
-    /** 重み付き抽選で 1 つの絵柄を引く */
-    private drawSymbol;
     /**
      * スロットを 1 回まわす。ゴールドを消費してチップを払い出す。
-     * 3 つ揃い > 2 つ揃い > ハズレ。倍率は VIP ランクと連続ログインで上がる。
+     * 抽選そのものは slot.ts の純粋関数(243ways+タンブル+フリーゲーム)に任せ、
+     * ここは「支払い・上限・倍率・記録」だけを見る。
      * rnd を差し替えられるようにしてあるのはテストで出目を固定するため。
      */
-    spinSlot(userId: string, bet: number, rnd?: () => number): SlotSpinResult;
+    spinSlot(userId: string, bet: number, rnd?: () => number, opts?: {
+        ante?: boolean;
+        mode?: FreeMode['key'];
+        currency?: 'gold' | 'chips';
+    }): SlotSpinResult;
     addPassXp(userId: string, xp: number): void;
     passStatus(userId: string): {
         seasonId: string;

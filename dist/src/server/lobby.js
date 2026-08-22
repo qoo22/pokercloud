@@ -734,14 +734,14 @@ export class Lobby {
                 return;
             }
             case 'slot.spin': {
-                const r = this.economy.spinSlot(s.userId, msg.bet);
+                const r = this.economy.spinSlot(s.userId, msg.bet, Math.random, { ante: msg.ante, mode: msg.mode, currency: msg.currency });
                 if (!r.ok)
                     return this.err(sessionId, 'ILLEGAL_ACTION', r.error ?? '回せませんでした');
                 this.sendBalance(s.userId);
                 this.transport.send(sessionId, {
                     t: 'slot.result',
                     result: {
-                        reels: r.reels, bet: r.bet, won: r.won, multiplier: r.multiplier,
+                        outcome: r.outcome, bet: r.bet, currency: r.currency, cost: r.cost, won: r.won, multiplier: r.multiplier,
                         kind: r.kind, goldLeft: r.goldLeft, spinsLeft: r.spinsLeft,
                     },
                 });

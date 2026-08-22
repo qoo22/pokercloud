@@ -128,6 +128,9 @@ export type ClientMessage =
 } | {
     t: 'slot.spin';
     bet: number;
+    ante?: boolean;
+    mode?: 'many' | 'few';
+    currency?: 'gold' | 'chips';
 } | {
     t: 'transfer.issue';
 } | {
@@ -545,11 +548,11 @@ export type ServerMessage = {
 export interface SlotView {
     gold: number;
     bets: number[];
+    /** 配当表。pay[0]=3個 pay[1]=4個 pay[2]=5個(×賭け金)。0 は「その個数では配当なし」 */
     symbols: Array<{
         key: string;
         name: string;
-        payout3: number;
-        payout2: number;
+        pay: [number, number, number];
     }>;
     /** 現在の払い出し倍率(VIPランク×連続ログイン) */
     multiplier: number;
@@ -560,14 +563,46 @@ export interface SlotView {
     chipsPerGold: number;
     spinsLeft: number;
     dailySpins: number;
+    /** --- チップ建て(第59弾)。倍率は掛からない代わりに残高に応じた大きな額で回せる --- */
+    chips: number;
+    chipBets: number[];
+    chipMinBet: number;
+    chipSpinsLeft: number;
+    chipDailySpins: number;
+    /** 盤面の形(5リール×3段=243ways) */
+    reels: number;
+    rows: number;
+    ways: number;
+    /** 通常時のタンブル倍率のはしご */
+    tumbleLadder: number[];
+    /** スキャッター3/4/5個の配当 */
+    scatterPay: Record<number, number>;
+    /** フリーゲームのモード(突入時に選ばせる) */
+    freeModes: Array<{
+        key: string;
+        name: string;
+        desc: string;
+        spins: number;
+        startMult: number;
+        step: number;
+    }>;
+    /** アンティベットの賭け金倍率 */
+    anteCost: number;
+    /** 最大配当(×賭け金) */
+    maxWinX: number;
 }
-/** スロット 1 回分の結果 */
+/** スロット 1 回分の結果。outcome を順に再生すると演出になる */
 export interface SlotResultView {
-    reels: string[];
+    /** 盤面・連鎖・フリーゲームの全記録(slot.ts の SlotOutcome をそのまま) */
+    outcome: unknown;
     bet: number;
+    /** 賭けた通貨 */
+    currency: 'gold' | 'chips';
+    /** 実際に支払った額(アンティなら bet の1.5倍) */
+    cost: number;
     won: number;
     multiplier: number;
-    kind: 'none' | 'two' | 'three' | 'jackpot';
+    kind: 'none' | 'small' | 'big' | 'mega' | 'max';
     goldLeft: number;
     spinsLeft: number;
 }

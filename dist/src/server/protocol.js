@@ -168,7 +168,11 @@ export function parseClientMessage(raw) {
             const bet = Math.floor(Number(m.bet));
             if (!Number.isFinite(bet) || bet <= 0)
                 return { ok: false, reason: 'bet が不正です' };
-            return { ok: true, msg: { t: 'slot.spin', bet } };
+            const ante = m.ante === true;
+            // モードは既知の2種のみ。未知の値は既定に落とす(クライアント任せにしない)
+            const mode = m.mode === 'few' ? 'few' : 'many';
+            const currency = m.currency === 'chips' ? 'chips' : 'gold';
+            return { ok: true, msg: { t: 'slot.spin', bet, ante, mode, currency } };
         }
         case 'user.style': {
             // どちらも任意。bracelet は null（外す）を許可し、それ以外は b1〜b6 のみ

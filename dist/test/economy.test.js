@@ -1,7 +1,9 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryStore, SqliteStore } from '../src/server/store.js';
-import { Economy, CHIP_PACKS, GOLD_PACKS, VIP_TIERS, PASS_TIERS, PASS_PREMIUM_SKU, DAILY_MISSIONS, tierOf, nextTier, dailyBonusBase, DAILY_KNEE, DAILY_RATE, DAILY_BASE_CAP, DAILY_FLOOR, SLOT_SYMBOLS, SLOT_BETS, SLOT_DAILY_SPINS, SLOT_CHIPS_PER_GOLD, slotMultiplier, } from '../src/server/economy.js';
+import { Economy, CHIP_PACKS, GOLD_PACKS, VIP_TIERS, PASS_TIERS, PASS_PREMIUM_SKU, DAILY_MISSIONS, tierOf, nextTier, dailyBonusBase, DAILY_KNEE, DAILY_RATE, DAILY_BASE_CAP, DAILY_FLOOR, SLOT_BETS, SLOT_DAILY_SPINS, SLOT_CHIPS_PER_GOLD, slotMultiplier, } from '../src/server/economy.js';
+import { SLOT_CHIP_MIN_BET, chipBetLadder } from '../src/server/economy.js';
+import { PAY_SYMBOLS, spin as spinReels, MAX_WIN_X, FREE_MODES } from '../src/server/slot.js';
 // 既定の「今」は、シーズンの最終週に当たらない日を選んである。
 // 最終週は経験値が 1.25 倍になる（キャッチアップ）ので、そこを踏むと期待値がズレる。
 const setup = (store, now = () => Date.UTC(2026, 7, 5, 12)) => {
@@ -537,11 +539,12 @@ describe('ゴールドスロット', () => {
     /** 常に同じ絵柄を引かせる（先頭の絵柄＝chip が 3 つ揃う） */
     const alwaysFirst = () => 0.0001;
     test('絵柄の重みは正で、配当は揃いにくいものほど大きい', () => {
-        for (const sym of SLOT_SYMBOLS)
+        for (const sym of PAY_SYMBOLS)
             assert.ok(sym.weight > 0, `${sym.key} の重みが 0 以下`);
-        for (let i = 1; i < SLOT_SYMBOLS.length; i++) {
-            assert.ok(SLOT_SYMBOLS[i].weight <= SLOT_SYMBOLS[i - 1].weight, '重みが単調減少していない');
-            assert.ok(SLOT_SYMBOLS[i].payout3 > SLOT_SYMBOLS[i - 1].payout3, '配当が単調増加していない');
+        for (let i = 1; i < PAY_SYMBOLS.length; i++) {
+            assert.ok(PAY_SYMBOLS[i].weight <= PAY_SYMBOLS[i - 1].weight, '重みが単調減少していない');
+            // 5個そろいの配当で比べる(下位絵柄は3個では配当が無いため)
+            assert.ok(PAY_SYMBOLS[i].pay[2] > PAY_SYMBOLS[i - 1].pay[2], '配当が単調増加していない');
         }
     });
     test('ゴールドが引かれ、チップが払い出される', () => {
@@ -550,10 +553,146 @@ describe('ゴールドスロット', () => {
         const r = e.spinSlot('u1', 5, alwaysFirst);
         assert.equal(r.ok, true, r.error);
         assert.equal(s.balance('u1', 'gold'), before - 5, '賭けたゴールドが引かれていない');
-        assert.equal(r.kind, 'three');
-        assert.ok(r.won > 0, '3つ揃いなのに払い出しが無い');
+        // 全マス同じ絵柄になる極端な乱数なので、上限(MAX WIN)まで伸びる
+        assert.equal(r.kind, 'max');
+        assert.ok(r.won > 0, '揃っているのに払い出しが無い');
         assert.equal(s.balance('u1', 'chips'), r.won, 'チップが入っていない');
         assert.equal(s.audit().ok, true, '台帳が壊れた');
+    });
+    // --- 第58弾: 243ways + タンブル + フリーゲーム ---------------------------
+    // 線形合同法の固定シード。seed=675 は 3スキャッター→フリーゲーム18回転に入る当たり方
+    const seeded = (seed) => { let x = seed >>> 0; return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; };
+    test('盤面は5リール×3段で、当たりは左から連続したときだけ', () => {
+        const r = spinReels(seeded(675), { mode: 'many' });
+        // grid0 は当たりが無いスピンでも必ず入る(ハズレでも盤面が更新されるため)
+        assert.equal(r.grid0.length, 5, 'リールが5本でない');
+        for (const col of r.grid0)
+            assert.equal(col.length, 3, '1リールが3段でない');
+        for (const st of r.base) {
+            for (const w of st.wins) {
+                assert.ok(w.count >= 3, '3個未満で配当が出ている');
+                assert.ok(w.ways >= 1, 'ways が 0 以下');
+            }
+        }
+    });
+    test('タンブルは連鎖するほど倍率が上がる', () => {
+        // 連鎖が2回以上あるスピンを探して、倍率が単調非減少であることを見る
+        for (let seed = 1; seed < 400; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'many' });
+            if (r.base.length < 2)
+                continue;
+            for (let i = 1; i < r.base.length; i++) {
+                assert.ok(r.base[i].mult >= r.base[i - 1].mult, '連鎖で倍率が下がっている');
+            }
+            return;
+        }
+        assert.fail('連鎖するスピンが見つからない（重みが壊れている可能性）');
+    });
+    test('フリーゲームの倍率はスピンをまたいで積み上がる（永続マルチプライヤー）', () => {
+        const r = spinReels(seeded(675), { mode: 'many' });
+        assert.equal(r.freeEntered, true, 'この種ではフリーゲームに入るはず');
+        const free = r.free;
+        assert.ok(free.spins.length >= 10, `回転数が少なすぎる: ${free.spins.length}`);
+        let prev = 0;
+        for (const sp of free.spins) {
+            assert.ok(sp.multAfter >= prev, 'フリーゲーム中に倍率が下がった（持ち越せていない）');
+            prev = sp.multAfter;
+        }
+        assert.ok(free.finalMult > FREE_MODES[0].startMult, '倍率が最後まで伸びていない');
+    });
+    test('当たりが無いスピンでも盤面が返る（ハズレでリールが止まらない事故の防止）', () => {
+        let checked = 0;
+        for (let seed = 1; seed < 200 && checked < 5; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'many' });
+            if (r.base.length > 0)
+                continue; // 当たったスピンは対象外
+            assert.ok(Array.isArray(r.grid0) && r.grid0.length === 5, 'ハズレなのに盤面が入っていない');
+            checked++;
+        }
+        assert.ok(checked > 0, 'ハズレのスピンが1つも見つからない（前提が崩れた）');
+    });
+    test('配当は上限(MAX WIN)を超えない', () => {
+        for (let seed = 1; seed < 300; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'many' });
+            assert.ok(r.totalPayX <= MAX_WIN_X, `上限を超えた: ${r.totalPayX}`);
+        }
+    });
+    test('アンティベットはフリーゲームに入りやすくなる', () => {
+        const count = (ante) => {
+            let n = 0;
+            const rnd = seeded(4321);
+            for (let i = 0; i < 4000; i++)
+                if (spinReels(rnd, { ante, mode: 'many' }).freeEntered)
+                    n++;
+            return n;
+        };
+        const plain = count(false), ante = count(true);
+        assert.ok(ante > plain, `アンティで突入率が上がっていない: ${plain} → ${ante}`);
+    });
+    // --- 第59弾: チップ建て -------------------------------------------------
+    // チップ→チップは閉じたループなので、払い出し倍率を掛けると RTP が 100% を超えて
+    // 無限にチップを増やせる。ここは経済の生命線なのでテストで固定する。
+    test('チップで回せる（チップが引かれ、チップで払い出される）', () => {
+        const { s, e } = setup();
+        s.post('u1', 'chips', 10_000_000, 'adjustment');
+        const before = s.balance('u1', 'chips');
+        const r = e.spinSlot('u1', 100_000, undefined, { currency: 'chips' });
+        assert.equal(r.ok, true, r.error);
+        assert.equal(r.currency, 'chips');
+        assert.equal(s.balance('u1', 'gold'), 0, 'チップ建てなのにゴールドが動いた');
+        assert.equal(s.balance('u1', 'chips'), before - 100_000 + (r.won ?? 0), 'チップの収支が合わない');
+        assert.equal(s.audit().ok, true, '台帳が壊れた');
+    });
+    test('チップ建てでは払い出し倍率が掛からない（無限増殖の防止）', () => {
+        const a = setup();
+        a.s.post('u1', 'chips', 10_000_000, 'adjustment');
+        const b = setup();
+        b.s.post('u1', 'chips', 10_000_000, 'adjustment');
+        // 片方だけ最上位VIP＋連続ログイン14日にしても、同じ出目なら払い出しは同じはず
+        b.s.updateUser('u1', { vipPoints: VIP_TIERS[VIP_TIERS.length - 1].minPoints, loginStreak: 14 });
+        const seeded = (seed) => { let x = seed >>> 0; return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; };
+        const ra = a.e.spinSlot('u1', 100_000, seeded(675), { currency: 'chips' });
+        const rb = b.e.spinSlot('u1', 100_000, seeded(675), { currency: 'chips' });
+        assert.equal(rb.multiplier, 1, 'チップ建てで倍率が 1 でない');
+        assert.equal(ra.won, rb.won, 'VIPランクでチップ建ての払い出しが変わっている（増殖の入口）');
+    });
+    test('チップ建ては長い目で見ると減る（シンクとして機能する）', () => {
+        // 1回の試行では分散が大きすぎて偶然プラスになるので、期待値そのものを見る。
+        // 抽選エンジンを固定シードで多数回まわし、賭け金1に対する平均払い出しが 1 未満であることを確認する。
+        const rnd = (() => { let x = 20260822 >>> 0; return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; })();
+        let sum = 0;
+        const N = 30_000;
+        for (let i = 0; i < N; i++)
+            sum += spinReels(rnd, { mode: 'many' }).totalPayX;
+        const rtp = sum / N;
+        assert.ok(rtp < 1, `チップ建てのRTPが 100% 以上（増殖する）: ${(rtp * 100).toFixed(1)}%`);
+        assert.ok(rtp > 0.85, `RTPが低すぎる（シンクが厳しすぎる）: ${(rtp * 100).toFixed(1)}%`);
+    });
+    test('チップ建ての賭け金は下限を下回れない', () => {
+        const { s, e } = setup();
+        s.post('u1', 'chips', 10_000_000, 'adjustment');
+        const r = e.spinSlot('u1', SLOT_CHIP_MIN_BET - 1, undefined, { currency: 'chips' });
+        assert.equal(r.ok, false, '下限未満で回せてしまう');
+        assert.equal(s.balance('u1', 'chips'), 10_000_000, '失敗したのに残高が動いた');
+    });
+    test('賭け金の選択肢は所持チップに合わせて刻みが変わる', () => {
+        const small = chipBetLadder(2_000_000);
+        const big = chipBetLadder(1_300_000_000_000_000);
+        assert.ok(big[0] > small[0], '残高が増えても刻みが上がらない');
+        for (const list of [small, big]) {
+            assert.ok(list.length > 0, '選択肢が空');
+            assert.ok(list.length <= 12, `選択肢が多すぎる: ${list.length}`);
+            for (const v of list)
+                assert.ok(v >= SLOT_CHIP_MIN_BET, '下限を割る選択肢が出ている');
+            for (let i = 1; i < list.length; i++)
+                assert.ok(list[i] > list[i - 1], '昇順になっていない');
+        }
+        // 所持を超える選択肢は出さない
+        assert.ok(small[small.length - 1] <= 2_000_000, '所持を超える選択肢が出ている');
+        assert.ok(big[big.length - 1] <= 1_300_000_000_000_000, '所持を超える選択肢が出ている');
+    });
+    test('所持が下限に満たなければ選択肢は空（回せないことが分かる）', () => {
+        assert.deepEqual(chipBetLadder(SLOT_CHIP_MIN_BET - 1), [], '回せないのに選択肢が出ている');
     });
     test('ゴールドが足りなければ回せない（残高も動かない）', () => {
         const { s, e } = setup(); // ゴールド 0
@@ -562,14 +701,34 @@ describe('ゴールドスロット', () => {
         assert.equal(s.balance('u1', 'gold'), 0);
         assert.equal(s.balance('u1', 'chips'), 0, 'ハズレでもチップが動いてはいけない');
     });
-    test('決められた賭け金以外は拒否される', () => {
+    test('賭け金は自由額（不正な値だけ拒否される）', () => {
         const { s, e } = slotSetup();
-        for (const bad of [0, 3, 7, 999, -5]) {
+        s.post('u1', 'gold', 5000, 'adjustment'); // 連続で回すので多めに用意する
+        // 0以下・小数・数値でないものは拒否
+        for (const bad of [0, -5, 1.5, NaN, Infinity]) {
             assert.equal(e.spinSlot('u1', bad).ok, false, `${bad} が通ってしまった`);
         }
-        assert.equal(s.balance('u1', 'gold'), 1000, '拒否されたのにゴールドが減っている');
-        for (const good of SLOT_BETS)
+        assert.equal(s.balance('u1', 'gold'), 6000, '拒否されたのにゴールドが減っている');
+        // 単位に縛られない任意の整数が通る(3 や 7 や 999 も可)
+        for (const good of [1, 3, 7, 999, ...SLOT_BETS]) {
             assert.equal(e.spinSlot('u1', good).ok, true, `${good} が弾かれた`);
+        }
+    });
+    test('残高を超える賭け金は拒否される（残高も動かない）', () => {
+        const { s, e } = slotSetup(); // ゴールド 1000
+        const before = s.balance('u1', 'gold');
+        const r = e.spinSlot('u1', before + 1);
+        assert.equal(r.ok, false, '残高超えで回せてしまう');
+        assert.equal(s.balance('u1', 'gold'), before, '失敗したのに残高が動いた');
+    });
+    test('チップも自由額で賭けられる（下限以上なら単位は自由）', () => {
+        const { s, e } = setup();
+        s.post('u1', 'chips', 10_000_000, 'adjustment');
+        for (const good of [1_000, 1_234, 987_654]) {
+            const r = e.spinSlot('u1', good, undefined, { currency: 'chips' });
+            assert.equal(r.ok, true, `${good} が弾かれた: ${r.error}`);
+            assert.equal(r.bet, good, '賭け金が丸められている');
+        }
     });
     test('1 日の回数上限を超えて回せない', () => {
         const { s, e } = slotSetup();
@@ -603,7 +762,7 @@ describe('ゴールドスロット', () => {
         b.s.updateUser('u1', { vipPoints: VIP_TIERS[VIP_TIERS.length - 1].minPoints, loginStreak: 14 });
         const ra = a.e.spinSlot('u1', 5, alwaysFirst);
         const rb = b.e.spinSlot('u1', 5, alwaysFirst);
-        assert.deepEqual(ra.reels, rb.reels, '同じ出目になっていない（比較の前提が崩れた）');
+        assert.deepEqual(ra.outcome?.grid0, rb.outcome?.grid0, '同じ出目になっていない（比較の前提が崩れた）');
         assert.ok(rb.won > ra.won, 'ランクが高いのに払い出しが増えていない');
     });
     test('状態表示に倍率の内訳と残り回数が出る', () => {

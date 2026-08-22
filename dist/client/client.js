@@ -932,20 +932,27 @@ function renderSlot() {
         return;
     }
     const s = slot;
-    const reels = slotLast?.reels ?? ['chip', 'club', 'diamond'];
+    // client/ は旧世代の簡易版。実運用は手編集の poker-client.html なので、
+    // ここでは新エンジンの結果から最初の盤面だけ拾って型を通す
+    const oc = slotLast?.outcome;
+    const reels = oc?.base?.[0]?.grid?.map((col) => col[0]) ?? ['chip', 'club', 'diamond'];
     const canSpin = !slotSpinning && s.gold >= slotBet && s.spinsLeft > 0;
     // 当たりの大きさで見せ方を変える（ジャックポットは別格に）
     let winCls = '', winText = '';
     if (slotLast && !slotSpinning) {
-        if (slotLast.kind === 'jackpot') {
+        if (slotLast.kind === 'max') {
             winCls = 'jackpot';
-            winText = `🎉 ジャックポット！ +${fmt(slotLast.won)}`;
+            winText = `🎉 MAX WIN！ +${fmt(slotLast.won)}`;
         }
-        else if (slotLast.kind === 'three') {
+        else if (slotLast.kind === 'mega') {
+            winCls = 'jackpot';
+            winText = `🎉 メガウィン！ +${fmt(slotLast.won)}`;
+        }
+        else if (slotLast.kind === 'big') {
             winCls = 'big';
-            winText = `3つ揃い！ +${fmt(slotLast.won)}`;
+            winText = `ビッグウィン！ +${fmt(slotLast.won)}`;
         }
-        else if (slotLast.kind === 'two') {
+        else if (slotLast.kind === 'small') {
             winText = `+${fmt(slotLast.won)}`;
         }
         else {
@@ -981,11 +988,12 @@ function renderSlot() {
     </div>
 
     <table class="paytable">
-      <tr><th>絵柄</th><th>3つ揃い</th><th>2つ揃い</th></tr>
+      <tr><th>絵柄</th><th>5個</th><th>4個</th><th>3個</th></tr>
       ${s.symbols.map((sym) => `<tr>
         <td>${SLOT_ICON[sym.key] ?? ''} ${escapeHtml(sym.name)}</td>
-        <td>${fmt(Math.round(sym.payout3 * slotBet * s.chipsPerGold * s.multiplier))}</td>
-        <td>${fmt(Math.round(sym.payout2 * slotBet * s.chipsPerGold * s.multiplier))}</td>
+        <td>${fmt(Math.round(sym.pay[2] * slotBet * s.chipsPerGold * s.multiplier))}</td>
+        <td>${fmt(Math.round(sym.pay[1] * slotBet * s.chipsPerGold * s.multiplier))}</td>
+        <td>${sym.pay[0] > 0 ? fmt(Math.round(sym.pay[0] * slotBet * s.chipsPerGold * s.multiplier)) : '—'}</td>
       </tr>`).join('')}
     </table>
     <p class="note" style="font-size:11px">表の金額は現在の賭け金（🪙${slotBet}）と倍率での払い出しです。</p>
@@ -1015,16 +1023,16 @@ function onSlotResult(r) {
     setTimeout(() => {
         slotSpinning = false;
         renderSlot();
-        if (r.kind === 'jackpot') {
+        if (r.kind === 'max' || r.kind === 'mega') {
             beep(880, 140);
             setTimeout(() => beep(1174, 160), 150);
             setTimeout(() => beep(1568, 260), 320);
         }
-        else if (r.kind === 'three') {
+        else if (r.kind === 'big') {
             beep(784, 130);
             setTimeout(() => beep(1046, 190), 140);
         }
-        else if (r.kind === 'two')
+        else if (r.kind === 'small')
             beep(660, 110);
     }, 700);
 }
