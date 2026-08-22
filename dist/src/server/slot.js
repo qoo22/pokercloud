@@ -211,7 +211,15 @@ function evaluate(grid) {
                 best = { key: sym.key, count: len, pay };
         }
         if (best) {
-            wins.push({ key: best.key, count: best.count, ways: 1, pay: best.pay, line: li });
+            // 当選区間に「その絵柄そのもの」が1つでもあるか。無ければ全部WILDで成立している
+            let natural = false;
+            for (let r = 0; r < best.count; r++)
+                if (grid[r][line[r]] === best.key)
+                    natural = true;
+            wins.push({
+                key: best.key, count: best.count, ways: 1, pay: best.pay, line: li,
+                ...(natural ? {} : { allWild: true }),
+            });
             for (let r = 0; r < best.count; r++)
                 hitSet.add(`${r},${line[r]}`);
         }

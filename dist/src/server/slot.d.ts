@@ -105,7 +105,12 @@ export interface TumbleStep {
     grid: Grid;
     /** 当たった位置 [reel, row][] */
     hits: [number, number][];
-    /** 内訳(絵柄・個数・ways・素の配当)。wildMult はフリーゲームでWILDが絡んだ当選だけに付く */
+    /**
+     * 内訳(絵柄・個数・ways・素の配当)。wildMult はフリーゲームでWILDが絡んだ当選だけに付く。
+     * allWild は「当選区間が全部WILDで、key の絵柄が盤面に1つも無い」場合に立つ。
+     * 業界標準どおり最高配当の絵柄として払うが、**画面にその絵柄が見えない**ので、
+     * クライアントは「WILD×3(セブン扱い)」と明示するために使う。
+     */
     wins: {
         key: SlotSymKey;
         count: number;
@@ -113,6 +118,7 @@ export interface TumbleStep {
         pay: number;
         line?: number;
         wildMult?: number;
+        allWild?: boolean;
     }[];
     /** この連鎖に適用された倍率 */
     mult: number;
