@@ -48,11 +48,35 @@ export declare const PAY_SYMBOLS: SlotPaySymbol[];
 export declare const SLOT_CFG: {
     wildWeight: number;
     scatterWeight: number;
-    /** アンティベット時のスキャッター重み(突入率がおよそ2倍になる) */
+    /** アンティベット時のスキャッター重み(突入率がおよそ2倍強になる) */
     scatterWeightAnte: number;
     /** アンティベットの賭け金倍率 */
     anteCost: number;
+    /**
+     * リール1(左端)の内部帯の長さ(第69弾: スタックドWILD)。
+     * 帯には3連WILDブロックが1つだけ入っている。窓(3マス)が完全に重なる停止位置は
+     * 帯上に1つしか無いので、フル出現率は 1/stackedStripLen。半端に見える(1〜2個)位置が
+     * その4倍あり、これが「惜しい!」の予告になる。
+     */
+    stackedStripLen: number;
+    /**
+     * フリーゲーム中のリール1帯の伸び(実機の「フリー専用リール帯」に相当)。
+     * 固定WILDは永続マルチプライヤーと掛け算になるため、通常時と同じ頻度で出すと
+     * RTP が数倍に爆発する(実測)。頻度を落として「事件」にする
+     */
+    freeStripScale: number;
+    /**
+     * フリーゲームの固定WILDの持続スピン数(停止したスピンを含む)。
+     * 無制限に残すと 1回の固定化で平均2000x超(実測)になり、フリーゲームが
+     * 「7.5%の宝くじと92.5%の消化試合」に割れてしまうため、3スピンで解除する
+     */
+    stickySpins: number;
 };
+/** フリーゲームでWILDが絡んだ当選に掛かる倍率の抽選(値と重み)。同一ラインには1回だけ */
+export declare const WILD_MULT_TABLE: {
+    m: number;
+    w: number;
+}[];
 /** スキャッター3/4/5個そのものの配当(×賭け金) */
 export declare const SCATTER_PAY: Record<number, number>;
 /** 通常時のタンブル倍率のはしご。連鎖するほど上がる */
@@ -81,13 +105,14 @@ export interface TumbleStep {
     grid: Grid;
     /** 当たった位置 [reel, row][] */
     hits: [number, number][];
-    /** 内訳(絵柄・個数・ways・素の配当) */
+    /** 内訳(絵柄・個数・ways・素の配当)。wildMult はフリーゲームでWILDが絡んだ当選だけに付く */
     wins: {
         key: SlotSymKey;
         count: number;
         ways: number;
         pay: number;
         line?: number;
+        wildMult?: number;
     }[];
     /** この連鎖に適用された倍率 */
     mult: number;
@@ -103,6 +128,12 @@ export interface FreeSpinStep {
     payX: number;
     /** リトリガーしたか */
     retrigger: boolean;
+    /**
+     * このスピンでリール1が固定WILDだったか(第69弾)。
+     * フリーゲーム中に3連WILDが停止すると、以降のスピンでずっと true になる。
+     * リスピンは発生させない(通常時の役割と分けて、フリーは「固定WILD+倍率」にする)
+     */
+    sticky: boolean;
 }
 export interface SlotOutcome {
     /** 最初に出た盤面。**当たりが1つも無いスピンでも盤面を描けるように必ず入れる** */
@@ -113,6 +144,18 @@ export interface SlotOutcome {
     basePayX: number;
     /** スキャッター個数 */
     scatters: number;
+    /** リール1に3連WILDが停止したか(第69弾: スタックドWILD) */
+    stacked: boolean;
+    /**
+     * スタックドWILDのリスピン(通常時のみ・1スピンにつき最大1回)。
+     * リール1をWILDで固定したままリール2〜5だけ引き直した結果。初回分とは別に払う。
+     * リスピン中はスキャッターを抽選しない(演出の渋滞と期待値の暴れを避けるため)
+     */
+    respin?: {
+        grid0: Grid;
+        steps: TumbleStep[];
+        payX: number;
+    };
     /** フリーゲームに入ったか */
     freeEntered: boolean;
     free?: {
