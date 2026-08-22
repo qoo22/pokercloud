@@ -130,7 +130,6 @@ export type ClientMessage =
     bet: number;
     ante?: boolean;
     mode?: 'many' | 'few';
-    currency?: 'gold' | 'chips';
 } | {
     t: 'transfer.issue';
 } | {
@@ -569,10 +568,12 @@ export interface SlotView {
     chipMinBet: number;
     chipSpinsLeft: number;
     chipDailySpins: number;
-    /** 盤面の形(5リール×3段=243ways) */
+    /** 盤面の形(5リール×3段=20固定ペイライン) */
     reels: number;
     rows: number;
-    ways: number;
+    lines: number;
+    /** 各ラインが通過する段(0=上/1=中/2=下)。当選ラインの描画に使う */
+    paylines: number[][];
     /** 通常時のタンブル倍率のはしご */
     tumbleLadder: number[];
     /** スキャッター3/4/5個の配当 */

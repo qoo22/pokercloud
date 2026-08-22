@@ -21,7 +21,7 @@ export type LedgerReason = 'signup_bonus' | 'table_buyin' | 'table_cashout' | 't
 /** ゴールドスロット: チップの払い出し */
  | 'slot_win'
 /** 落ちた卓に残っていたスタックの払い戻し(再起動時の自動復旧) */
- | 'table_recover' | 'adjustment';
+ | 'table_recover' | 'adjustment' | 'ad_reward';
 export interface LedgerRow {
     id: number;
     userId: string;

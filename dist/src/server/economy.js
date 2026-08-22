@@ -9,7 +9,7 @@
  * という骨格だけで、Apple / Google のサーバー検証に差し替えられる形にしてあります。
  * クライアントの申告だけで付与する実装は、改造クライアントで無限にチップが増えます。
  */
-import { spin as spinReels, PAY_SYMBOLS, SLOT_CFG, FREE_MODES, MAX_WIN_X, TUMBLE_LADDER, SCATTER_PAY, REELS, ROWS, } from './slot.js';
+import { spin as spinReels, PAY_SYMBOLS, SLOT_CFG, FREE_MODES, MAX_WIN_X, TUMBLE_LADDER, SCATTER_PAY, REELS, ROWS, LINES, PAYLINES, } from './slot.js';
 /** 恒常チップパック。単価差は最大 4.8 倍に抑えている（Zynga の約 10 倍は初回転換率を下げる） */
 export const CHIP_PACKS = [
     { sku: 'chips_160', name: 'スターター', priceJpy: 160, chips: 15_000_000, vipPoints: 160, kind: 'chips' },
@@ -20,13 +20,16 @@ export const CHIP_PACKS = [
     { sku: 'chips_12000', name: 'ビッグケース', priceJpy: 12_000, chips: 4_560_000_000, vipPoints: 12_000, kind: 'chips' },
     { sku: 'chips_30000', name: 'ボールト', priceJpy: 30_000, chips: 13_500_000_000, vipPoints: 30_000, kind: 'chips' },
 ];
-/** ゴールド（スロットを回す権利）。消費速度が有限なので単価差は緩やかにする */
-export const GOLD_PACKS = [
-    { sku: 'gold_160', name: 'ゴールド 少', priceJpy: 160, gold: 90, vipPoints: 160, kind: 'gold' },
-    { sku: 'gold_480', name: 'ゴールド 中', priceJpy: 480, gold: 300, vipPoints: 480, kind: 'gold' },
-    { sku: 'gold_1200', name: 'ゴールド 大', priceJpy: 1_200, gold: 840, vipPoints: 1_200, kind: 'gold' },
-    { sku: 'gold_3000', name: 'ゴールド 特大', priceJpy: 3_000, gold: 2_400, vipPoints: 3_000, kind: 'gold' },
+/**
+ * 機能を売る商品(第66弾)。
+ * ゴールドは廃止し **チップに一本化** したので、旧ゴールドパックの枠を
+ * 「広告を消す」などの機能商品に置き換えた。チップの量では差がつかない価値を売る。
+ */
+export const FEATURE_SKUS = [
+    { sku: 'noads_forever', name: '広告を完全に消す', priceJpy: 980, vipPoints: 980, kind: 'feature' },
 ];
+/** 旧名の互換(参照が残っていても落ちないように) */
+export const GOLD_PACKS = FEATURE_SKUS;
 const OFFER_DEFS = {
     first_time: { name: '初回限定パック', priceJpy: 160, multiplier: 6.0, reason: 'はじめての方だけ・一度きり' },
     bust_rescue: { name: '再挑戦パック', priceJpy: 480, multiplier: 3.0, reason: 'チップが尽きた方へ・24時間に1回' },
@@ -112,11 +115,20 @@ export const SLOT_BETS = [1, 5, 10, 50];
  * 賭け1ゴールドあたりの基準チップ。
  * 第58弾で抽選が 243ways+タンブル+フリーゲームに変わりRTPが 0.70→0.96(×賭け金)に上がったため、
  * **1ゴールドあたりの期待払い出しを従来と同じ 14,076 チップに保つ** よう換算レートを下げてある
- * (0.96 × 14,666 ≒ 14,076)。ここを触ると経済の蛇口が動くので必ず sim-slot.mjs で確認すること。
+ * (0.9505 × 14,809 ≒ 14,076)。ここを触ると経済の蛇口が動くので必ず sim-slot.mjs で確認すること。
  */
-export const SLOT_CHIPS_PER_GOLD = 14_666;
+export const SLOT_CHIPS_PER_GOLD = 14_809;
 /** 1日に回せる上限(ゴールド量ではなく回数。無限回しの防止) */
 export const SLOT_DAILY_SPINS = 100;
+/**
+ * 広告まわりの設定(第66弾)。
+ * 報酬は「所持チップの率 + 下限 + 上限」で出す。率だけだとハイローラーに配りすぎ、
+ * 定額だけだと初心者に価値が無いため。上限を置いてチップの蛇口を壊さないようにする。
+ */
+export const AD_DAILY_LIMIT = 5;
+export const AD_REWARD_RATE = 0.01;
+export const AD_REWARD_FLOOR = 20_000;
+export const AD_REWARD_CAP = 2_000_000;
 /**
  * チップ建てスロットの設定(第59弾)。
  *
@@ -375,6 +387,8 @@ export class Economy {
             this.store.post(userId, 'chips', chips, 'purchase', sku);
         if (gold)
             this.store.post(userId, 'gold', gold, 'purchase', sku);
+        if (sku === 'noads_forever')
+            this.enableAdRemoval(userId);
         if (sku === PASS_PREMIUM_SKU.sku)
             this.store.setProgress(userId, `pass:${this.seasonId()}:premium`, 1);
         this.store.savePurchase({
@@ -726,7 +740,8 @@ export class Economy {
             // --- 第58弾で追加した遊びの骨格 ---
             reels: REELS,
             rows: ROWS,
-            ways: Math.pow(ROWS, REELS),
+            lines: LINES,
+            paylines: PAYLINES.map((l) => [...l]),
             tumbleLadder: [...TUMBLE_LADDER],
             scatterPay: { ...SCATTER_PAY },
             freeModes: FREE_MODES.map((m) => ({ key: m.key, name: m.name, desc: m.desc, spins: m.spins, startMult: m.startMult, step: m.step })),
@@ -740,65 +755,104 @@ export class Economy {
      * ここは「支払い・上限・倍率・記録」だけを見る。
      * rnd を差し替えられるようにしてあるのはテストで出目を固定するため。
      */
+    /**
+     * スロットを 1 回まわす(第66弾で **チップ専用**)。
+     * チップを賭けてチップを払い出す閉じたループなので、**払い出し倍率は掛けない**
+     * (掛けると RTP が 100% を超えて無限にチップを増やせる)。
+     * 抽選そのものは slot.ts の純粋関数に任せ、ここは支払い・上限・記録だけを見る。
+     */
     spinSlot(userId, bet, rnd = Math.random, opts = {}) {
         const u = this.store.getUser(userId);
         if (!u)
             return { ok: false, error: 'ユーザーが見つかりません' };
-        const currency = opts.currency === 'chips' ? 'chips' : 'gold';
         const day = today(this.now());
-        // 賭け金は自由額(第60弾)。決まった単位に縛らず「整数・下限以上・残高以内」だけを見る。
-        // 残高の判定は後段(cost を出したあと)で行う。
-        const minBet = currency === 'gold' ? 1 : SLOT_CHIP_MIN_BET;
-        if (!Number.isFinite(bet) || !Number.isInteger(bet) || bet < minBet) {
-            return {
-                ok: false,
-                error: currency === 'gold'
-                    ? '賭け金は 1 ゴールド以上の整数です'
-                    : `賭け金は ${SLOT_CHIP_MIN_BET.toLocaleString()} チップ以上の整数です`,
-            };
+        // 賭け金は自由額。整数・下限以上・残高以内だけを見る
+        if (!Number.isFinite(bet) || !Number.isInteger(bet) || bet < SLOT_CHIP_MIN_BET) {
+            return { ok: false, error: `賭け金は ${SLOT_CHIP_MIN_BET.toLocaleString()} チップ以上の整数です` };
         }
-        // 回数上限は通貨ごとに別管理(ゴールド建ては蛇口なので厳しめのまま)
-        const progKey = currency === 'gold' ? 'slot:spins' : 'slot:chipspins';
-        const cap = currency === 'gold' ? SLOT_DAILY_SPINS : SLOT_CHIP_DAILY_SPINS;
-        const spun = this.store.getProgress(userId, progKey);
+        const spun = this.store.getProgress(userId, 'slot:chipspins');
         const used = spun && spun.day === day ? spun.value : 0;
-        if (used >= cap)
+        if (used >= SLOT_CHIP_DAILY_SPINS)
             return { ok: false, error: '本日の上限に達しました' };
         // アンティベットは賭け金が増える(そのぶんフリーゲーム突入率が上がる)
         const cost = Math.ceil(bet * (opts.ante ? SLOT_CFG.anteCost : 1));
-        const have = currency === 'gold' ? u.gold : u.chips;
-        if (have < cost)
-            return { ok: false, error: currency === 'gold' ? 'ゴールドが足りません' : 'チップが足りません' };
-        // 先に賭け金を引く。引けなければ(競合等)何も起きない
-        if (this.store.post(userId, currency, -cost, 'slot_spin', `day:${day}`) === null) {
-            return { ok: false, error: currency === 'gold' ? 'ゴールドが足りません' : 'チップが足りません' };
+        if (u.chips < cost)
+            return { ok: false, error: 'チップが足りません' };
+        if (this.store.post(userId, 'chips', -cost, 'slot_spin', `day:${day}`) === null) {
+            return { ok: false, error: 'チップが足りません' };
         }
-        this.store.setProgress(userId, progKey, used + 1, day);
+        this.store.setProgress(userId, 'slot:chipspins', used + 1, day);
         const outcome = spinReels(rnd, { ante: opts.ante, mode: opts.mode });
-        // **チップ建てでは払い出し倍率を掛けない**。
-        // チップ→チップの閉じたループなので、倍率を掛けると RTP が 100% を超えて
-        // 無限にチップを増やせてしまう(倍率はゴールド建て=蛇口のときだけ意味を持つ)。
-        const mult = currency === 'gold' ? slotMultiplier(u.vipPoints, u.loginStreak) : 1;
-        const won = currency === 'gold'
-            ? Math.round(outcome.totalPayX * bet * SLOT_CHIPS_PER_GOLD * mult)
-            : Math.round(outcome.totalPayX * bet);
+        const won = Math.round(outcome.totalPayX * bet);
         if (won > 0)
             this.store.post(userId, 'chips', won, 'slot_win', `day:${day}`);
-        // 演出の出し分け用。賭け金に対する倍率で段階を切る
         const x = outcome.totalPayX;
         const kind = outcome.maxWin ? 'max' : x >= 100 ? 'mega' : x >= 20 ? 'big' : x > 0 ? 'small' : 'none';
         return {
             ok: true,
             outcome,
             bet,
-            currency,
+            currency: 'chips',
             cost,
             won,
-            multiplier: mult,
+            multiplier: 1,
             kind,
-            goldLeft: this.store.balance(userId, 'gold'),
-            spinsLeft: Math.max(0, cap - used - 1),
+            goldLeft: 0,
+            spinsLeft: Math.max(0, SLOT_CHIP_DAILY_SPINS - used - 1),
         };
+    }
+    // --- 広告(第66弾の土台) -----------------------------------------------
+    //
+    // 実際の広告SDKはまだ入れていない。ここで用意するのは**サーバー側の土台**:
+    //   ・1日に見られる回数と報酬額
+    //   ・「広告を消す」を買ったかどうか(買ったら視聴導線は出さない)
+    //   ・報酬の付与(回数上限と台帳を通す)
+    // クライアントは「広告を見終わった」と伝えるだけにし、**報酬額はサーバーが決める**。
+    // (クライアントに金額を持たせると、いくらでも要求できてしまう)
+    /** 広告の状態。UIの出し分けに使う */
+    adState(userId) {
+        const u = this.store.getUser(userId);
+        const day = today(this.now());
+        const w = this.store.getProgress(userId, 'ad:watched');
+        const used = w && w.day === day ? w.value : 0;
+        const removed = (this.store.getProgress(userId, 'ad:removed')?.value ?? 0) > 0;
+        return {
+            /** 広告除去を買っているか */
+            removed,
+            /** 本日の視聴回数と上限 */
+            watched: used,
+            dailyLimit: AD_DAILY_LIMIT,
+            left: Math.max(0, AD_DAILY_LIMIT - used),
+            /** 次に見たときにもらえるチップ(所持に応じて増える。復帰支援と同じ考え方) */
+            reward: this.adReward(u?.chips ?? 0),
+        };
+    }
+    /**
+     * 広告1回の報酬。デイリーボーナスと同じく所持額に対する率で出しつつ、
+     * 上限を設けて青天井にしない(スロットの蛇口を壊さないため)。
+     */
+    adReward(chips) {
+        const byBalance = Math.round(Math.max(0, chips) * AD_REWARD_RATE);
+        return Math.max(AD_REWARD_FLOOR, Math.min(byBalance, AD_REWARD_CAP));
+    }
+    /** 広告を見終わった。回数上限を超えていなければチップを配る */
+    grantAdReward(userId) {
+        const u = this.store.getUser(userId);
+        if (!u)
+            return { ok: false, error: 'ユーザーが見つかりません' };
+        const day = today(this.now());
+        const w = this.store.getProgress(userId, 'ad:watched');
+        const used = w && w.day === day ? w.value : 0;
+        if (used >= AD_DAILY_LIMIT)
+            return { ok: false, error: '本日の視聴上限に達しました' };
+        const reward = this.adReward(u.chips);
+        this.store.setProgress(userId, 'ad:watched', used + 1, day);
+        this.store.post(userId, 'chips', reward, 'ad_reward', `day:${day}`);
+        return { ok: true, reward, left: Math.max(0, AD_DAILY_LIMIT - used - 1) };
+    }
+    /** 広告除去を有効にする(購入時に呼ぶ)。日付をまたいでも消えないよう day は固定値 */
+    enableAdRemoval(userId) {
+        this.store.setProgress(userId, 'ad:removed', 1, 'permanent');
     }
     // --- チャレンジパス ---------------------------------------------------------
     addPassXp(userId, xp) {

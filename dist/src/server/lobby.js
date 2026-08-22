@@ -734,14 +734,14 @@ export class Lobby {
                 return;
             }
             case 'slot.spin': {
-                const r = this.economy.spinSlot(s.userId, msg.bet, Math.random, { ante: msg.ante, mode: msg.mode, currency: msg.currency });
+                const r = this.economy.spinSlot(s.userId, msg.bet, Math.random, { ante: msg.ante, mode: msg.mode });
                 if (!r.ok)
                     return this.err(sessionId, 'ILLEGAL_ACTION', r.error ?? '回せませんでした');
                 this.sendBalance(s.userId);
                 this.transport.send(sessionId, {
                     t: 'slot.result',
                     result: {
-                        outcome: r.outcome, bet: r.bet, currency: r.currency, cost: r.cost, won: r.won, multiplier: r.multiplier,
+                        outcome: r.outcome, bet: r.bet, currency: 'chips', cost: r.cost, won: r.won, multiplier: r.multiplier,
                         kind: r.kind, goldLeft: r.goldLeft, spinsLeft: r.spinsLeft,
                     },
                 });
@@ -815,7 +815,8 @@ export class Lobby {
                 chips: p.chips,
                 perYen: Math.round(p.chips / p.priceJpy),
             })),
-            goldPacks: GOLD_PACKS.map((p) => ({ sku: p.sku, name: p.name, priceJpy: p.priceJpy, gold: p.gold })),
+            // 第66弾: ゴールド廃止。枠は機能商品(広告除去など)に転用した
+            goldPacks: GOLD_PACKS.map((p) => ({ sku: p.sku, name: p.name, priceJpy: p.priceJpy, gold: 0 })),
             offers: offers.map((o) => ({
                 id: o.id,
                 sku: o.sku.sku,

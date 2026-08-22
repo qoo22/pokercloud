@@ -19,14 +19,20 @@ export interface Sku {
     gold?: number;
     /** 付与される VIP ポイント */
     vipPoints: number;
-    kind: 'chips' | 'gold' | 'offer' | 'pass';
+    kind: 'chips' | 'gold' | 'offer' | 'pass' | 'feature';
     /** 恒常商品に対する倍率（オファーの「お得さ」表示用） */
     valueMultiplier?: number;
     note?: string;
 }
 /** 恒常チップパック。単価差は最大 4.8 倍に抑えている（Zynga の約 10 倍は初回転換率を下げる） */
 export declare const CHIP_PACKS: Sku[];
-/** ゴールド（スロットを回す権利）。消費速度が有限なので単価差は緩やかにする */
+/**
+ * 機能を売る商品(第66弾)。
+ * ゴールドは廃止し **チップに一本化** したので、旧ゴールドパックの枠を
+ * 「広告を消す」などの機能商品に置き換えた。チップの量では差がつかない価値を売る。
+ */
+export declare const FEATURE_SKUS: Sku[];
+/** 旧名の互換(参照が残っていても落ちないように) */
 export declare const GOLD_PACKS: Sku[];
 /** 期間限定オファー。仕様書のとおり、実際の売上主力はこちら */
 export type OfferKind = 'first_time' | 'bust_rescue' | 'piggy_bank' | 'weekend_flash' | 'vip_only';
@@ -81,11 +87,20 @@ export declare const SLOT_BETS: readonly [1, 5, 10, 50];
  * 賭け1ゴールドあたりの基準チップ。
  * 第58弾で抽選が 243ways+タンブル+フリーゲームに変わりRTPが 0.70→0.96(×賭け金)に上がったため、
  * **1ゴールドあたりの期待払い出しを従来と同じ 14,076 チップに保つ** よう換算レートを下げてある
- * (0.96 × 14,666 ≒ 14,076)。ここを触ると経済の蛇口が動くので必ず sim-slot.mjs で確認すること。
+ * (0.9505 × 14,809 ≒ 14,076)。ここを触ると経済の蛇口が動くので必ず sim-slot.mjs で確認すること。
  */
-export declare const SLOT_CHIPS_PER_GOLD = 14666;
+export declare const SLOT_CHIPS_PER_GOLD = 14809;
 /** 1日に回せる上限(ゴールド量ではなく回数。無限回しの防止) */
 export declare const SLOT_DAILY_SPINS = 100;
+/**
+ * 広告まわりの設定(第66弾)。
+ * 報酬は「所持チップの率 + 下限 + 上限」で出す。率だけだとハイローラーに配りすぎ、
+ * 定額だけだと初心者に価値が無いため。上限を置いてチップの蛇口を壊さないようにする。
+ */
+export declare const AD_DAILY_LIMIT = 5;
+export declare const AD_REWARD_RATE = 0.01;
+export declare const AD_REWARD_FLOOR = 20000;
+export declare const AD_REWARD_CAP = 2000000;
 /**
  * チップ建てスロットの設定(第59弾)。
  *
@@ -387,7 +402,8 @@ export declare class Economy {
         chipDailySpins: number;
         reels: number;
         rows: number;
-        ways: number;
+        lines: number;
+        paylines: number[][];
         tumbleLadder: number[];
         scatterPay: {
             [x: number]: number;
@@ -409,11 +425,41 @@ export declare class Economy {
      * ここは「支払い・上限・倍率・記録」だけを見る。
      * rnd を差し替えられるようにしてあるのはテストで出目を固定するため。
      */
+    /**
+     * スロットを 1 回まわす(第66弾で **チップ専用**)。
+     * チップを賭けてチップを払い出す閉じたループなので、**払い出し倍率は掛けない**
+     * (掛けると RTP が 100% を超えて無限にチップを増やせる)。
+     * 抽選そのものは slot.ts の純粋関数に任せ、ここは支払い・上限・記録だけを見る。
+     */
     spinSlot(userId: string, bet: number, rnd?: () => number, opts?: {
         ante?: boolean;
         mode?: FreeMode['key'];
-        currency?: 'gold' | 'chips';
     }): SlotSpinResult;
+    /** 広告の状態。UIの出し分けに使う */
+    adState(userId: string): {
+        /** 広告除去を買っているか */
+        removed: boolean;
+        /** 本日の視聴回数と上限 */
+        watched: number;
+        dailyLimit: number;
+        left: number;
+        /** 次に見たときにもらえるチップ(所持に応じて増える。復帰支援と同じ考え方) */
+        reward: number;
+    };
+    /**
+     * 広告1回の報酬。デイリーボーナスと同じく所持額に対する率で出しつつ、
+     * 上限を設けて青天井にしない(スロットの蛇口を壊さないため)。
+     */
+    private adReward;
+    /** 広告を見終わった。回数上限を超えていなければチップを配る */
+    grantAdReward(userId: string): {
+        ok: boolean;
+        error?: string;
+        reward?: number;
+        left?: number;
+    };
+    /** 広告除去を有効にする(購入時に呼ぶ)。日付をまたいでも消えないよう day は固定値 */
+    enableAdRemoval(userId: string): void;
     addPassXp(userId: string, xp: number): void;
     passStatus(userId: string): {
         seasonId: string;

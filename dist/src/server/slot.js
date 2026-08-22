@@ -2,7 +2,7 @@
  * ゴールドスロットの抽選エンジン(第58弾で全面刷新)。
  *
  * 設計方針は現行オンラインスロットの主流に合わせた「ルールは単純に、結果は極端に」。
- *   - 5リール×3段の **243 ways**(左から連続で揃えば配当)。ペイライン概念が無く理解が速い
+ *   - 5リール×3段の **25固定ペイライン**(左から連続で揃えば配当)。当たった形が見えるので納得感がある
  *   - **タンブル**(当たった絵柄が消えて上から落ちる)。1スピンが複数イベントに分解される
  *   - タンブル連鎖ごとに **倍率が上がる**(通常時 x1→x2→x3→x5→x10)
  *   - スキャッター3つで **フリーゲーム**。フリーゲーム中は倍率が
@@ -17,6 +17,40 @@
 export const REELS = 5;
 export const ROWS = 3;
 /**
+ * 25固定ペイライン(第65弾で243waysから20本へ、第66弾で25本へ)。
+ * 数値は「左のリールから順に通過する段」。**0=上段 / 1=中段 / 2=下段**。
+ * (仕様書の 1/2/3 表記から 1 を引いた値。直線・V字・山型・ジグザグを万遍なく入れてある)
+ * 業界共通の規格は無く、タイトルごとに決めるもの。
+ */
+export const PAYLINES = [
+    [1, 1, 1, 1, 1], // 01 中段一直線
+    [0, 0, 0, 0, 0], // 02 上段一直線
+    [2, 2, 2, 2, 2], // 03 下段一直線
+    [0, 1, 2, 1, 0], // 04 V字
+    [2, 1, 0, 1, 2], // 05 山型
+    [0, 0, 1, 0, 0], // 06 上段・中央くぼみ
+    [2, 2, 1, 2, 2], // 07 下段・中央山
+    [1, 2, 2, 2, 1], // 08 下側U字
+    [1, 0, 0, 0, 1], // 09 上側山型
+    [1, 0, 1, 0, 1], // 10 上側ジグザグ
+    [1, 2, 1, 2, 1], // 11 下側ジグザグ
+    [0, 1, 0, 1, 0], // 12 上段始まりW字
+    [2, 1, 2, 1, 2], // 13 下段始まりW字
+    [1, 1, 0, 1, 1], // 14 中段・中央だけ上
+    [1, 1, 2, 1, 1], // 15 中段・中央だけ下
+    [0, 1, 1, 1, 0], // 16 上段始終・中央通過
+    [2, 1, 1, 1, 2], // 17 下段始終・中央通過
+    [0, 1, 2, 2, 2], // 18 左上から右下
+    [2, 1, 0, 0, 0], // 19 左下から右上
+    [0, 2, 0, 2, 0], // 20 上段始まり大ジグザグ
+    [2, 0, 2, 0, 2], // 21 下段始まり大ジグザグ(20の上下反転)
+    [0, 0, 1, 2, 2], // 22 上段から下段へ下降
+    [2, 2, 1, 0, 0], // 23 下段から上段へ上昇
+    [0, 1, 2, 1, 2], // 24 上段始まり二段ジグザグ
+    [2, 1, 0, 1, 0], // 25 下段始まり二段ジグザグ
+];
+export const LINES = PAYLINES.length;
+/**
  * 配当表と重み。
  * 重みは sim-slot.mjs の実測でRTP・ヒット率・突入率が目標帯に入るよう調整してある。
  * 触ると期待値が動くので、必ずシミュレーションを回し直すこと。
@@ -24,13 +58,13 @@ export const ROWS = 3;
 export const PAY_SYMBOLS = [
     // 下位3種は「4個から配当」。3個で当たる絵柄を絞ることでヒット率を業界水準(20〜30%)まで
     // 落としつつ、1回の当たりの価値を残している(243waysは放っておくと当たりすぎる)
-    { key: 'chip', name: 'チップ', pay: [0, 0.075, 0.27], weight: 100 },
-    { key: 'club', name: 'クラブ', pay: [0, 0.105, 0.38], weight: 88 },
-    { key: 'diamond', name: 'ダイヤ', pay: [0, 0.16, 0.53], weight: 76 },
-    { key: 'heart', name: 'ハート', pay: [0, 0.21, 0.80], weight: 62 },
-    { key: 'spade', name: 'スペード', pay: [0.085, 0.37, 1.43], weight: 48 },
-    { key: 'crown', name: '王冠', pay: [0.16, 0.74, 2.76], weight: 32 },
-    { key: 'seven', name: 'セブン', pay: [0.43, 2.02, 9.14], weight: 18 },
+    { key: 'chip', name: 'チップ', pay: [0, 0.55, 2.0], weight: 100 },
+    { key: 'club', name: 'クラブ', pay: [0, 0.8, 2.8], weight: 88 },
+    { key: 'diamond', name: 'ダイヤ', pay: [0, 1.2, 3.9], weight: 76 },
+    { key: 'heart', name: 'ハート', pay: [0, 1.6, 6.0], weight: 62 },
+    { key: 'spade', name: 'スペード', pay: [0.63, 2.75, 10.7], weight: 48 },
+    { key: 'crown', name: '王冠', pay: [1.2, 5.5, 20.4], weight: 32 },
+    { key: 'seven', name: 'セブン', pay: [3.2, 15, 68], weight: 18 },
 ];
 /**
  * 抽選パラメータ。**オブジェクトにしてあるのは調整スクリプトから差し替えるため**
@@ -51,7 +85,7 @@ export const SCATTER_PAY = { 3: 2, 4: 5, 5: 20 };
 export const TUMBLE_LADDER = [1, 2, 3, 5, 10];
 export const FREE_MODES = [
     { key: 'many', name: '回数多め', desc: '15回 / ×1から+3ずつ', spins: 15, startMult: 1, step: 3 },
-    { key: 'few', name: '一撃高倍率', desc: '8回 / ×7から+8ずつ', spins: 8, startMult: 7, step: 8 },
+    { key: 'few', name: '一撃高倍率', desc: '8回 / ×5から+7ずつ', spins: 8, startMult: 5, step: 7 },
 ];
 /** 最大配当(賭け金に対する倍率)。ここで頭打ちにする */
 export const MAX_WIN_X = 5000;
@@ -88,43 +122,44 @@ function newGrid(rnd, scatterWeight) {
 }
 const PAY_BY_KEY = new Map(PAY_SYMBOLS.map((s) => [s.key, s]));
 /**
- * 243ways の判定。左のリールから連続して同じ絵柄(ワイルド代用可)が並ぶ数だけ配当。
- * ways = 各リールの該当個数の積。
+ * 20固定ペイラインの判定。
+ *   - 必ず左端(リール1)から連続していること
+ *   - 3個以上そろえば当選。ワイルドは代用になる
+ *   - **同じラインでは一番高い組み合わせだけ**を払う
+ *   - 複数ラインが成立したらすべて加算する
  */
 function evaluate(grid) {
     const wins = [];
     const hitSet = new Set();
-    for (const sym of PAY_SYMBOLS) {
-        // 各リールで「その絵柄 or ワイルド」の位置を集める
-        const perReel = [];
-        for (let r = 0; r < REELS; r++) {
-            const rows = [];
-            for (let y = 0; y < ROWS; y++) {
-                const c = grid[r][y];
+    for (let li = 0; li < PAYLINES.length; li++) {
+        const line = PAYLINES[li];
+        let best = null;
+        for (const sym of PAY_SYMBOLS) {
+            // 左から連続して「その絵柄 or ワイルド」が並ぶ長さ
+            let len = 0;
+            for (let r = 0; r < REELS; r++) {
+                const c = grid[r][line[r]];
                 if (c === sym.key || c === 'wild')
-                    rows.push(y);
+                    len++;
+                else
+                    break;
             }
-            perReel.push(rows);
+            if (len < 3)
+                continue;
+            const pay = sym.pay[len - 3];
+            if (pay <= 0)
+                continue;
+            if (!best || pay > best.pay)
+                best = { key: sym.key, count: len, pay };
         }
-        // 左から連続している長さ
-        let len = 0;
-        while (len < REELS && perReel[len].length > 0)
-            len++;
-        if (len < 3)
-            continue;
-        let ways = 1;
-        for (let r = 0; r < len; r++)
-            ways *= perReel[r].length;
-        const pay = sym.pay[len - 3] * ways;
-        if (pay <= 0)
-            continue;
-        wins.push({ key: sym.key, count: len, ways, pay });
-        for (let r = 0; r < len; r++)
-            for (const y of perReel[r])
-                hitSet.add(`${r},${y}`);
+        if (best) {
+            wins.push({ key: best.key, count: best.count, ways: 1, pay: best.pay, line: li });
+            for (let r = 0; r < best.count; r++)
+                hitSet.add(`${r},${line[r]}`);
+        }
     }
-    const hits = [...hitSet].map((s) => {
-        const [a, b] = s.split(',');
+    const hits = [...hitSet].map((k) => {
+        const [a, b] = k.split(',');
         return [Number(a), Number(b)];
     });
     return { wins, hits };
