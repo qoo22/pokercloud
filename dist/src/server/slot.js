@@ -58,15 +58,16 @@ export const LINES = PAYLINES.length;
 export const PAY_SYMBOLS = [
     // 下位3種は「4個から配当」。3個で当たる絵柄を絞ることでヒット率を業界水準(20〜30%)まで
     // 落としつつ、1回の当たりの価値を残している(243waysは放っておくと当たりすぎる)
-    // 第69弾: スタックドWILD導入で通常時の期待値が大きく上がった(リスピン+リール1WILD)ため
-    // 全体を約0.63倍に再調整。当たりの体験は絵柄よりWILDイベントに寄る設計になった
-    { key: 'chip', name: 'チップ', pay: [0, 0.34, 1.25], weight: 100 },
-    { key: 'club', name: 'クラブ', pay: [0, 0.5, 1.75], weight: 88 },
-    { key: 'diamond', name: 'ダイヤ', pay: [0, 0.75, 2.44], weight: 76 },
-    { key: 'heart', name: 'ハート', pay: [0, 1.0, 3.76], weight: 62 },
-    { key: 'spade', name: 'スペード', pay: [0.39, 1.72, 6.7], weight: 48 },
-    { key: 'crown', name: '王冠', pay: [0.75, 3.44, 12.8], weight: 32 },
-    { key: 'seven', name: 'セブン', pay: [2.0, 9.4, 42.6], weight: 18 },
+    // 第69弾: スタックドWILD導入で通常時の期待値が上がったため全体を約0.63倍に調整。
+    // 第75弾: WILD倍率を「WILDを含む全ライン」に広げた(仕様)ぶんフリー寄与が42%まで上がり、
+    // さらに約0.81倍(0.833×0.97)へ再調整。当たりの体験は絵柄の配当よりWILDイベントに寄る設計になった
+    { key: 'chip', name: 'チップ', pay: [0.0, 0.272, 1.009], weight: 100 },
+    { key: 'club', name: 'クラブ', pay: [0.0, 0.407, 1.416], weight: 88 },
+    { key: 'diamond', name: 'ダイヤ', pay: [0.0, 0.611, 1.979], weight: 76 },
+    { key: 'heart', name: 'ハート', pay: [0.0, 0.805, 3.046], weight: 62 },
+    { key: 'spade', name: 'スペード', pay: [0.32, 1.387, 5.422], weight: 48 },
+    { key: 'crown', name: '王冠', pay: [0.611, 2.784, 10.35], weight: 32 },
+    { key: 'seven', name: 'セブン', pay: [1.62, 7.605, 34.454], weight: 18 },
 ];
 /**
  * 抽選パラメータ。**オブジェクトにしてあるのは調整スクリプトから差し替えるため**
@@ -76,8 +77,12 @@ export const PAY_SYMBOLS = [
 export const SLOT_CFG = {
     wildWeight: 26,
     scatterWeight: 11,
-    /** アンティベット時のスキャッター重み(突入率がおよそ2倍強になる) */
-    scatterWeightAnte: 16,
+    /**
+     * アンティベット時のスキャッター重み。
+     * 第71弾でアンティのUIを撤去したので**現在は使われていない(休眠)**。
+     * 戻すときは必ず tune-slot を回し直すこと(フリー寄与が大きいので釣り合いが崩れやすい)
+     */
+    scatterWeightAnte: 14,
     /** アンティベットの賭け金倍率 */
     anteCost: 1.5,
     /**
@@ -278,15 +283,18 @@ function runTumbles(grid0, rnd, scatterWeight, opts) {
         const { wins, hits } = evaluate(grid);
         if (!wins.length)
             break;
-        // WILD絡みの当選に倍率(フリーゲームだけ)。ライン単位で1回、WILDの枚数では増えない。
-        // 対象は**リール1のWILD(固定WILD)を通る当選だけ**。中3リールのWILDまで対象にすると
-        // 固定WILD中は全ラインが該当して RTP が数倍に爆発する(実測240〜600%)ため、
-        // 「フリーは固定WILD+倍率」という役割の核だけを残した
-        if (opts.wildBonus) {
+        // WILD絡みの当選に倍率(フリーゲームだけ)。**ライン単位で1回**であり、
+        // 同じラインにWILDが2個以上あっても倍率は1回しか掛からない。
+        // 倍率はスピンごとに引き直さず、突入時に決めた値をフリー中ずっと使う。
+        if (opts.wildMult) {
             for (const w of wins) {
                 const line = PAYLINES[w.line ?? 0];
-                if (grid[0][line[0]] === 'wild')
-                    w.wildMult = drawWildMult(rnd);
+                for (let r = 0; r < w.count; r++) {
+                    if (grid[r][line[r]] === 'wild') {
+                        w.wildMult = opts.wildMult;
+                        break;
+                    }
+                }
             }
         }
         const raw = wins.reduce((a, w) => a + w.pay * (w.wildMult ?? 1), 0);
@@ -341,6 +349,9 @@ export function spin(rnd, opts = {}) {
         let mult = mode.startMult;
         let payX = 0;
         const spins = [];
+        // WILD倍率は**突入時に1回だけ**引き、このフリーゲーム中はずっと同じ値を使う。
+        // スピンごとに引き直すと「何倍の台なのか」が定まらず、演出として見せ場が作れない
+        const wildMult = drawWildMult(rnd);
         // フリーゲーム中に3連WILDが停止すると、リール1が3スピンのあいだ固定WILDになる。
         // リスピンはさせず「固定WILD+WILD絡み×2〜×5」で通常時と役割を分ける
         let stickyLeft = 0;
@@ -359,7 +370,7 @@ export function spin(rnd, opts = {}) {
             const run = runTumbles(g, rnd, sw, {
                 persistent: { mult, step: mode.step },
                 lockReel0: sticky,
-                wildBonus: true,
+                wildMult,
             });
             mult = run.multAfter;
             payX += run.payX;
@@ -372,7 +383,7 @@ export function spin(rnd, opts = {}) {
             if (payX + basePayX + (out.respin?.payX ?? 0) >= MAX_WIN_X)
                 break; // 上限到達で打ち切り
         }
-        out.free = { mode: mode.key, spinsTotal: total, spins, finalMult: mult, payX };
+        out.free = { mode: mode.key, spinsTotal: total, spins, finalMult: mult, wildMult, payX };
     }
     const sum = basePayX + (out.respin?.payX ?? 0) + (out.free?.payX ?? 0);
     out.totalPayX = Math.min(sum, MAX_WIN_X);

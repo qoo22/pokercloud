@@ -48,7 +48,11 @@ export declare const PAY_SYMBOLS: SlotPaySymbol[];
 export declare const SLOT_CFG: {
     wildWeight: number;
     scatterWeight: number;
-    /** アンティベット時のスキャッター重み(突入率がおよそ2倍強になる) */
+    /**
+     * アンティベット時のスキャッター重み。
+     * 第71弾でアンティのUIを撤去したので**現在は使われていない(休眠)**。
+     * 戻すときは必ず tune-slot を回し直すこと(フリー寄与が大きいので釣り合いが崩れやすい)
+     */
     scatterWeightAnte: number;
     /** アンティベットの賭け金倍率 */
     anteCost: number;
@@ -170,6 +174,8 @@ export interface SlotOutcome {
         spins: FreeSpinStep[];
         /** 最終的な永続マルチプライヤー */
         finalMult: number;
+        /** 突入時に1回だけ抽選した WILD 倍率(×2〜×5)。フリー中ずっとこの値 */
+        wildMult: number;
         payX: number;
     };
     /** 合計配当(×賭け金)。MAX_WIN_X で頭打ち */

@@ -1655,6 +1655,46 @@
   .slfs-unit { font-size:9.5px; opacity:.7; }
   /* カウントアップ中に桁が動いても幅が暴れないようにする */
   .slc-amt { font-variant-numeric:tabular-nums; }
+  /* --- 第75弾: 当選ラインの描画 --- */
+  .sl-lines { position:absolute; inset:0; pointer-events:none; z-index:3; overflow:visible; }
+  .sl-lines polyline { fill:none; stroke-linecap:round; stroke-linejoin:round;
+    filter:drop-shadow(0 0 3px rgba(255,255,255,.55)); }
+  /* 当選区間の手前まで(薄い部分)。3個当選なら4〜5リール目は薄く見せる */
+  .sl-lines polyline.ghost { stroke-width:2.5; opacity:.22; }
+  /* 実際に配当が出ている区間。左から右へ伸ばす */
+  .sl-lines polyline.live { stroke-width:3.5;
+    stroke-dasharray:var(--len); stroke-dashoffset:var(--len);
+    animation:slLineDraw .22s ease-out forwards; }
+  @keyframes slLineDraw { to { stroke-dashoffset:0; } }
+  /* ライン番号のバッジ(始点と終点) */
+  .sl-lines .lnum { font:700 9px/1 sans-serif; fill:#1a1206; }
+  .sl-lines .lbadge { stroke:rgba(0,0,0,.5); stroke-width:1; }
+  /* 当選ラインの内訳パネル */
+  .sl-lineinfo { margin:8px auto 0; max-width:96%; padding:8px 12px; border-radius:10px;
+    background:linear-gradient(180deg, rgba(50,12,20,.94), rgba(28,7,12,.94));
+    border:1px solid rgba(217,180,95,.55); color:#ffe9c0;
+    box-shadow:0 3px 12px rgba(0,0,0,.55); }
+  .sl-lineinfo .li-head { display:flex; align-items:center; justify-content:center; gap:8px;
+    font-size:12px; font-weight:800; }
+  .sl-lineinfo .li-no { padding:1px 7px; border-radius:6px; color:#1a1206; font-weight:900; }
+  .sl-lineinfo .li-sym { display:inline-flex; align-items:center; gap:4px; }
+  .sl-lineinfo .li-sym img { width:16px; height:16px; object-fit:contain; }
+  .sl-lineinfo .li-rows { display:flex; justify-content:center; gap:14px; margin-top:4px;
+    font-size:10.5px; opacity:.85; }
+  .sl-lineinfo .li-rows b { color:#ffd76a; font-size:12px; }
+  .sl-lineinfo .li-wm { background:linear-gradient(180deg,#ffd76a,#c9992e); color:#241503;
+    padding:0 6px; border-radius:6px; font-weight:900; }
+  .sl-lineinfo .li-total { font-size:15px; font-weight:900; color:#8ff2a8; }
+  /* まとめ表示(本数が多いとき) */
+  .sl-linesum { font-size:11px; opacity:.8; margin-top:3px; }
+  /* WILD配当の常設表示 */
+  .sl-wildmult { display:inline-flex; align-items:center; gap:5px; margin-top:6px;
+    padding:2px 9px; border-radius:8px; font-size:11px; font-weight:800;
+    background:rgba(255,215,106,.14); border:1px solid rgba(255,215,106,.5); color:#ffe9a8; }
+  .sl-wildmult b { font-size:15px; color:#ffd76a; }
+  .sl-wildmult.pop { animation:slPop .4s cubic-bezier(.2,1.6,.4,1); }
+  #sl-fsin .sl-wildmult { margin-top:12px; font-size:12px; flex-direction:column; gap:2px; padding:6px 14px; }
+  #sl-fsin .sl-wildmult b { font-size:30px; }
   .sl-grid.wildflash { animation:slWildFlash .32s ease-out; }
   /* 筐体化(第70弾): 「25 LINES」はリール枠に付いた金属プレート風にする(浮いた文字にしない) */
   .sl-ways { background:linear-gradient(180deg,#f0d488,#b8871f); color:#241503 !important;
@@ -2127,21 +2167,26 @@ var PokerOffline = (() => {
   var PAY_SYMBOLS = [
     // 下位3種は「4個から配当」。3個で当たる絵柄を絞ることでヒット率を業界水準(20〜30%)まで
     // 落としつつ、1回の当たりの価値を残している(243waysは放っておくと当たりすぎる)
-    // 第69弾: スタックドWILD導入で通常時の期待値が大きく上がった(リスピン+リール1WILD)ため
-    // 全体を約0.63倍に再調整。当たりの体験は絵柄よりWILDイベントに寄る設計になった
-    { key: "chip", name: "\u30C1\u30C3\u30D7", pay: [0, 0.34, 1.25], weight: 100 },
-    { key: "club", name: "\u30AF\u30E9\u30D6", pay: [0, 0.5, 1.75], weight: 88 },
-    { key: "diamond", name: "\u30C0\u30A4\u30E4", pay: [0, 0.75, 2.44], weight: 76 },
-    { key: "heart", name: "\u30CF\u30FC\u30C8", pay: [0, 1, 3.76], weight: 62 },
-    { key: "spade", name: "\u30B9\u30DA\u30FC\u30C9", pay: [0.39, 1.72, 6.7], weight: 48 },
-    { key: "crown", name: "\u738B\u51A0", pay: [0.75, 3.44, 12.8], weight: 32 },
-    { key: "seven", name: "\u30BB\u30D6\u30F3", pay: [2, 9.4, 42.6], weight: 18 }
+    // 第69弾: スタックドWILD導入で通常時の期待値が上がったため全体を約0.63倍に調整。
+    // 第75弾: WILD倍率を「WILDを含む全ライン」に広げた(仕様)ぶんフリー寄与が42%まで上がり、
+    // さらに約0.81倍(0.833×0.97)へ再調整。当たりの体験は絵柄の配当よりWILDイベントに寄る設計になった
+    { key: "chip", name: "\u30C1\u30C3\u30D7", pay: [0, 0.272, 1.009], weight: 100 },
+    { key: "club", name: "\u30AF\u30E9\u30D6", pay: [0, 0.407, 1.416], weight: 88 },
+    { key: "diamond", name: "\u30C0\u30A4\u30E4", pay: [0, 0.611, 1.979], weight: 76 },
+    { key: "heart", name: "\u30CF\u30FC\u30C8", pay: [0, 0.805, 3.046], weight: 62 },
+    { key: "spade", name: "\u30B9\u30DA\u30FC\u30C9", pay: [0.32, 1.387, 5.422], weight: 48 },
+    { key: "crown", name: "\u738B\u51A0", pay: [0.611, 2.784, 10.35], weight: 32 },
+    { key: "seven", name: "\u30BB\u30D6\u30F3", pay: [1.62, 7.605, 34.454], weight: 18 }
   ];
   var SLOT_CFG = {
     wildWeight: 26,
     scatterWeight: 11,
-    /** アンティベット時のスキャッター重み(突入率がおよそ2倍強になる) */
-    scatterWeightAnte: 16,
+    /**
+     * アンティベット時のスキャッター重み。
+     * 第71弾でアンティのUIを撤去したので**現在は使われていない(休眠)**。
+     * 戻すときは必ず tune-slot を回し直すこと(フリー寄与が大きいので釣り合いが崩れやすい)
+     */
+    scatterWeightAnte: 14,
     /** アンティベットの賭け金倍率 */
     anteCost: 1.5,
     /**
@@ -2294,10 +2339,15 @@ var PokerOffline = (() => {
     for (let guard = 0; guard < 40; guard++) {
       const { wins, hits } = evaluate(grid);
       if (!wins.length) break;
-      if (opts.wildBonus) {
+      if (opts.wildMult) {
         for (const w of wins) {
           const line = PAYLINES[w.line ?? 0];
-          if (grid[0][line[0]] === "wild") w.wildMult = drawWildMult(rnd2);
+          for (let r = 0; r < w.count; r++) {
+            if (grid[r][line[r]] === "wild") {
+              w.wildMult = opts.wildMult;
+              break;
+            }
+          }
         }
       }
       const raw = wins.reduce((a, w) => a + w.pay * (w.wildMult ?? 1), 0);
@@ -2341,6 +2391,7 @@ var PokerOffline = (() => {
       let mult = mode.startMult;
       let payX = 0;
       const spins = [];
+      const wildMult = drawWildMult(rnd2);
       let stickyLeft = 0;
       for (let guard = 0; left > 0 && guard < 200; guard++) {
         left--;
@@ -2353,7 +2404,7 @@ var PokerOffline = (() => {
         const run = runTumbles(g, rnd2, sw, {
           persistent: { mult, step: mode.step },
           lockReel0: sticky,
-          wildBonus: true
+          wildMult
         });
         mult = run.multAfter;
         payX += run.payX;
@@ -2365,7 +2416,7 @@ var PokerOffline = (() => {
         spins.push({ grid0: g, steps: run.steps, multAfter: mult, payX: run.payX, retrigger, sticky });
         if (payX + basePayX + (out.respin?.payX ?? 0) >= MAX_WIN_X) break;
       }
-      out.free = { mode: mode.key, spinsTotal: total, spins, finalMult: mult, payX };
+      out.free = { mode: mode.key, spinsTotal: total, spins, finalMult: mult, wildMult, payX };
     }
     const sum = basePayX + (out.respin?.payX ?? 0) + (out.free?.payX ?? 0);
     out.totalPayX = Math.min(sum, MAX_WIN_X);
@@ -14034,6 +14085,171 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     return head;
   }
 
+  /**
+   * 25本のペイラインを色分けする。25色を見分けるのは無理なので、
+   * **色だけに頼らず番号バッジも必ず出す**(資料の指摘どおり)。
+   */
+  function slotLineColor(li) {
+    return "hsl(" + ((li * 137) % 360) + " 85% 62%)";   // 黄金角でばらけさせる
+  }
+
+  /** 盤面のマス(reel,row)の中心座標を、盤面を基準にした px で返す */
+  function slotCellCenter(grid, reel, row) {
+    const reels = grid.querySelectorAll(".sl-reel");
+    const cell = reels[reel] && reels[reel].querySelectorAll(".sl-cell")[row];
+    if (!cell) return null;
+    const gb = grid.getBoundingClientRect(), cb = cell.getBoundingClientRect();
+    return { x: cb.left - gb.left + cb.width / 2, y: cb.top - gb.top + cb.height / 2 };
+  }
+
+  /** 盤面に重ねる SVG を用意する(無ければ作る) */
+  function slotLineLayer() {
+    const grid = document.getElementById("sl-grid");
+    if (!grid) return null;
+    let svg = grid.querySelector(".sl-lines");
+    if (!svg) {
+      svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "sl-lines");
+      grid.appendChild(svg);
+    }
+    return svg;
+  }
+
+  function slotClearLines() {
+    const svg = document.getElementById("sl-grid") && document.getElementById("sl-grid").querySelector(".sl-lines");
+    if (svg) svg.innerHTML = "";
+    const info = document.getElementById("sl-lineinfo");
+    if (info) info.remove();
+  }
+
+  /**
+   * 1本の当選ラインを描く。当選区間(count個)は明るく、その先は薄く見せる。
+   * paylines はサーバーから来る「各リールが通る段」の配列。
+   */
+  function slotDrawLine(win, paylines) {
+    const grid = document.getElementById("sl-grid");
+    const svg = slotLineLayer();
+    if (!grid || !svg || win.line == null) return;
+    const line = (paylines || [])[win.line];
+    if (!line) return;
+    const pts = [];
+    for (let r = 0; r < 5; r++) {
+      const c = slotCellCenter(grid, r, line[r]);
+      if (c) pts.push(c);
+    }
+    if (pts.length < 2) return;
+    const color = slotLineColor(win.line);
+    const mk = (tag) => document.createElementNS("http://www.w3.org/2000/svg", tag);
+    const str = (a) => a.map((p) => p.x.toFixed(1) + "," + p.y.toFixed(1)).join(" ");
+
+    // ①ライン全体を薄く
+    const ghost = mk("polyline");
+    ghost.setAttribute("class", "ghost");
+    ghost.setAttribute("points", str(pts));
+    ghost.setAttribute("stroke", color);
+    svg.appendChild(ghost);
+
+    // ②当選している区間だけ明るく、左から右へ伸ばす
+    const livePts = pts.slice(0, Math.max(2, win.count));
+    const live = mk("polyline");
+    live.setAttribute("class", "live");
+    live.setAttribute("points", str(livePts));
+    live.setAttribute("stroke", color);
+    svg.appendChild(live);
+    let len = 0;
+    for (let i = 1; i < livePts.length; i++) len += Math.hypot(livePts[i].x - livePts[i - 1].x, livePts[i].y - livePts[i - 1].y);
+    live.style.setProperty("--len", len.toFixed(0));
+
+    // ③始点と終点にライン番号のバッジ(色だけに頼らないため)
+    for (const p of [pts[0], livePts[livePts.length - 1]]) {
+      const b = mk("circle");
+      b.setAttribute("class", "lbadge");
+      b.setAttribute("cx", p.x.toFixed(1)); b.setAttribute("cy", p.y.toFixed(1));
+      b.setAttribute("r", "8"); b.setAttribute("fill", color);
+      svg.appendChild(b);
+      const t = mk("text");
+      t.setAttribute("class", "lnum");
+      t.setAttribute("x", p.x.toFixed(1)); t.setAttribute("y", (p.y + 3).toFixed(1));
+      t.setAttribute("text-anchor", "middle");
+      t.textContent = String(win.line + 1);
+      svg.appendChild(t);
+    }
+  }
+
+  /** ラインの内訳パネル(ライン番号・絵柄×個数・基礎WIN・WILD倍率・獲得) */
+  function slotShowLineInfo(win, sv, bet, chainMult) {
+    const machine = document.querySelector("#slot .slot-machine");
+    const winEl = document.getElementById("sl-win");
+    if (!machine || !winEl) return;
+    let info = document.getElementById("sl-lineinfo");
+    if (!info) {
+      info = document.createElement("div");
+      info.id = "sl-lineinfo";
+      info.className = "sl-lineinfo";
+      machine.insertBefore(info, winEl.nextSibling);
+    }
+    const wm = win.wildMult || 0;
+    const base = Math.round(win.pay * bet);
+    const total = Math.round(win.pay * (wm || 1) * (chainMult || 1) * bet);
+    const name = win.allWild
+      ? "WILD\u00D7" + win.count + "\uFF08" + slotSymName(sv, win.key) + "\u6271\u3044\uFF09"
+      : slotSymName(sv, win.key) + " \u00D7" + win.count;
+    info.innerHTML =
+      '<div class="li-head">'
+      + '<span class="li-no" style="background:' + slotLineColor(win.line) + '">LINE ' + (win.line + 1) + '</span>'
+      + '<span class="li-sym"><img src="' + (SLOT_IMG[win.key] || "") + '" alt="">' + name + '</span>'
+      + '</div>'
+      + '<div class="li-rows">'
+      + '<span>\u57FA\u790EWIN <b>' + fmt(base) + '</b></span>'
+      + (wm ? '<span>WILD\u500D\u7387 <b class="li-wm">\u00D7' + wm + '</b></span>' : "")
+      + ((chainMult || 1) > 1 ? '<span>\u9023\u9396 <b>\u00D7' + chainMult + '</b></span>' : "")
+      + '<span>\u7372\u5F97 <b class="li-total">' + fmt(total) + '</b></span>'
+      + '</div>';
+  }
+
+  /**
+   * 当選ラインを順に見せる。資料どおり本数で見せ方を変える。
+   * 画面のどこかをタップすると残りを飛ばして合計へ進む。
+   */
+  async function slotShowWinLines(st, sv, bet) {
+    const wins = (st.wins || []).slice().sort((a, b) => b.pay - a.pay);   // 配当が高い順
+    if (!wins.length) return;
+    const paylines = (sv && sv.paylines) || [];
+    // 本数で表示方針を決める
+    const plan = wins.length <= 3 ? { show: wins.length, hold: 620 }
+      : wins.length <= 8 ? { show: 5, hold: 460 }
+      : { show: 3, hold: 400 };
+
+    let skipped = false;
+    const onSkip = () => { skipped = true; };
+    document.addEventListener("pointerdown", onSkip, { once: true });
+    try {
+      for (let i = 0; i < Math.min(plan.show, wins.length); i++) {
+        if (skipped) break;
+        slotClearLines();
+        slotDrawLine(wins[i], paylines);
+        slotShowLineInfo(wins[i], sv, bet, st.mult);
+        play("chipSmall");
+        await slotSleep(plan.hold);
+      }
+      slotClearLines();
+      // 残りは本数だけまとめて伝える(全部見せると25秒かかる)
+      if (wins.length > plan.show) {
+        const rest = wins.length - plan.show;
+        const el = document.getElementById("sl-win");
+        if (el) {
+          const sum = document.createElement("div");
+          sum.className = "sl-linesum";
+          sum.textContent = "\u307B\u304B " + rest + " \u30E9\u30A4\u30F3";
+          el.appendChild(sum);
+        }
+        await slotSleep(320);
+      }
+    } finally {
+      document.removeEventListener("pointerdown", onSkip);
+    }
+  }
+
   /** 各リールで何マス消えたか(＝上から何マス落ちてくるか) */
   function slotDropCounts(hits) {
     const n = [0, 0, 0, 0, 0];
@@ -14054,9 +14270,12 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         ? Math.round(st.payX * bet)
         : Math.round(st.payX * bet * sv.chipsPerGold * sv.multiplier);
       slotSetWin(slotWinLabel(st, sv, chips), "big");
-      await slotSleep(560);
+      // どのラインで当たったのかを1本ずつ見せる(本数が多いときは上位だけ)
+      await slotShowWinLines(st, sv, bet);
+      await slotSleep(220);
 
       if (i + 1 < steps.length) {
+        slotClearLines();
         // ①当たったマスが弾けて消える
         const g = document.getElementById("sl-grid");
         if (g) {
@@ -14072,6 +14291,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         slotSetGrid(steps[i + 1].grid, [], slotDropCounts(st.hits));
         await slotSleep(260);
       } else {
+        slotClearLines();
         slotSetGrid(st.grid, []);             // 最後の当選盤面はそのまま残す
         slotSetChain(0, 0);
       }
@@ -14079,7 +14299,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   }
 
   /** フリーゲーム突入。全画面で盛大に祝ってから盤面へ戻す */
-  async function slotFsIntro(modeName, total) {
+  async function slotFsIntro(modeName, total, wildMult) {
     const el = document.createElement("div");
     el.id = "sl-fsin";
     el.innerHTML = '<i class="slc-rays"></i><i class="slc-rays b"></i>'
@@ -14089,6 +14309,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       + '<div class="fsin-ja">\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0\u7A81\u5165\uFF01</div>'
       + '<div class="fsin-count"><b>' + total + '</b> \u30B2\u30FC\u30E0</div>'
       + (modeName ? '<div class="fsin-mode">' + escapeHtml(modeName) + '</div>' : "")
+      + (wildMult ? '<div class="sl-wildmult" id="fsin-wm">WILD\u914D\u5F53 <b id="fsin-wmv">\u00D7?</b>'
+        + '<span style="opacity:.7;font-weight:600">WILD\u3092\u542B\u3080\u5F53\u9078\u30E9\u30A4\u30F3\u306B1\u56DE\u9069\u7528</span></div>' : "")
       + '</div>';
     document.body.appendChild(el);
     await slotSleep(30);
@@ -14098,7 +14320,31 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     await slotSleep(700);
     slotSpawnCoins(el, { back: 10, mid: 8, front: 3, bills: true, spread: 1.1 });
     play("applause");
-    await slotSleep(1500);
+    // WILD倍率の抽選を見せる。×2→×3→×4→×5 を循環させてから当選値で止める。
+    // 値はサーバーが決めた oc.free.wildMult。ここは**見せ方だけ**で結果には影響しない
+    if (wildMult) {
+      const v = document.getElementById("fsin-wmv");
+      const seq = [2, 3, 4, 5];
+      const t0 = (typeof performance !== "undefined" ? performance : Date).now();
+      await new Promise((res) => {
+        const tick = (now) => {
+          const t = now - t0;
+          if (t < 1000) {                       // 1.0秒だけ循環させる(だんだん遅く)
+            const idx = Math.floor(t / (70 + t / 12)) % seq.length;
+            if (v) v.textContent = "\u00D7" + seq[idx];
+            slotRaf(tick);
+          } else res();
+        };
+        slotRaf(tick);
+      });
+      if (v) { v.textContent = "\u00D7" + wildMult; }
+      const wm = document.getElementById("fsin-wm");
+      if (wm) { wm.classList.remove("pop"); void wm.offsetWidth; wm.classList.add("pop"); }
+      play("bigwin");
+      await slotSleep(700);
+    } else {
+      await slotSleep(1500);
+    }
     el.classList.remove("show");
     await slotSleep(360);
     el.remove();
@@ -14139,7 +14385,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
    * フリーゲームのHUD。**盤面を覆わない**ように、盤面のすぐ上に差し込む。
    * こうするとタンブル(絵柄が消えて落ちる)と倍率の伸びを同時に見られる。
    */
-  function slotFsOverlay(mode, total) {
+  function slotFsOverlay(mode, total, wildMult) {
     const machine = document.querySelector("#slot .slot-machine");
     const grid = document.getElementById("sl-grid");
     let ov = document.getElementById("sl-fs");
@@ -14156,7 +14402,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       + '<div class="slfs-r"><div class="slfs-count"><b id="slfs-i">0</b> / ' + total
       + ' <span class="slfs-unit">\u30B2\u30FC\u30E0\u76EE</span></div>'
       + '<div class="slfs-win" id="slfs-w"></div></div></div>'
-      + '<div class="slfs-bar"><i id="slfs-bar"></i></div>';
+      + '<div class="slfs-bar"><i id="slfs-bar"></i></div>'
+      + (wildMult ? '<div class="sl-wildmult">WILD\u914D\u5F53 <b>\u00D7' + wildMult + '</b></div>' : "");
     ov.dataset.total = total;
     ov.classList.add("show");
     document.body.classList.add("fs-play");                  // 盤面を光らせる
@@ -14211,9 +14458,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (oc.freeEntered && oc.free) {
       const modeName = (sv.freeModes || []).find((m) => m.key === oc.free.mode);
       // ①突入を盛大に祝う(全画面)
-      await slotFsIntro(modeName ? modeName.name : "", oc.free.spinsTotal);
+      await slotFsIntro(modeName ? modeName.name : "", oc.free.spinsTotal, oc.free.wildMult);
       // ②盤面の上にHUDを出す。盤面は覆わないので、リールはずっと見えている
-      const ov = slotFsOverlay(modeName ? modeName.name : "", oc.free.spinsTotal);
+      const ov = slotFsOverlay(modeName ? modeName.name : "", oc.free.spinsTotal, oc.free.wildMult);
       await slotSleep(500);
       let i = 0;
       let prevSticky = false;
