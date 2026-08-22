@@ -1467,7 +1467,9 @@
 </style>
 <style id="slot-spin-fs-css">
   /* ===== 抽選中の盤面 ===== */
-  .sl-grid.spinning .sl-cell img { filter:blur(1.6px); animation:none; }
+  /* 第71弾: 回転中の絵柄は帯(.sl-band)が描くので、確定マスは着地した瞬間から鮮明にする。
+     ここに blur を掛けると「先に止まったリールが最後の1本まで ぼやけたまま」になる */
+  .sl-grid.spinning .sl-cell img { animation:none; }
   .sl-grid.spinning { box-shadow:inset 0 2px 12px rgba(0,0,0,.6), 0 0 18px rgba(212,175,55,.35); }
 
   /* ===== フリーゲームのHUD(盤面の上に置く。覆わない) ===== */
@@ -1566,6 +1568,10 @@
     border:1px solid var(--gold); background:rgba(217,180,95,.14); color:#ffe9a8; }
   .sl-fixedmode b { font-size:13px; }
   .sl-fixedmode span { font-size:10.5px; opacity:.75; }
+  /* 第71弾: ボーナス/アンティ欄を消したぶん、賭け金〜スピンを詰めて盤面を主役にする */
+  #slot .sl-betsel { margin-bottom:6px; }
+  #slot .spin-btn.king { margin-top:10px; padding:13px 12px; }
+  #slot .spin-btn.king + .note { margin-top:6px !important; }
   .sl-grid.wildflash { animation:slWildFlash .32s ease-out; }
   /* 筐体化(第70弾): 「25 LINES」はリール枠に付いた金属プレート風にする(浮いた文字にしない) */
   .sl-ways { background:linear-gradient(180deg,#f0d488,#b8871f); color:#241503 !important;
@@ -13237,7 +13243,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   var slotBetOpen = false;           // 賭け金の一覧を開いているか
   var slotBigBetOk = false;          // 高額ベットの確認を済ませたか(初回のみ聞く)
   try { slotBigBetOk = store.get("poker.slot.bigbet") === "1"; } catch (e) {}
-  var slotAnte = false;              // アンティベット(突入率2倍)
+  var slotAnte = false /* 第71弾: 画面整理でアンティBETのUIごと撤去。常に無効 */;              // アンティベット(突入率2倍)
   var slotMode = "few";             // フリーゲームのモード
   var slotGrid = null;               // いま出ている盤面
   var slotChainMult = 1;             // 連鎖の倍率
@@ -13517,23 +13523,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           <button class="sl-betop" data-betop="max">MAX</button>
         </div>
         ${slotBetOpen ? `<div class="sl-betlist">${betList.map((b, i) => `<button class="sl-betitem ${b === curBet ? "sel" : ""}" data-bet="${b}">${coin} ${fmt(b)}</button>`).join("")}</div>` : ""}
-        <div class="sl-group">
-          <div class="sl-glabel">\u30DC\u30FC\u30CA\u30B9\u30BF\u30A4\u30D7</div>
-          <div class="sl-fixedmode">
-            <b>${escapeHtml((modes.find((m) => m.key === "few") || { name: "\u4E00\u6483\u9AD8\u500D\u7387" }).name)}</b>
-            <span>${escapeHtml((modes.find((m) => m.key === "few") || { desc: "" }).desc || "")}</span>
-          </div>
-        </div>
-        <button class="sl-toggle ${slotAnte ? "on" : ""}" id="sl-ante">
-          <span class="sl-tg"><i></i></span>
-          <b>\u30A2\u30F3\u30C6\u30A3BET</b>
-          <span class="sl-tgsub">\uFF0B${fmt(Math.ceil(curBet * ((sv.anteCost || 1.5) - 1)))}\u3067\u7A81\u5165\u7387 \u00D72</span>
-        </button>
-        ${slotAnte ? `<div class="sl-cost">
-          <div class="row"><span>\u57FA\u672CBET</span><b>${coin} ${fmt(curBet)}</b></div>
-          <div class="row"><span>\u30A2\u30F3\u30C6\u30A3</span><b>\uFF0B${fmt(cost - curBet)}</b></div>
-          <div class="row total"><span>\u5408\u8A08BET</span><b>${coin} ${fmt(cost)}</b></div>
-        </div>` : ""}
         <button class="spin-btn king ${canSpin && !slotSpinning ? "idle" : ""}" id="slot-spin" ${canSpin ? "" : "disabled"}>
           ${slotSpinning ? "<b>\u56DE\u8EE2\u4E2D\u2026</b>"
             : left <= 0 ? "<b>\u672C\u65E5\u306F\u7D42\u4E86</b>"
@@ -13597,8 +13586,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     const betNow = document.getElementById("sl-betnow");
     if (betNow) betNow.onclick = () => { slotBetOpen = !slotBetOpen; renderSlot(); };
     each("[data-cur]", (b) => { b.onclick = () => { slotCur = b.dataset.cur; renderSlot(); }; });
-    const anteBtn = document.getElementById("sl-ante");
-    if (anteBtn) anteBtn.onclick = () => { slotAnte = !slotAnte; renderSlot(); };
     const spinBtn = document.getElementById("slot-spin");
     if (spinBtn) spinBtn.onclick = () => {
       const c = Math.ceil(curBet * (slotAnte ? (slotView.anteCost || 1.5) : 1));
