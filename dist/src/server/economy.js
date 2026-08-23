@@ -140,7 +140,14 @@ export const AD_REWARD_CAP = 2_000_000;
  */
 export const SLOT_CHIP_MIN_BET = 1_000;
 /** チップ建ての1日の上限。蛇口ではないので緩めでよいが、暴走時の被害を抑える安全弁として置く */
+/**
+ * 1日に回せる回数の上限。**第84弾でオーナー指示により無効化**(実際に回すとチップが減る
+ * 体感だったため)。カウント自体は統計用に続けるが、上限で止めることはしない。
+ * 表示用に十分大きい値を返す(-1等のセンチネルは古いクライアントの表示を壊すため使わない)
+ */
 export const SLOT_CHIP_DAILY_SPINS = 300;
+/** 上限チェックを行うか。false なら無制限(第84弾) */
+export const SLOT_LIMIT_ENABLED = false;
 /**
  * 賭け金の選択肢(第61弾)。
  *
@@ -742,7 +749,7 @@ export class Economy {
             chips: u?.chips ?? 0,
             chipBets: chipBetLadder(u?.chips ?? 0),
             chipMinBet: SLOT_CHIP_MIN_BET,
-            chipSpinsLeft: Math.max(0, SLOT_CHIP_DAILY_SPINS - usedChip),
+            chipSpinsLeft: SLOT_LIMIT_ENABLED ? Math.max(0, SLOT_CHIP_DAILY_SPINS - usedChip) : Number.MAX_SAFE_INTEGER,
             chipDailySpins: SLOT_CHIP_DAILY_SPINS,
             // --- 第58弾で追加した遊びの骨格 ---
             reels: REELS,
@@ -783,8 +790,10 @@ export class Economy {
         }
         const spun = this.store.getProgress(userId, 'slot:chipspins');
         const used = spun && spun.day === day ? spun.value : 0;
-        if (used >= SLOT_CHIP_DAILY_SPINS)
+        // 第84弾: 回数制限は撤廃(SLOT_LIMIT_ENABLED=false)。カウントは統計用に残す
+        if (SLOT_LIMIT_ENABLED && used >= SLOT_CHIP_DAILY_SPINS) {
             return { ok: false, error: '本日の上限に達しました' };
+        }
         // アンティベットは賭け金が増える(そのぶんフリーゲーム突入率が上がる)
         const cost = Math.ceil(bet * (opts.ante ? SLOT_CFG.anteCost : 1));
         if (u.chips < cost)
@@ -817,7 +826,7 @@ export class Economy {
             multiplier: 1,
             kind,
             goldLeft: 0,
-            spinsLeft: Math.max(0, SLOT_CHIP_DAILY_SPINS - used - 1),
+            spinsLeft: SLOT_LIMIT_ENABLED ? Math.max(0, SLOT_CHIP_DAILY_SPINS - used - 1) : Number.MAX_SAFE_INTEGER,
         };
     }
     // --- 広告(第66弾の土台) -----------------------------------------------

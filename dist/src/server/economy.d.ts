@@ -112,7 +112,14 @@ export declare const AD_REWARD_CAP = 2000000;
  */
 export declare const SLOT_CHIP_MIN_BET = 1000;
 /** チップ建ての1日の上限。蛇口ではないので緩めでよいが、暴走時の被害を抑える安全弁として置く */
+/**
+ * 1日に回せる回数の上限。**第84弾でオーナー指示により無効化**(実際に回すとチップが減る
+ * 体感だったため)。カウント自体は統計用に続けるが、上限で止めることはしない。
+ * 表示用に十分大きい値を返す(-1等のセンチネルは古いクライアントの表示を壊すため使わない)
+ */
 export declare const SLOT_CHIP_DAILY_SPINS = 300;
+/** 上限チェックを行うか。false なら無制限(第84弾) */
+export declare const SLOT_LIMIT_ENABLED = false;
 /**
  * 賭け金の選択肢(第61弾)。
  *
