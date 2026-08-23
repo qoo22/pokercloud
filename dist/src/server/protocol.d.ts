@@ -565,6 +565,8 @@ export interface SlotView {
     /** --- チップ建て(第59弾)。倍率は掛からない代わりに残高に応じた大きな額で回せる --- */
     chips: number;
     chipBets: number[];
+    /** 賭け金の上限(第88弾: 50兆) */
+    chipMaxBet?: number;
     chipMinBet: number;
     chipSpinsLeft: number;
     chipDailySpins: number;

@@ -111,6 +111,12 @@ export declare const AD_REWARD_CAP = 2000000;
  * 4% がシンク)。倍率はゴールド建て専用として残す。
  */
 export declare const SLOT_CHIP_MIN_BET = 1000;
+/**
+ * 賭け金の上限(第88弾・オーナー指定)。**50兆(50T)**。
+ * これ以上に上げても体験が変わらない(所持が桁で増えるだけで演出も配当表も同じ)ため、
+ * 段を刻む意味が無い。所持がいくらあってもここで止める。
+ */
+export declare const SLOT_CHIP_MAX_BET = 50000000000000;
 /** チップ建ての1日の上限。蛇口ではないので緩めでよいが、暴走時の被害を抑える安全弁として置く */
 /**
  * 1日に回せる回数の上限。**第84弾でオーナー指示により無効化**(実際に回すとチップが減る
@@ -411,6 +417,7 @@ export declare class Economy {
         chips: number;
         chipBets: number[];
         chipMinBet: number;
+        chipMaxBet: number;
         chipSpinsLeft: number;
         chipDailySpins: number;
         reels: number;

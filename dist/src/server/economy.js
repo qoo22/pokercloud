@@ -139,6 +139,12 @@ export const AD_REWARD_CAP = 2_000_000;
  * 4% がシンク)。倍率はゴールド建て専用として残す。
  */
 export const SLOT_CHIP_MIN_BET = 1_000;
+/**
+ * 賭け金の上限(第88弾・オーナー指定)。**50兆(50T)**。
+ * これ以上に上げても体験が変わらない(所持が桁で増えるだけで演出も配当表も同じ)ため、
+ * 段を刻む意味が無い。所持がいくらあってもここで止める。
+ */
+export const SLOT_CHIP_MAX_BET = 50_000_000_000_000;
 /** チップ建ての1日の上限。蛇口ではないので緩めでよいが、暴走時の被害を抑える安全弁として置く */
 /**
  * 1日に回せる回数の上限。**第84弾でオーナー指示により無効化**(実際に回すとチップが減る
@@ -176,7 +182,7 @@ export function chipBetLadder(balance) {
             if (v < SLOT_CHIP_MIN_BET)
                 continue;
             // 台帳の1回上限も超えない(超える賭け金は控除の時点で例外になる)
-            if (v > bal || v > SAFE_POST) {
+            if (v > bal || v > SAFE_POST || v > SLOT_CHIP_MAX_BET) {
                 k = 99;
                 break;
             }
@@ -749,6 +755,7 @@ export class Economy {
             chips: u?.chips ?? 0,
             chipBets: chipBetLadder(u?.chips ?? 0),
             chipMinBet: SLOT_CHIP_MIN_BET,
+            chipMaxBet: SLOT_CHIP_MAX_BET,
             chipSpinsLeft: SLOT_LIMIT_ENABLED ? Math.max(0, SLOT_CHIP_DAILY_SPINS - usedChip) : Number.MAX_SAFE_INTEGER,
             chipDailySpins: SLOT_CHIP_DAILY_SPINS,
             // --- 第58弾で追加した遊びの骨格 ---
@@ -783,6 +790,9 @@ export class Economy {
         // 賭け金は自由額。整数・下限以上・残高以内だけを見る
         if (!Number.isFinite(bet) || !Number.isInteger(bet) || bet < SLOT_CHIP_MIN_BET) {
             return { ok: false, error: `賭け金は ${SLOT_CHIP_MIN_BET.toLocaleString()} チップ以上の整数です` };
+        }
+        if (bet > SLOT_CHIP_MAX_BET) {
+            return { ok: false, error: `賭け金の上限は ${SLOT_CHIP_MAX_BET.toLocaleString()} チップです` };
         }
         // 台帳の1回上限(2^53対策)。ここで弾かないと控除の post が例外を投げてスピンごと壊れる
         if (bet > SAFE_POST) {

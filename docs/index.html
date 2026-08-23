@@ -1685,6 +1685,11 @@
   .slfs-bar i { display:block; height:100%; width:0;
     background:linear-gradient(90deg,#ffd76a,#ff9a3c); transition:width .3s ease; }
   .slfs-unit { font-size:9.5px; opacity:.7; }
+  /* 上乗せ(スキャッター3個以上)。稀で大きい事件なので、出たときだけ光らせる */
+  .slfs-retrig { display:inline-block; margin-left:6px; font-size:11px; font-weight:900;
+    color:#241503; background:linear-gradient(180deg,#ffe9b0,#c9992e);
+    border-radius:8px; padding:0 7px; }
+  .slfs-retrig:empty { display:none; }
   /* カウントアップ中に桁が動いても幅が暴れないようにする */
   .slc-amt { font-variant-numeric:tabular-nums; }
   /* --- 第75弾: 当選ラインの描画 --- */
@@ -1867,8 +1872,11 @@
   .sl-gridwrap { position:relative; }
   /* 告知(FREE GAME / WILD RE-SPIN / MAX WIN)はリールに**重ねる**。
      行として積むと当選のたびに下のスピンボタンが動いてしまう */
-  .sl-gridwrap .slot-win { position:absolute; left:50%; transform:translateX(-50%);
-    bottom:8px; z-index:6; width:auto; max-width:92%; white-space:nowrap;
+  .sl-gridwrap .slot-win { position:absolute; left:8px; right:8px; transform:none;
+    bottom:8px; z-index:6; width:auto; max-width:none; white-space:nowrap;
+    /* フリー中は「WIN 17.28M スペード×3 他 11 ライン WILD×2 ×12」のように長くなる。
+       はみ出して筐体の外に出ていたので、枠の内側で収まらないぶんは省略する */
+    overflow:hidden; text-overflow:ellipsis;
     margin:0; padding:4px 16px; text-align:center; pointer-events:none;
     font-size:13.5px; font-weight:800; letter-spacing:.06em; border-radius:999px;
     /* 台のほかの告知(固定WILD・リスピン)と同じ「黒漆に金縁」に揃える */
@@ -2573,12 +2581,15 @@ var PokerOffline = (() => {
      */
     stickySpins: 3,
     /**
-     * フリーゲーム中にスキャッター1個が止まるごとに上乗せする回数(第79弾)。
-     * **1スピンあたりの期待スキャッター数より小さくないと発散する**。
-     * 実運用の scatterWeight(11) なら期待 0.36 個/スピンなので 1 でも収束する。
-     * (テストでスキャッターを増やすときは、ここを 0 にしないとフリーゲームが終わらない)
+     * フリーゲーム中の上乗せ条件(第88弾・オーナー指定で変更)。
+     * **通常時の突入とまったく同じ条件**、つまり「スキャッターが3個以上」で成立し、
+     * 上乗せ回数も**通常のスタート回数と同じ**(4個/5個の上積みも同じ)。
+     *
+     * 旧仕様は「1個につき1回」だったが、ほぼ毎スピン上乗せが起きて
+     * 「いつまでも終わらないが1回あたりは軽い」という締まりの無い流れになっていた。
+     * 3個以上は稀(通常時の突入率と同じ ≒ 1/188)なので発散しない。
      */
-    freeAddPerScatter: 1,
+    freeRetriggerMinScatter: 3,
     /**
      * 1回のフリーゲームで回せる上限。上乗せが続いても必ず終わるようにする安全弁。
      * 上限に張り付くようならスキャッターの重みか上乗せ数が過大ということ。
@@ -2762,7 +2773,7 @@ var PokerOffline = (() => {
           }
         }
         const sc = countScatter(g);
-        let add = sc * SLOT_CFG.freeAddPerScatter;
+        let add = sc >= SLOT_CFG.freeRetriggerMinScatter ? mode.spins + (sc >= 5 ? 6 : sc === 4 ? 3 : 0) : 0;
         if (total + add > SLOT_CFG.freeSpinsCap) add = Math.max(0, SLOT_CFG.freeSpinsCap - total);
         if (add > 0) {
           left += add;
@@ -2851,6 +2862,7 @@ var PokerOffline = (() => {
   var AD_REWARD_FLOOR = 2e4;
   var AD_REWARD_CAP = 2e6;
   var SLOT_CHIP_MIN_BET = 1e3;
+  var SLOT_CHIP_MAX_BET = 5e13;
   var SLOT_CHIP_DAILY_SPINS = 300;
   var SLOT_LIMIT_ENABLED = false;
   var SAFE_POST = 9e15;
@@ -2862,7 +2874,7 @@ var PokerOffline = (() => {
       for (const m of [1, 2, 5]) {
         const v = m * Math.pow(10, k);
         if (v < SLOT_CHIP_MIN_BET) continue;
-        if (v > bal || v > SAFE_POST) {
+        if (v > bal || v > SAFE_POST || v > SLOT_CHIP_MAX_BET) {
           k = 99;
           break;
         }
@@ -3331,6 +3343,7 @@ var PokerOffline = (() => {
         chips: u?.chips ?? 0,
         chipBets: chipBetLadder(u?.chips ?? 0),
         chipMinBet: SLOT_CHIP_MIN_BET,
+        chipMaxBet: SLOT_CHIP_MAX_BET,
         chipSpinsLeft: SLOT_LIMIT_ENABLED ? Math.max(0, SLOT_CHIP_DAILY_SPINS - usedChip) : Number.MAX_SAFE_INTEGER,
         chipDailySpins: SLOT_CHIP_DAILY_SPINS,
         // --- 第58弾で追加した遊びの骨格 ---
@@ -3363,6 +3376,9 @@ var PokerOffline = (() => {
       const day = today(this.now());
       if (!Number.isFinite(bet) || !Number.isInteger(bet) || bet < SLOT_CHIP_MIN_BET) {
         return { ok: false, error: `\u8CED\u3051\u91D1\u306F ${SLOT_CHIP_MIN_BET.toLocaleString()} \u30C1\u30C3\u30D7\u4EE5\u4E0A\u306E\u6574\u6570\u3067\u3059` };
+      }
+      if (bet > SLOT_CHIP_MAX_BET) {
+        return { ok: false, error: `\u8CED\u3051\u91D1\u306E\u4E0A\u9650\u306F ${SLOT_CHIP_MAX_BET.toLocaleString()} \u30C1\u30C3\u30D7\u3067\u3059` };
       }
       if (bet > SAFE_POST) {
         return { ok: false, error: `\u8CED\u3051\u91D1\u306F ${SAFE_POST.toLocaleString()} \u30C1\u30C3\u30D7\u307E\u3067\u3067\u3059` };
@@ -14174,7 +14190,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         \u30EA\u30FC\u30EB1\u306BWILD\u304C3\u3064\u91CD\u306A\u308B\u3068<b>WILD RE-SPIN</b>\uFF1A\u30EA\u30FC\u30EB1\u3092\u56FA\u5B9A\u3057\u305F\u307E\u307E\u6B8B\u308A\u3092\u7121\u6599\u3067\u3082\u30461\u56DE\u56DE\u3057\u307E\u3059\u3002
         \u2605 3\u3064\u3067<b>\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0</b>\u3002\u958B\u59CB\u6642\u306B<b>WILD\u914D\u5F53\uFF08\u00D72\u301C\u00D75\uFF09</b>\u3092\u30EB\u30FC\u30EC\u30C3\u30C8\u3067\u62BD\u9078\u3002
         \u30D5\u30EA\u30FC\u4E2D\u306F\u6B62\u307E\u3063\u305FWILD\u304C<b>\u305D\u306E\u30DE\u30B9\u306B\u30DB\u30FC\u30EB\u30C9</b>\u3055\u308C\u3001\u5F53\u305F\u308B\u305F\u3073\u306B<b>\u500D\u7387\u304C\u7A4D\u307F\u4E0A\u304C\u308A</b>\u307E\u3059\uFF08\u4E00\u6483\u9AD8\u500D\u7387: \u00D75\u304B\u3089+7\u305A\u3064\uFF09\u3002
-        \u30D5\u30EA\u30FC\u4E2D\u306E\u2605\u306F<b>1\u500B\u306B\u3064\u304D1\u56DE\u4E0A\u4E57\u305B</b>\u3002\u914D\u5F53\u306B\u4E0A\u9650\u306F\u3042\u308A\u307E\u305B\u3093\u3002
+        \u30D5\u30EA\u30FC\u4E2D\u3082\u2605\u304C<b>3\u3064\u4EE5\u4E0A</b>\u3067<b>\u7A81\u5165\u6642\u3068\u540C\u3058\u56DE\u6570\u3092\u4E0A\u4E57\u305B</b>\u3002\u914D\u5F53\u306B\u4E0A\u9650\u306F\u3042\u308A\u307E\u305B\u3093\u3002
       </div>
 
       <table class="paytable">
@@ -14195,7 +14211,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     const setBet = (v, full) => {
       let n = Math.floor(Number(v));
       if (!Number.isFinite(n)) n = minBet;
-      n = Math.max(minBet, Math.min(n, Math.max(minBet, have)));
+      // 所持だけでなく**上限(既定50兆)**でも止める。ここを超えるとサーバーに弾かれる
+      const maxBet = sv.chipMaxBet || Infinity;
+      n = Math.max(minBet, Math.min(n, Math.max(minBet, Math.min(have, maxBet))));
       if (slotCur === "chips") slotChipBet = n; else slotBet = n;
       if (full) { renderSlot(); return n; }
       // 入力中はフォーカスを飛ばさないよう、必要な表示だけ直に書き換える
@@ -14203,7 +14221,15 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       const sb = document.getElementById("slot-spin");
       if (sb) {
         sb.disabled = !(n > 0 && have >= c);
-        if (!slotSpinning) sb.textContent = have < c ? (isChips ? "\u30C1\u30C3\u30D7\u4E0D\u8DB3" : "\u30B4\u30FC\u30EB\u30C9\u4E0D\u8DB3") : "\u307E\u308F\u3059 " + coin + fmt(c);
+        // **押せる状態なら必ず光らせる**。ここで idle を付け直さないと、
+        // 賭け金を変えた直後だけ「押せるのに黒いボタン」になる
+        sb.classList.toggle("idle", !sb.disabled && !slotSpinning && !slotAutoRunning());
+        if (!slotSpinning) {
+          // 描画時と同じ2行の形を保つ(textContent だと1行になって高さの理由が消える)
+          sb.innerHTML = have < c
+            ? "<b>" + (isChips ? "\u30C1\u30C3\u30D7\u4E0D\u8DB3" : "\u30B4\u30FC\u30EB\u30C9\u4E0D\u8DB3") + "</b>"
+            : "<b>\u30B9\u30D4\u30F3</b><span>\u6D88\u8CBB " + coin + " " + fmt(c) + "</span>";
+        }
       }
       each("[data-bet]", (x) => x.classList.toggle("sel", Number(x.dataset.bet) === n));
       return n;
@@ -15284,13 +15310,17 @@ window.__offlineSave = PokerOffline.startOfflineServer();
    * こうするとタンブル(絵柄が消えて落ちる)と倍率の伸びを同時に見られる。
    */
   function slotFsOverlay(mode, total, wildMult) {
-    const machine = document.querySelector("#slot .slot-machine");
     const grid = document.getElementById("sl-grid");
     let ov = document.getElementById("sl-fs");
     if (!ov) {
       ov = document.createElement("div");
       ov.id = "sl-fs";
-      if (machine && grid) machine.insertBefore(ov, grid);   // 盤面の直前に置く
+      // 盤面の直前に置く。**基準ノードの親から呼ぶこと**。
+      // 第86弾で盤面を .sl-gridwrap で包んだため、machine を親にして grid を基準に挿すと
+      // 「grid は machine の子ではない」で NotFoundError になり、
+      // フリーゲームの演出がまるごと飛んで結果画面だけが出ていた。
+      const anchor = grid ? (grid.closest(".sl-gridwrap") || grid) : null;
+      if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(ov, anchor);
       else document.body.appendChild(ov);
     }
     ov.innerHTML = '<div class="slfs-row">'
@@ -15298,7 +15328,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       + '<div class="slfs-mode">' + escapeHtml(mode) + '</div></div>'
       + '<div class="slfs-mult">\u00D7<b id="slfs-m">1</b></div>'
       + '<div class="slfs-r"><div class="slfs-count"><b id="slfs-i">0</b> / ' + total
-      + ' <span class="slfs-unit">\u30B2\u30FC\u30E0\u76EE</span></div>'
+      + ' <span class="slfs-unit">\u30B2\u30FC\u30E0\u76EE</span>'
+      + '<span class="slfs-retrig" id="slfs-retrig"></span></div>'
       + '<div class="slfs-win" id="slfs-w"></div></div></div>'
       + '<div class="slfs-bar"><i id="slfs-bar"></i></div>'
       + (wildMult ? '<div class="sl-wildmult">WILD\u914D\u5F53 <b>\u00D7' + wildMult + '</b></div>' : "");
@@ -15327,7 +15358,10 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     // --- 通常時 ---
     // まず今回出た盤面を必ず見せる(ハズレでもリールが止まって見えるように)
     // 3連WILDが止まったリールを、この瞬間から金枠+前面レイヤーで固定する
-    const stacked = oc.stackedReels || [];
+    // リスピンが起きるのは**一番左のリールだけ**(第79弾)。
+    // 2〜5列目の3連WILDは「ただの強い盤面」なので、金枠固定も RE-SPIN 告知も出さない。
+    // ここを全リールにしていたため、リスピンが無いのに有るように見えていた(第88弾で修正)
+    const stacked = (oc.stackedReels || []).filter((r) => r === 0);
     slotLockedReels = stacked.slice();
     // 停止アニメーションが並べた盤面をそのまま使う(作り直すと着地の跳ねが消える)
     if (oc.grid0) slotAdoptGrid(oc.grid0);
@@ -15398,7 +15432,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         // 固定リールも後ろで回るが、前面のWILDレイヤーが残るので固定に見える
         slotPaceStart = Date.now();   // フリーは1ゲームごとに時計を入れ直す
         slotSpinAnimStart();
-        await slotSleep(300);
+        // 1ゲームずつ**ちゃんと回っているのが見える**長さを取る。
+        // 300ms だと止まる前に次へ行くので「盤面が差し替わっただけ」に見えていた
+        await slotSleep(560);
         await slotSpinAnimStop(fsp.grid0, { fast: true });
         if (fsp.grid0) slotAdoptGrid(fsp.grid0);
         if (fresh.length) {
@@ -15408,9 +15444,16 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           await slotSleep(520);                   // 新しくホールドされた合図を見せる
           slotFreshCells = new Set();             // 演出は1回だけ
         }
-        // 上乗せがあったら総回数の表示を伸ばす
+        // 上乗せ(第88弾: スキャッター3個以上でのみ発生し、通常のスタート回数と同じだけ増える)。
+        // 稀で大きい事件になったので、告知を出して総回数の表示も伸ばす
         if (fsp.addedSpins > 0) {
           ov.dataset.total = String((Number(ov.dataset.total) || 0) + fsp.addedSpins);
+          play("bigwin");
+          slotSetWin("★★★ ＋" + fsp.addedSpins + " ゲーム上乗せ！", "big");
+          const rt = document.getElementById("slfs-retrig");
+          if (rt) { rt.textContent = "＋" + fsp.addedSpins; rt.classList.remove("pop");
+            void rt.offsetWidth; rt.classList.add("pop"); }
+          await slotSleep(900);
         }
         await slotPlaySteps(fsp.steps, r.bet, sv, true);
         const mc = document.getElementById("slfs-m");
@@ -15420,8 +15463,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         const wc0 = document.getElementById("slfs-w");
         if (wc0 && acc > 0) wc0.textContent = "+" + fmt(acc);
         // リトリガー分は spinsTotal に最初から含まれているので、総数の書き換えは不要
-        if (fsp.retrigger) play("win");
-        await slotSleep(fsp.steps.length ? 260 : 340);
+        await slotSleep(fsp.steps.length ? 320 : 400);
       }
       slotLockedReels = [];
       slotHeldCells = new Set(); slotFreshCells = new Set();
