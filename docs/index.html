@@ -15592,15 +15592,18 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         // 何ゲーム目か / 残り何回か。**残りは常に見えている**ことが大事なので毎回書き換える
         const setNum = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
         const tot = fsp.spinsTotalSoFar || Number(ov.dataset.total) || oc.free.spinsTotal || i;
-        ov.dataset.total = String(tot);
+        // 上乗せがあるゲームでも、**総回数は演出が終わるまで書き換えない**。
+        // 先に「4 / 12」と出してしまうと、RETRIGGER の演出より前に種が割れる
+        const totBefore = tot - (fsp.addedSpins || 0);
+        ov.dataset.total = String(totBefore);
         setNum("slfs-i", i);
-        setNum("slfs-tot", tot);
+        setNum("slfs-tot", totBefore);
         // 残り回数は資料どおり「n / 総数」と対で出す(4 / 8 なら 残り4回)。
-        // 上乗せぶんは再トリガー演出の中で足すので、ここでは引く前の値を出す
+        // 上乗せぶんは再トリガー演出の中で足す
         const leftBefore = (fsp.spinsLeft || 0) - (fsp.addedSpins || 0);
         setNum("slfs-left", leftBefore);
         const bar = document.getElementById("slfs-bar");
-        if (bar) bar.style.width = Math.min(100, Math.round(i / tot * 100)) + "%";
+        if (bar) bar.style.width = Math.min(100, Math.round(i / totBefore * 100)) + "%";
         // WILDは**コマ単位でホールド**される(第79弾)。新しく増えたぶんだけ演出する
         const held = (fsp.heldCells || []).map((c) => c[0] + "," + c[1]);
         const fresh = (fsp.freshCells || []).map((c) => c[0] + "," + c[1]);
@@ -15625,8 +15628,12 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         // 上乗せ(3個=+4 / 4個=+8 / 5個=+12)。短い専用演出で「増えた」ところを見せる。
         // 通常の突入演出はやり直さない(長すぎて流れが切れる)
         if (fsp.addedSpins > 0) {
+          // 残り回数が増えるところを見せてから、総回数を新しい値に差し替える
           await slotFsRetrigger(fsp.addedSpins, leftBefore, fsp.spinsLeft, fsp.scatters);
+          ov.dataset.total = String(tot);
           setNum("slfs-tot", tot);
+          const bar2 = document.getElementById("slfs-bar");
+          if (bar2) bar2.style.width = Math.min(100, Math.round(i / tot * 100)) + "%";
         }
         await slotPlaySteps(fsp.steps, r.bet, sv, true);
         const mc = document.getElementById("slfs-m");
