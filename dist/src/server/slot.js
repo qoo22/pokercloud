@@ -108,20 +108,22 @@ export const SLOT_CFG = {
      */
     stickySpins: 3,
     /**
-     * フリーゲーム中の上乗せ条件(第88弾・オーナー指定で変更)。
-     * **通常時の突入とまったく同じ条件**、つまり「スキャッターが3個以上」で成立し、
-     * 上乗せ回数も**通常のスタート回数と同じ**(4個/5個の上積みも同じ)。
-     *
-     * 旧仕様は「1個につき1回」だったが、ほぼ毎スピン上乗せが起きて
-     * 「いつまでも終わらないが1回あたりは軽い」という締まりの無い流れになっていた。
-     * 3個以上は稀(通常時の突入率と同じ ≒ 1/188)なので発散しない。
+     * 突入時のフリーゲーム回数(第89弾・オーナー指定)。スキャッターの個数で決まる。
+     * 固定WILDが溜まるほど後半の1回が重くなるため、10/15/20 ではなく 8/12/16 に据える。
      */
-    freeRetriggerMinScatter: 3,
+    freeSpinsByScatter: { 3: 8, 4: 12, 5: 16 },
     /**
-     * 1回のフリーゲームで回せる上限。上乗せが続いても必ず終わるようにする安全弁。
-     * 上限に張り付くようならスキャッターの重みか上乗せ数が過大ということ。
+     * フリーゲーム中の上乗せ(第89弾・オーナー指定)。突入と同じ「3個以上」で成立するが、
+     * **回数は突入より小さい**(固定WILDが載った状態で回せるぶん1回の価値が高いため)。
+     * 再トリガー回数に上限は設けない。
      */
-    freeSpinsCap: 60,
+    freeRetriggerByScatter: { 3: 4, 4: 8, 5: 12 },
+    /**
+     * 暴走止め。**仕様上の上限ではない**(オーナー指定で再トリガーに上限は無い)。
+     * 3個以上が出る確率は1スピンあたり 0.5% 前後、期待上乗せは +0.02 回/スピンなので
+     * 収束する。ここに張り付くのは抽選が壊れたときだけ。
+     */
+    freeSpinsGuard: 500,
 };
 /** フリーゲームでWILDが絡んだ当選に掛かる倍率の抽選(値と重み)。同一ラインには1回だけ */
 export const WILD_MULT_TABLE = [
@@ -175,9 +177,17 @@ function newGrid(rnd, scatterWeight) {
     const g = [];
     for (let r = 0; r < REELS; r++) {
         const table = reelTable(r, scatterWeight);
+        // スキャッター無しの表。**1リールにつき最大1個**にするため、2個目からはこちらで引き直す。
+        // (実機と同じ規則。これが無いと1リールに3個並んで「5個」が安く出すぎる)
+        const noScatter = table.filter((e) => e.key !== 'scatter');
         const col = [];
-        for (let y = 0; y < ROWS; y++)
-            col.push(drawFrom(table, rnd));
+        let hasScatter = false;
+        for (let y = 0; y < ROWS; y++) {
+            const k = drawFrom(hasScatter ? noScatter : table, rnd);
+            if (k === 'scatter')
+                hasScatter = true;
+            col.push(k);
+        }
         g.push(col);
     }
     return g;
@@ -341,8 +351,8 @@ export function spin(rnd, opts = {}) {
     }
     if (out.freeEntered) {
         const mode = FREE_MODES.find((m) => m.key === (opts.mode ?? 'many')) ?? FREE_MODES[0];
-        // 4個/5個で追加スピン
-        let left = mode.spins + (scatters >= 5 ? 6 : scatters === 4 ? 3 : 0);
+        // 突入回数はスキャッターの個数で決まる(3個=8 / 4個=12 / 5個=16)
+        let left = SLOT_CFG.freeSpinsByScatter[Math.min(scatters, 5)] ?? SLOT_CFG.freeSpinsByScatter[3];
         let total = left;
         let mult = mode.startMult;
         let payX = 0;
@@ -355,7 +365,7 @@ export function spin(rnd, opts = {}) {
         // 残りのリールだけが回る。溜まるほど強くなる = 引き伸ばす動機になる。
         const held = new Set();
         // 安全弁: 上乗せが続いても止まるように上限を置く
-        for (let guard = 0; left > 0 && guard < SLOT_CFG.freeSpinsCap + 10; guard++) {
+        for (let guard = 0; left > 0 && guard < SLOT_CFG.freeSpinsGuard; guard++) {
             left--;
             const g = newGrid(rnd, sw);
             // ①ホールド済みのWILDを先に貼る(ここは回っていない扱い)
@@ -377,15 +387,10 @@ export function spin(rnd, opts = {}) {
                     fresh.push([r, y]);
                 }
             }
-            // ③スキャッターが**3個以上**止まったら、通常のスタート回数と同じだけ上乗せする。
-            //    (第88弾) 条件も回数も突入時とまったく同じにしてある。
-            //    上限に達したらそれ以上は増やさない(発散防止)
+            // ③スキャッターが3個以上で上乗せ(3個=+4 / 4個=+8 / 5個=+12)。回数に上限は無い。
+            //    既に置かれている固定WILDは再トリガー後もそのまま残る(held を消さない)
             const sc = countScatter(g);
-            let add = sc >= SLOT_CFG.freeRetriggerMinScatter
-                ? mode.spins + (sc >= 5 ? 6 : sc === 4 ? 3 : 0)
-                : 0;
-            if (total + add > SLOT_CFG.freeSpinsCap)
-                add = Math.max(0, SLOT_CFG.freeSpinsCap - total);
+            const add = sc >= 3 ? (SLOT_CFG.freeRetriggerByScatter[Math.min(sc, 5)] ?? 0) : 0;
             if (add > 0) {
                 left += add;
                 total += add;
@@ -401,6 +406,9 @@ export function spin(rnd, opts = {}) {
             spins.push({
                 grid0: g, steps: run.steps, multAfter: mult, payX: run.payX,
                 retrigger: add > 0, addedSpins: add,
+                scatters: sc,
+                // このスピンを消化したあとに何回残っているか。上乗せぶんは加算済み
+                spinsLeft: left, spinsTotalSoFar: total,
                 heldCells: [...held].map((k) => k.split(',').map(Number)),
                 freshCells: fresh,
             });

@@ -1521,9 +1521,56 @@
   .slfs-mult { font-size:15px; font-weight:800; color:#ffb54d; line-height:1; }
   .slfs-mult b { font-size:30px; line-height:1; text-shadow:0 0 16px rgba(255,150,60,.8); }
   .slfs-mult b.pop { animation:slPop .34s cubic-bezier(.2,1.6,.4,1); }
-  .slfs-count { font-size:12px; opacity:.9; }
-  .slfs-count b { font-size:17px; color:#ffd76a; }
-  .slfs-win { font-size:13px; font-weight:900; color:#8ff2a8; min-height:16px; }
+  .slfs-count { font-size:11px; opacity:.8; }
+  .slfs-count b { font-size:14px; color:#ffd76a; }
+  /* 残り回数。常に見えていることが大事なので、ゲーム数より大きく出す */
+  .slfs-left { font-size:11px; color:#e2d3ae; letter-spacing:.06em; }
+  .slfs-left b { font-size:22px; font-weight:900; color:#ffd76a; line-height:1;
+    font-variant-numeric:tabular-nums; text-shadow:0 0 14px rgba(255,190,80,.6); }
+  .slfs-left b.roll { animation:slfsRoll .5s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes slfsRoll {
+    0%   { transform:translateY(0)   scale(1); }
+    35%  { transform:translateY(-6px) scale(1.35); color:#fff6d5; }
+    100% { transform:translateY(0)   scale(1); }
+  }
+  /* 総獲得と今回の獲得は必ず分けて出す(混ざると「今の1回で勝った額」が分からない) */
+  .slfs-wins { display:flex; gap:8px; margin-top:6px; }
+  .slfs-wcell { flex:1; display:flex; align-items:baseline; gap:6px;
+    padding:3px 8px; border-radius:8px; background:rgba(0,0,0,.28);
+    border:1px solid rgba(217,180,95,.28); }
+  .slfs-wcell span { font-size:9px; letter-spacing:.14em; color:#c2a05c; }
+  .slfs-wcell b { margin-left:auto; font-size:14px; font-weight:900; color:#ffd76a;
+    font-variant-numeric:tabular-nums; }
+  .slfs-wcell.now b { color:#ffe9b0; }
+  .slfs-wcell.now b.pop { animation:slPop .34s cubic-bezier(.2,1.6,.4,1); }
+  .sl-wildmult span { display:block; font-size:9px; opacity:.7; margin-top:1px; }
+  /* 再トリガーの短い告知(通常の突入演出はやり直さない) */
+  #sl-retrig { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    z-index:8; text-align:center; pointer-events:none;
+    padding:10px 22px; border-radius:12px; white-space:nowrap;
+    background:linear-gradient(180deg, rgba(36,20,8,.95), rgba(12,6,4,.95));
+    border:2px solid rgba(255,215,106,.9);
+    box-shadow:0 0 34px rgba(255,190,80,.7), 0 6px 22px rgba(0,0,0,.7);
+    animation:slRetrig .6s ease-out; }
+  #sl-retrig b { display:block; font-size:13px; letter-spacing:.24em; color:#ffe9b0; }
+  #sl-retrig i { display:block; font-style:normal; font-size:22px; font-weight:900; color:#ffd76a;
+    font-family:"Didot","Bodoni 72",Georgia,serif; margin-top:2px; }
+  @keyframes slRetrig {
+    0%   { opacity:0; transform:translate(-50%,-50%) scale(.7); }
+    22%  { opacity:1; transform:translate(-50%,-50%) scale(1.06); }
+    100% { opacity:1; transform:translate(-50%,-50%) scale(1); }
+  }
+  /* 再トリガー時にスキャッターと固定WILDを一度だけ光らせる */
+  .sl-cell.scflash img { animation:slScFlash .5s ease-out 2; }
+  @keyframes slScFlash {
+    0%,100% { filter:none; transform:scale(1); }
+    45%     { filter:brightness(1.9) drop-shadow(0 0 16px rgba(120,220,255,.95)); transform:scale(1.12); }
+  }
+  .sl-cell.held.wflash img { animation:slWFlash .45s ease-out 2; }
+  @keyframes slWFlash {
+    0%,100% { filter:none; }
+    45%     { filter:brightness(1.8) drop-shadow(0 0 18px rgba(255,215,106,1)); }
+  }
   /* フリーゲーム中は盤面を金枠で強調する */
   body.fs-play .sl-grid { border-color:rgba(255,190,80,.9);
     box-shadow:inset 0 2px 12px rgba(0,0,0,.6), 0 0 26px rgba(255,170,60,.45); }
@@ -1828,10 +1875,53 @@
   .sl-total b { font-size:19px; font-weight:900; color:#8ff2a8; font-variant-numeric:tabular-nums; }
   .sl-total .sl-cyc { font-size:10px; opacity:.65; }
   /* ホールドされたWILDのマス(コマ単位) */
-  .sl-cell.held { box-shadow:0 0 0 2px #ffd76a, 0 0 14px rgba(255,215,106,.7); z-index:2; }
+  /* ===== 第89弾: 固定WILD =====
+     資料どおり「リールの上に別レイヤーで置き、完全に静止させる」。
+     背後のリールは通常どおり回るが、このマスだけは1pxも動かない */
+  .sl-cell.held { z-index:3;
+    box-shadow:0 0 0 2px #ffd76a, 0 0 14px rgba(255,215,106,.7);
+    /* 固定WILDの背後だけ少し暗くして、回っている絵柄と切り分ける */
+    background:rgba(6,3,10,.82) !important; }
+  .sl-cell.held img { animation:none !important; transform:none !important; filter:none !important; }
   .sl-cell.held::after { content:"\1F512"; position:absolute; right:2px; top:1px;
-    font-size:9px; opacity:.9; z-index:3; }
-  .sl-cell.heldnew img { animation:slLockIn .55s cubic-bezier(.2,1.5,.4,1); }
+    font-size:9px; opacity:.9; z-index:4; }
+  /* 回転中は弱い呼吸発光だけ(毎スピン鍵の演出を繰り返さない) */
+  .sl-grid.spinning .sl-cell.held { animation:slHoldBreath 1.6s ease-in-out infinite; }
+  @keyframes slHoldBreath {
+    0%,100% { box-shadow:0 0 0 2px rgba(255,215,106,.75), 0 0 10px rgba(255,215,106,.4); }
+    50%     { box-shadow:0 0 0 2px #ffd76a, 0 0 20px rgba(255,215,106,.85); }
+  }
+  /* 当選ラインに関与した瞬間だけ強く光る */
+  .sl-cell.held.hit { box-shadow:0 0 0 3px #fff6d5, 0 0 30px rgba(255,215,106,1); }
+  /* 新しく固定された瞬間だけ、資料の 0〜0.55 秒のタイムラインを流す:
+     重い停止 → 1.10倍に拡大して 8px 沈む → 反動で戻る → 四辺を金の光が一周 → 鍵が閉じる */
+  .sl-cell.heldnew img { animation:slStickIn .5s cubic-bezier(.2,1.5,.4,1); }
+  @keyframes slStickIn {
+    0%   { transform:translateY(0) scale(1); }
+    20%  { transform:translateY(8px) scale(1.10); filter:brightness(1.6); }
+    50%  { transform:translateY(-3px) scale(1.10); }
+    100% { transform:translateY(0) scale(1); }
+  }
+  .sl-cell.heldnew::before { content:""; position:absolute; inset:-2px; z-index:5;
+    border-radius:7px; pointer-events:none;
+    background:conic-gradient(from 0deg, transparent 0 78%, rgba(255,231,176,.95) 86%, transparent 92%);
+    animation:slStickRing .5s linear .2s 1 forwards; }
+  @keyframes slStickRing {
+    from { transform:rotate(0deg); opacity:1; }
+    to   { transform:rotate(360deg); opacity:0; }
+  }
+  /* 突入演出の「昇格」表示 */
+  .fsin-up { min-height:34px; margin-top:4px; opacity:0; transition:opacity .2s ease; }
+  .fsin-up.show { opacity:1; }
+  .fsin-up b { display:block; font-size:12px; letter-spacing:.24em; color:#ffe9b0; }
+  .fsin-up i { display:block; font-style:normal; font-size:20px; font-weight:900; color:#ffd76a;
+    font-family:"Didot","Bodoni 72",Georgia,serif; }
+  .fsin-count b.bump { display:inline-block; animation:slPop .45s cubic-bezier(.2,1.7,.35,1); }
+  #sl-fsin.super { animation:slSuperFlash .5s ease-out; }
+  @keyframes slSuperFlash {
+    0%   { background:rgba(255,246,213,.85); }
+    100% { background:none; }
+  }
   /* --- 第79弾: WILD倍率の同心円ルーレット(実機の Bonus Wheel を模す) --- */
   .wr-wrap { position:relative; width:210px; height:210px; margin:14px auto 4px; }
   .wr-ring { position:absolute; border-radius:50%; inset:0;
@@ -2581,20 +2671,22 @@ var PokerOffline = (() => {
      */
     stickySpins: 3,
     /**
-     * フリーゲーム中の上乗せ条件(第88弾・オーナー指定で変更)。
-     * **通常時の突入とまったく同じ条件**、つまり「スキャッターが3個以上」で成立し、
-     * 上乗せ回数も**通常のスタート回数と同じ**(4個/5個の上積みも同じ)。
-     *
-     * 旧仕様は「1個につき1回」だったが、ほぼ毎スピン上乗せが起きて
-     * 「いつまでも終わらないが1回あたりは軽い」という締まりの無い流れになっていた。
-     * 3個以上は稀(通常時の突入率と同じ ≒ 1/188)なので発散しない。
+     * 突入時のフリーゲーム回数(第89弾・オーナー指定)。スキャッターの個数で決まる。
+     * 固定WILDが溜まるほど後半の1回が重くなるため、10/15/20 ではなく 8/12/16 に据える。
      */
-    freeRetriggerMinScatter: 3,
+    freeSpinsByScatter: { 3: 8, 4: 12, 5: 16 },
     /**
-     * 1回のフリーゲームで回せる上限。上乗せが続いても必ず終わるようにする安全弁。
-     * 上限に張り付くようならスキャッターの重みか上乗せ数が過大ということ。
+     * フリーゲーム中の上乗せ(第89弾・オーナー指定)。突入と同じ「3個以上」で成立するが、
+     * **回数は突入より小さい**(固定WILDが載った状態で回せるぶん1回の価値が高いため)。
+     * 再トリガー回数に上限は設けない。
      */
-    freeSpinsCap: 60
+    freeRetriggerByScatter: { 3: 4, 4: 8, 5: 12 },
+    /**
+     * 暴走止め。**仕様上の上限ではない**(オーナー指定で再トリガーに上限は無い)。
+     * 3個以上が出る確率は1スピンあたり 0.5% 前後、期待上乗せは +0.02 回/スピンなので
+     * 収束する。ここに張り付くのは抽選が壊れたときだけ。
+     */
+    freeSpinsGuard: 500
   };
   var WILD_MULT_TABLE = [
     { m: 2, w: 50 },
@@ -2628,8 +2720,14 @@ var PokerOffline = (() => {
     const g = [];
     for (let r = 0; r < REELS; r++) {
       const table = reelTable(r, scatterWeight);
+      const noScatter = table.filter((e) => e.key !== "scatter");
       const col = [];
-      for (let y = 0; y < ROWS; y++) col.push(drawFrom(table, rnd2));
+      let hasScatter = false;
+      for (let y = 0; y < ROWS; y++) {
+        const k = drawFrom(hasScatter ? noScatter : table, rnd2);
+        if (k === "scatter") hasScatter = true;
+        col.push(k);
+      }
       g.push(col);
     }
     return g;
@@ -2747,14 +2845,14 @@ var PokerOffline = (() => {
     }
     if (out.freeEntered) {
       const mode = FREE_MODES.find((m) => m.key === (opts.mode ?? "many")) ?? FREE_MODES[0];
-      let left = mode.spins + (scatters >= 5 ? 6 : scatters === 4 ? 3 : 0);
+      let left = SLOT_CFG.freeSpinsByScatter[Math.min(scatters, 5)] ?? SLOT_CFG.freeSpinsByScatter[3];
       let total = left;
       let mult = mode.startMult;
       let payX = 0;
       const spins = [];
       const wildMult = drawWildMult(rnd2);
       const held = /* @__PURE__ */ new Set();
-      for (let guard = 0; left > 0 && guard < SLOT_CFG.freeSpinsCap + 10; guard++) {
+      for (let guard = 0; left > 0 && guard < SLOT_CFG.freeSpinsGuard; guard++) {
         left--;
         const g = newGrid(rnd2, sw);
         for (const key of held) {
@@ -2773,8 +2871,7 @@ var PokerOffline = (() => {
           }
         }
         const sc = countScatter(g);
-        let add = sc >= SLOT_CFG.freeRetriggerMinScatter ? mode.spins + (sc >= 5 ? 6 : sc === 4 ? 3 : 0) : 0;
-        if (total + add > SLOT_CFG.freeSpinsCap) add = Math.max(0, SLOT_CFG.freeSpinsCap - total);
+        const add = sc >= 3 ? SLOT_CFG.freeRetriggerByScatter[Math.min(sc, 5)] ?? 0 : 0;
         if (add > 0) {
           left += add;
           total += add;
@@ -2789,6 +2886,10 @@ var PokerOffline = (() => {
           payX: run.payX,
           retrigger: add > 0,
           addedSpins: add,
+          scatters: sc,
+          // このスピンを消化したあとに何回残っているか。上乗せぶんは加算済み
+          spinsLeft: left,
+          spinsTotalSoFar: total,
           heldCells: [...held].map((k) => k.split(",").map(Number)),
           freshCells: fresh
         });
@@ -14188,9 +14289,10 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         <b>\u904A\u3073\u65B9</b>
         ${sv.lines || 25}\u672C\u306E\u30E9\u30A4\u30F3\u306E\u3069\u308C\u304B\u3067\u3001\u5DE6\u7AEF\u304B\u3089\u9023\u7D9A\u3067\u540C\u3058\u7D75\u67C4\u304C3\u3064\u4EE5\u4E0A\u4E26\u3079\u3070\u914D\u5F53\u3067\u3059\u3002
         \u30EA\u30FC\u30EB1\u306BWILD\u304C3\u3064\u91CD\u306A\u308B\u3068<b>WILD RE-SPIN</b>\uFF1A\u30EA\u30FC\u30EB1\u3092\u56FA\u5B9A\u3057\u305F\u307E\u307E\u6B8B\u308A\u3092\u7121\u6599\u3067\u3082\u30461\u56DE\u56DE\u3057\u307E\u3059\u3002
-        \u2605 3\u3064\u3067<b>\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0</b>\u3002\u958B\u59CB\u6642\u306B<b>WILD\u914D\u5F53\uFF08\u00D72\u301C\u00D75\uFF09</b>\u3092\u30EB\u30FC\u30EC\u30C3\u30C8\u3067\u62BD\u9078\u3002
+        \u2605\u306F\u5168\u30EA\u30FC\u30EB\u306B\u51FA\u3066\uFF081\u30EA\u30FC\u30EB\u306B\u6700\u59271\u500B\uFF09\u3001<b>3\u500B=8\u56DE / 4\u500B=12\u56DE / 5\u500B=16\u56DE</b>\u306E<b>\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0</b>\u3002
+        \u958B\u59CB\u6642\u306B<b>WILD\u914D\u5F53\uFF08\u00D72\u301C\u00D75\uFF09</b>\u3092\u30EB\u30FC\u30EC\u30C3\u30C8\u3067\u62BD\u9078\u3057\u3001\u7D42\u4E86\u307E\u3067\u56FA\u5B9A\u3002
         \u30D5\u30EA\u30FC\u4E2D\u306F\u6B62\u307E\u3063\u305FWILD\u304C<b>\u305D\u306E\u30DE\u30B9\u306B\u30DB\u30FC\u30EB\u30C9</b>\u3055\u308C\u3001\u5F53\u305F\u308B\u305F\u3073\u306B<b>\u500D\u7387\u304C\u7A4D\u307F\u4E0A\u304C\u308A</b>\u307E\u3059\uFF08\u4E00\u6483\u9AD8\u500D\u7387: \u00D75\u304B\u3089+7\u305A\u3064\uFF09\u3002
-        \u30D5\u30EA\u30FC\u4E2D\u3082\u2605\u304C<b>3\u3064\u4EE5\u4E0A</b>\u3067<b>\u7A81\u5165\u6642\u3068\u540C\u3058\u56DE\u6570\u3092\u4E0A\u4E57\u305B</b>\u3002\u914D\u5F53\u306B\u4E0A\u9650\u306F\u3042\u308A\u307E\u305B\u3093\u3002
+        \u30D5\u30EA\u30FC\u4E2D\u306E\u2605\u306F<b>3\u500B=\uFF0B4\u56DE / 4\u500B=\uFF0B8\u56DE / 5\u500B=\uFF0B12\u56DE</b>\u306E\u4E0A\u4E57\u305B\uFF08\u56DE\u6570\u306B\u4E0A\u9650\u306A\u3057\u30FB\u56FA\u5B9AWILD\u306F\u305D\u306E\u307E\u307E\u6B8B\u308B\uFF09\u3002\u914D\u5F53\u306B\u4E0A\u9650\u306F\u3042\u308A\u307E\u305B\u3093\u3002
       </div>
 
       <table class="paytable">
@@ -14202,7 +14304,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           <td>${sym.pay[0] > 0 ? fmt(Math.round(sym.pay[0] * curBet * payUnit * payMult)) : "\u2014"}</td>
         </tr>`).join("")}
         <tr><td><img class="pay-ico" src="${SLOT_IMG.wild}" alt=""> \u30EF\u30A4\u30EB\u30C9</td><td colspan="3">\u3069\u306E\u7D75\u67C4\u306E\u4EE3\u308F\u308A\u306B\u3082\u306A\u308B\uFF08WILD\u3060\u3051\u3067\u4E26\u3093\u3060\u5834\u5408\u306F\u6700\u9AD8\u914D\u5F53\u306E\u7D75\u67C4\u6271\u3044\uFF09\u3002\u30EA\u30FC\u30EB1\u306B3\u9023\u3067<b>WILD RE-SPIN</b></td></tr>
-        <tr><td><img class="pay-ico" src="${SLOT_IMG.scatter}" alt=""> \u30B9\u30AD\u30E3\u30C3\u30BF\u30FC</td><td colspan="3">3\u3064\u3067\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0</td></tr>
+        <tr><td><img class="pay-ico" src="${SLOT_IMG.scatter}" alt=""> \u30B9\u30AD\u30E3\u30C3\u30BF\u30FC</td><td colspan="3">\u5168\u30EA\u30FC\u30EB\u306B\u51FA\u73FE\uFF081\u30EA\u30FC\u30EB\u306B\u6700\u59271\u500B\uFF09\u3002<b>3\u500B=8\u56DE / 4\u500B=12\u56DE / 5\u500B=16\u56DE</b>\u306E\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0\u3002\u30D5\u30EA\u30FC\u4E2D\u306F<b>\uFF0B4 / \uFF0B8 / \uFF0B12</b>\u56DE\u306E\u4E0A\u4E57\u305B</td></tr>
       </table>
       <p class="note" style="font-size:11px">\u8868\u306E\u91D1\u984D\u306F\u73FE\u5728\u306E\u8CED\u3051\u91D1\uFF08${coin}${fmt(curBet)}\uFF09\u3067\u306E\u6255\u3044\u51FA\u3057\u3067\u3059\u3002\u914D\u5F53\u306B\u4E0A\u9650\u306F\u3042\u308A\u307E\u305B\u3093\uFF08${fmt(sv.maxWinX || 5000)}\u500D\u4EE5\u4E0A\u306FMAX WIN\u306E\u79F0\u53F7\uFF09\u3002</p>
     </div>`;
@@ -14548,7 +14650,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       for (let y = 0; y < 3; y++) {
         const k = (grid[r] && grid[r][y]) || "chip";
         const cls = slotCellClass(k, hit.has(r + "," + y), !!(hits && hits.length));
-        col += '<div class="' + cls + '"><img src="' + (SLOT_IMG[k] || SLOT_IMG.chip) + '" alt=""></div>';
+        // 絵柄キーを持たせる。**再トリガー演出でスキャッターのマスだけ光らせる**のに要る
+        col += '<div class="' + cls + '" data-k="' + k + '"><img src="'
+          + (SLOT_IMG[k] || SLOT_IMG.chip) + '" alt=""></div>';
       }
       html += '<div class="sl-reel" data-reel="' + r + '"' + (slotIsLocked(r) ? ' style="z-index:2"' : "") + '>' + col + "</div>";
     }
@@ -15212,7 +15316,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   }
 
   /** フリーゲーム突入。全画面で盛大に祝ってから盤面へ戻す */
-  async function slotFsIntro(modeName, total, wildMult) {
+  async function slotFsIntro(modeName, total, wildMult, scatters) {
     const el = document.createElement("div");
     el.id = "sl-fsin";
     el.innerHTML = '<i class="slc-rays"></i><i class="slc-rays b"></i>'
@@ -15220,7 +15324,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       + '<div class="fsin-kicker">\u2605 \u2605 \u2605</div>'
       + '<div class="fsin-title">FREE GAME</div>'
       + '<div class="fsin-ja">\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0\u7A81\u5165\uFF01</div>'
-      + '<div class="fsin-count"><b>' + total + '</b> \u30B2\u30FC\u30E0</div>'
+      + '<div class="fsin-count"><b id="fsin-n">' + (scatters >= 4 ? 8 : total) + '</b> FREE GAMES</div>'
+      + '<div class="fsin-up" id="fsin-up"></div>'
       + (modeName ? '<div class="fsin-mode">' + escapeHtml(modeName) + '</div>' : "")
       + (wildMult ? '<div class="wr-wrap" id="fsin-wheel">'
         + '<i class="wr-ring r5" data-m="5">5X</i>'
@@ -15237,6 +15342,27 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     await slotSleep(700);
     slotSpawnCoins(el, { back: 10, mid: 8, front: 3, bills: true, spread: 1.1 });
     play("applause");
+    // 4個/5個は最初からやり直さず「追加スキャッターで昇格した」と見せる(資料どおり)
+    // 3個=8 → 4個目で +4 → 12 → 5個目で +4 → 16
+    if (scatters >= 4) {
+      const n = document.getElementById("fsin-n");
+      const up = document.getElementById("fsin-up");
+      const steps = scatters >= 5
+        ? [[12, "UPGRADE", 4], [16, "SUPER UPGRADE", 4]]
+        : [[12, "UPGRADE", 4]];
+      for (const [to, label, add] of steps) {
+        await slotSleep(520);
+        if (up) { up.innerHTML = "<b>" + label + "</b><i>\uFF0B" + add + "</i>";
+          up.classList.remove("show"); void up.offsetWidth; up.classList.add("show"); }
+        if (label === "SUPER UPGRADE") { el.classList.add("super"); play("bigwin"); }
+        play("win");
+        await slotSleep(420);
+        if (n) { n.textContent = to; n.classList.remove("bump"); void n.offsetWidth; n.classList.add("bump"); }
+        slotBurstCoins(el, label === "SUPER UPGRADE" ? 26 : 14);
+      }
+      await slotSleep(560);
+      if (up) up.classList.remove("show");
+    }
     // WILD倍率の抽選を見せる。×2→×3→×4→×5 を循環させてから当選値で止める。
     // 値はサーバーが決めた oc.free.wildMult。ここは**見せ方だけ**で結果には影響しない
     if (wildMult) {
@@ -15272,6 +15398,46 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     el.classList.remove("show");
     await slotSleep(360);
     el.remove();
+  }
+
+  /**
+   * 再トリガー。**通常の突入演出はやり直さない**(長すぎて流れが切れる)。
+   * 資料どおりの順序: スキャッター発光 → 固定WILD発光 → 残り回数が回る → RETRIGGER 表示。
+   * 全体で1.1秒ほど。
+   */
+  async function slotFsRetrigger(added, leftBefore, leftAfter, scatters) {
+    const grid = document.getElementById("sl-grid");
+    play("bigwin");
+    // ①止まったスキャッターと、②いま置かれている固定WILDを一度だけ光らせる
+    if (grid) {
+      grid.querySelectorAll(".sl-cell").forEach((c) => {
+        if (c.dataset.k === "scatter") c.classList.add("scflash");
+        if (c.classList.contains("held")) c.classList.add("wflash");
+      });
+    }
+    await slotSleep(320);
+    // ③残り回数を「増えた」と分かるように回す
+    const lb = document.getElementById("slfs-left");
+    if (lb) {
+      const step = Math.max(1, Math.round((leftAfter - leftBefore) / 6));
+      for (let v = leftBefore; v < leftAfter; v += step) {
+        lb.textContent = Math.min(v + step, leftAfter);
+        play("chipTick");
+        await slotSleep(55);
+      }
+      lb.textContent = leftAfter;
+      lb.classList.remove("roll"); void lb.offsetWidth; lb.classList.add("roll");
+    }
+    // ④RETRIGGER ＋n を 0.6 秒だけ
+    if (grid) {
+      const el = document.createElement("div");
+      el.id = "sl-retrig";
+      el.innerHTML = "<b>RETRIGGER</b><i>\uFF0B" + added + " FREE GAMES</i>";
+      grid.appendChild(el);
+      await slotSleep(620);
+      el.remove();
+      grid.querySelectorAll(".scflash, .wflash").forEach((c) => c.classList.remove("scflash", "wflash"));
+    }
   }
 
   /** フリーゲーム終了。何をどれだけ勝ったのかをまとめて見せる */
@@ -15324,15 +15490,22 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       else document.body.appendChild(ov);
     }
     ov.innerHTML = '<div class="slfs-row">'
-      + '<div class="slfs-l"><div class="slfs-title">\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0</div>'
+      + '<div class="slfs-l"><div class="slfs-title">FREE GAME</div>'
       + '<div class="slfs-mode">' + escapeHtml(mode) + '</div></div>'
       + '<div class="slfs-mult">\u00D7<b id="slfs-m">1</b></div>'
-      + '<div class="slfs-r"><div class="slfs-count"><b id="slfs-i">0</b> / ' + total
-      + ' <span class="slfs-unit">\u30B2\u30FC\u30E0\u76EE</span>'
-      + '<span class="slfs-retrig" id="slfs-retrig"></span></div>'
-      + '<div class="slfs-win" id="slfs-w"></div></div></div>'
+      + '<div class="slfs-r">'
+      +   '<div class="slfs-left">\u6B8B\u308A <b id="slfs-left">' + total + '</b> \u56DE</div>'
+      +   '<div class="slfs-count"><b id="slfs-i">0</b> / <span id="slfs-tot">' + total + '</span>'
+      +   ' <span class="slfs-unit">\u30B2\u30FC\u30E0\u76EE</span></div>'
+      + '</div></div>'
       + '<div class="slfs-bar"><i id="slfs-bar"></i></div>'
-      + (wildMult ? '<div class="sl-wildmult">WILD\u914D\u5F53 <b>\u00D7' + wildMult + '</b></div>' : "");
+      // 総獲得(フリーゲーム全体)と 今回の獲得(このゲーム)は**別物**なので必ず分けて出す
+      + '<div class="slfs-wins">'
+      +   '<div class="slfs-wcell"><span>\u7DCF\u7372\u5F97</span><b id="slfs-w">\u2014</b></div>'
+      +   '<div class="slfs-wcell now"><span>\u4ECA\u56DE</span><b id="slfs-wnow">\u2014</b></div>'
+      + '</div>'
+      + (wildMult ? '<div class="sl-wildmult">WILD\u914D\u5F53 <b>\u00D7' + wildMult + '</b>'
+        + '<span>WILD\u3092\u542B\u3080\u30E9\u30A4\u30F3\u306B1\u56DE\u9069\u7528</span></div>' : "");
     ov.dataset.total = total;
     ov.classList.add("show");
     document.body.classList.add("fs-play");                  // 盤面を光らせる
@@ -15407,7 +15580,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (oc.freeEntered && oc.free) {
       const modeName = (sv.freeModes || []).find((m) => m.key === oc.free.mode);
       // ①突入を盛大に祝う(全画面)
-      await slotFsIntro(modeName ? modeName.name : "", oc.free.spinsTotal, oc.free.wildMult);
+      // 突入演出は**絶対に飛ばさない**(WILD倍率の抽選はフリーゲームの前提になる情報)
+      await slotFsIntro(modeName ? modeName.name : "", oc.free.spinsTotal, oc.free.wildMult, oc.scatters || 3);
       // ②盤面の上にHUDを出す。盤面は覆わないので、リールはずっと見えている
       const ov = slotFsOverlay(modeName ? modeName.name : "", oc.free.spinsTotal, oc.free.wildMult);
       await slotSleep(500);
@@ -15415,14 +15589,18 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       let acc = 0;
       for (const fsp of oc.free.spins) {
         i++;
-        // 何ゲーム目か(数字と進捗バーの両方で示す)
-        const ic = document.getElementById("slfs-i"); if (ic) ic.textContent = i;
+        // 何ゲーム目か / 残り何回か。**残りは常に見えている**ことが大事なので毎回書き換える
+        const setNum = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+        const tot = fsp.spinsTotalSoFar || Number(ov.dataset.total) || oc.free.spinsTotal || i;
+        ov.dataset.total = String(tot);
+        setNum("slfs-i", i);
+        setNum("slfs-tot", tot);
+        // 残り回数は資料どおり「n / 総数」と対で出す(4 / 8 なら 残り4回)。
+        // 上乗せぶんは再トリガー演出の中で足すので、ここでは引く前の値を出す
+        const leftBefore = (fsp.spinsLeft || 0) - (fsp.addedSpins || 0);
+        setNum("slfs-left", leftBefore);
         const bar = document.getElementById("slfs-bar");
-        const tot = Number(ov.dataset.total) || oc.free.spinsTotal || i;
         if (bar) bar.style.width = Math.min(100, Math.round(i / tot * 100)) + "%";
-        { const tc = ov.querySelector(".slfs-count");
-          if (tc) tc.innerHTML = '<b id="slfs-i">' + i + '</b> / ' + tot
-            + ' <span class="slfs-unit">\u30B2\u30FC\u30E0\u76EE</span>'; }
         // WILDは**コマ単位でホールド**される(第79弾)。新しく増えたぶんだけ演出する
         const held = (fsp.heldCells || []).map((c) => c[0] + "," + c[1]);
         const fresh = (fsp.freshCells || []).map((c) => c[0] + "," + c[1]);
@@ -15444,24 +15622,23 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           await slotSleep(520);                   // 新しくホールドされた合図を見せる
           slotFreshCells = new Set();             // 演出は1回だけ
         }
-        // 上乗せ(第88弾: スキャッター3個以上でのみ発生し、通常のスタート回数と同じだけ増える)。
-        // 稀で大きい事件になったので、告知を出して総回数の表示も伸ばす
+        // 上乗せ(3個=+4 / 4個=+8 / 5個=+12)。短い専用演出で「増えた」ところを見せる。
+        // 通常の突入演出はやり直さない(長すぎて流れが切れる)
         if (fsp.addedSpins > 0) {
-          ov.dataset.total = String((Number(ov.dataset.total) || 0) + fsp.addedSpins);
-          play("bigwin");
-          slotSetWin("★★★ ＋" + fsp.addedSpins + " ゲーム上乗せ！", "big");
-          const rt = document.getElementById("slfs-retrig");
-          if (rt) { rt.textContent = "＋" + fsp.addedSpins; rt.classList.remove("pop");
-            void rt.offsetWidth; rt.classList.add("pop"); }
-          await slotSleep(900);
+          await slotFsRetrigger(fsp.addedSpins, leftBefore, fsp.spinsLeft, fsp.scatters);
+          setNum("slfs-tot", tot);
         }
         await slotPlaySteps(fsp.steps, r.bet, sv, true);
         const mc = document.getElementById("slfs-m");
         if (mc) { mc.textContent = fsp.multAfter; mc.classList.remove("pop"); void mc.offsetWidth; mc.classList.add("pop"); }
-        // ここまでの累計を出しておく(終了時の総額と地続きに見せる)
-        acc += Math.round((fsp.payX || 0) * r.bet);
+        // **今回の獲得**と**フリーゲーム全体の総獲得**は別物なので、両方を別の枠に出す
+        const now = Math.round((fsp.payX || 0) * r.bet);
+        acc += now;
+        const wn = document.getElementById("slfs-wnow");
+        if (wn) { wn.textContent = now > 0 ? "+" + fmt(now) : "—";
+          wn.classList.remove("pop"); void wn.offsetWidth; if (now > 0) wn.classList.add("pop"); }
         const wc0 = document.getElementById("slfs-w");
-        if (wc0 && acc > 0) wc0.textContent = "+" + fmt(acc);
+        if (wc0) wc0.textContent = acc > 0 ? "+" + fmt(acc) : "—";
         // リトリガー分は spinsTotal に最初から含まれているので、総数の書き換えは不要
         await slotSleep(fsp.steps.length ? 320 : 400);
       }
