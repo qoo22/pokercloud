@@ -151,6 +151,12 @@ export const SLOT_CHIP_DAILY_SPINS = 300;
  *   - 上限は所持額(それ以上は賭けられないので出さない)
  *   - 出す段数は最大 12。多すぎると選べないので、所持に近い側を残す
  */
+/**
+ * 台帳が1回の取引で受け付けられる上限(第82弾)。
+ * store.post は Number.isSafeInteger を要求するので 2^53≒9007兆 が物理限界。
+ * 少し余裕を持って 9000兆 とする。これを超える支払いは postBig で分割する。
+ */
+export const SAFE_POST = 9_000_000_000_000_000;
 export function chipBetLadder(balance) {
     const bal = Math.max(0, Math.floor(balance));
     if (bal < SLOT_CHIP_MIN_BET)
@@ -162,7 +168,8 @@ export function chipBetLadder(balance) {
             const v = m * Math.pow(10, k);
             if (v < SLOT_CHIP_MIN_BET)
                 continue;
-            if (v > bal) {
+            // 台帳の1回上限も超えない(超える賭け金は控除の時点で例外になる)
+            if (v > bal || v > SAFE_POST) {
                 k = 99;
                 break;
             }
@@ -770,6 +777,10 @@ export class Economy {
         if (!Number.isFinite(bet) || !Number.isInteger(bet) || bet < SLOT_CHIP_MIN_BET) {
             return { ok: false, error: `賭け金は ${SLOT_CHIP_MIN_BET.toLocaleString()} チップ以上の整数です` };
         }
+        // 台帳の1回上限(2^53対策)。ここで弾かないと控除の post が例外を投げてスピンごと壊れる
+        if (bet > SAFE_POST) {
+            return { ok: false, error: `賭け金は ${SAFE_POST.toLocaleString()} チップまでです` };
+        }
         const spun = this.store.getProgress(userId, 'slot:chipspins');
         const used = spun && spun.day === day ? spun.value : 0;
         if (used >= SLOT_CHIP_DAILY_SPINS)
@@ -784,8 +795,16 @@ export class Economy {
         this.store.setProgress(userId, 'slot:chipspins', used + 1, day);
         const outcome = spinReels(rnd, { ante: opts.ante, mode: opts.mode });
         const won = Math.round(outcome.totalPayX * bet);
-        if (won > 0)
-            this.store.post(userId, 'chips', won, 'slot_win', `day:${day}`);
+        // 支払いが台帳の1回上限(2^53)を超えることがある(例: 500Bベット×24万倍=1.2京)。
+        // 1回で post すると例外で支払いに失敗するので、上限以下の塊に分割して記帳する
+        if (won > 0) {
+            let rest = won;
+            while (rest > 0) {
+                const part = Math.min(rest, SAFE_POST);
+                this.store.post(userId, 'chips', part, 'slot_win', `day:${day}`);
+                rest -= part;
+            }
+        }
         const x = outcome.totalPayX;
         const kind = outcome.maxWin ? 'max' : x >= 100 ? 'mega' : x >= 20 ? 'big' : x > 0 ? 'small' : 'none';
         return {

@@ -2648,6 +2648,7 @@ var PokerOffline = (() => {
   var AD_REWARD_CAP = 2e6;
   var SLOT_CHIP_MIN_BET = 1e3;
   var SLOT_CHIP_DAILY_SPINS = 300;
+  var SAFE_POST = 9e15;
   function chipBetLadder(balance) {
     const bal = Math.max(0, Math.floor(balance));
     if (bal < SLOT_CHIP_MIN_BET) return [];
@@ -2656,7 +2657,7 @@ var PokerOffline = (() => {
       for (const m of [1, 2, 5]) {
         const v = m * Math.pow(10, k);
         if (v < SLOT_CHIP_MIN_BET) continue;
-        if (v > bal) {
+        if (v > bal || v > SAFE_POST) {
           k = 99;
           break;
         }
@@ -3158,6 +3159,9 @@ var PokerOffline = (() => {
       if (!Number.isFinite(bet) || !Number.isInteger(bet) || bet < SLOT_CHIP_MIN_BET) {
         return { ok: false, error: `\u8CED\u3051\u91D1\u306F ${SLOT_CHIP_MIN_BET.toLocaleString()} \u30C1\u30C3\u30D7\u4EE5\u4E0A\u306E\u6574\u6570\u3067\u3059` };
       }
+      if (bet > SAFE_POST) {
+        return { ok: false, error: `\u8CED\u3051\u91D1\u306F ${SAFE_POST.toLocaleString()} \u30C1\u30C3\u30D7\u307E\u3067\u3067\u3059` };
+      }
       const spun = this.store.getProgress(userId, "slot:chipspins");
       const used = spun && spun.day === day ? spun.value : 0;
       if (used >= SLOT_CHIP_DAILY_SPINS) return { ok: false, error: "\u672C\u65E5\u306E\u4E0A\u9650\u306B\u9054\u3057\u307E\u3057\u305F" };
@@ -3169,7 +3173,14 @@ var PokerOffline = (() => {
       this.store.setProgress(userId, "slot:chipspins", used + 1, day);
       const outcome = spin(rnd2, { ante: opts.ante, mode: opts.mode });
       const won = Math.round(outcome.totalPayX * bet);
-      if (won > 0) this.store.post(userId, "chips", won, "slot_win", `day:${day}`);
+      if (won > 0) {
+        let rest = won;
+        while (rest > 0) {
+          const part = Math.min(rest, SAFE_POST);
+          this.store.post(userId, "chips", part, "slot_win", `day:${day}`);
+          rest -= part;
+        }
+      }
       const x = outcome.totalPayX;
       const kind = outcome.maxWin ? "max" : x >= 100 ? "mega" : x >= 20 ? "big" : x > 0 ? "small" : "none";
       return {
@@ -11594,6 +11605,11 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   var fmt = (n) => {
     const a = Math.abs(n);
     const s = (v) => String(Math.round(v * 100) / 100);
+    // 第82弾: 9999T の先も読めるように 京(1e16)・垓(1e20) を追加。
+    // T までは既存の見た目を変えない(1552.1T が急に 0.15京 になると分かりにくいため、
+    // 京への切り替えは 1e16=10000T から)
+    if (a >= 1e20) return s(n / 1e20) + "\u5793";
+    if (a >= 1e16) return s(n / 1e16) + "\u4EAC";
     if (a >= 1e12) return s(n / 1e12) + "T";
     if (a >= 1e9) return s(n / 1e9) + "B";
     if (a >= 1e6) return s(n / 1e6) + "M";
@@ -11797,7 +11813,19 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         renderSlot();
         break;
       case "slot.result":
-        onSlotResult(msg.result);
+        // 演出のどこかで例外が出ても slotSpinning が立ちっぱなしにならないようにする。
+        // これが残ると回せなくなり、オートスピンも「開始したのに回らない」状態で固まる
+        onSlotResult(msg.result).catch((e) => {
+          try { console.error("slot presentation error", e); } catch (e2) {}
+          slotSpinning = false;
+          slotLockedReels = [];
+          slotHeldCells = new Set(); slotFreshCells = new Set();
+          document.body.classList.remove("fs-play", "sl-antic");
+          const o = document.getElementById("sl-fs"); if (o) o.remove();
+          const fi = document.getElementById("sl-fsin"); if (fi) fi.remove();
+          const fo = document.getElementById("sl-fsout"); if (fo) fo.remove();
+          renderSlot();
+        });
         break;
       case "shop.state":
         shop = msg.shop;
@@ -14801,9 +14829,15 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     const stop = slotAutoStopReason();
     if (stop) { slotAutoStop(stop); return; }
     const btn = document.getElementById("slot-spin");
-    if (!btn || btn.disabled) {
+    if (!btn) { slotAutoStop("\u56DE\u305B\u306A\u304F\u306A\u308A\u307E\u3057\u305F"); return; }
+    if (btn.disabled) {
+      // **演出が走っている間は無期限に待つ**。フリーゲームの再生は30秒を超えることがあり、
+      // 秒数で見切ると「開始した直後に理由もなく止まる」ことになる(実際そうなっていた)。
+      // 止めるべき本当の理由(チップ不足・上限・停止操作)は毎回 slotAutoStopReason が見ている
+      if (slotSpinning) { setTimeout(() => slotAutoStep(0), 250); return; }
+      // 演出中でないのに押せないのは異常。8秒だけ粘って諦める
       const n = (retry || 0) + 1;
-      if (n <= 15) { setTimeout(() => slotAutoStep(n), 200); return; }   // 最大3秒待つ
+      if (n <= 40) { setTimeout(() => slotAutoStep(n), 200); return; }
       slotAutoStop("\u56DE\u305B\u306A\u304F\u306A\u308A\u307E\u3057\u305F");
       return;
     }

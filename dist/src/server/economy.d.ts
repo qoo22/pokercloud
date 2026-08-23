@@ -123,6 +123,12 @@ export declare const SLOT_CHIP_DAILY_SPINS = 300;
  *   - 上限は所持額(それ以上は賭けられないので出さない)
  *   - 出す段数は最大 12。多すぎると選べないので、所持に近い側を残す
  */
+/**
+ * 台帳が1回の取引で受け付けられる上限(第82弾)。
+ * store.post は Number.isSafeInteger を要求するので 2^53≒9007兆 が物理限界。
+ * 少し余裕を持って 9000兆 とする。これを超える支払いは postBig で分割する。
+ */
+export declare const SAFE_POST = 9000000000000000;
 export declare function chipBetLadder(balance: number): number[];
 /** ゴールド建ての選択肢。所持に合わせて同じ考え方で刻む(下限1) */
 export declare function goldBetLadder(balance: number): number[];
