@@ -3,8 +3,7 @@
  *
  * 設計方針は現行オンラインスロットの主流に合わせた「ルールは単純に、結果は極端に」。
  *   - 5リール×3段の **25固定ペイライン**(左から連続で揃えば配当)。当たった形が見えるので納得感がある
- *   - **タンブル**(当たった絵柄が消えて上から落ちる)。1スピンが複数イベントに分解される
- *   - タンブル連鎖ごとに **倍率が上がる**(通常時 x1→x2→x3→x5→x10)
+ *   - **1スピン=1回判定**(第79弾で連鎖を廃止。止まった盤面がそのまま結果)
  *   - スキャッター3つで **フリーゲーム**。フリーゲーム中は倍率が
  *     **スピンをまたいで持ち越される(永続マルチプライヤー)**。これが現行機の中核
  *   - 突入時に **回数多め×低倍率 / 回数少なめ×高倍率** を選べる(意思決定の演出)
@@ -75,6 +74,18 @@ export declare const SLOT_CFG: {
      * 「7.5%の宝くじと92.5%の消化試合」に割れてしまうため、3スピンで解除する
      */
     stickySpins: number;
+    /**
+     * フリーゲーム中にスキャッター1個が止まるごとに上乗せする回数(第79弾)。
+     * **1スピンあたりの期待スキャッター数より小さくないと発散する**。
+     * 実運用の scatterWeight(11) なら期待 0.36 個/スピンなので 1 でも収束する。
+     * (テストでスキャッターを増やすときは、ここを 0 にしないとフリーゲームが終わらない)
+     */
+    freeAddPerScatter: number;
+    /**
+     * 1回のフリーゲームで回せる上限。上乗せが続いても必ず終わるようにする安全弁。
+     * 上限に張り付くようならスキャッターの重みか上乗せ数が過大ということ。
+     */
+    freeSpinsCap: number;
 };
 /** フリーゲームでWILDが絡んだ当選に掛かる倍率の抽選(値と重み)。同一ラインには1回だけ */
 export declare const WILD_MULT_TABLE: {
@@ -83,7 +94,10 @@ export declare const WILD_MULT_TABLE: {
 }[];
 /** スキャッター3/4/5個そのものの配当(×賭け金) */
 export declare const SCATTER_PAY: Record<number, number>;
-/** 通常時のタンブル倍率のはしご。連鎖するほど上がる */
+/**
+ * 通常時の倍率のはしご。**第79弾で連鎖を廃止したため未使用(休眠)**。
+ * クライアントの配当表表示が参照しているので値だけ残してある。
+ */
 export declare const TUMBLE_LADDER: number[];
 /** フリーゲームのモード。RTPがほぼ等しくなるよう調整してある(選択は演出) */
 export interface FreeMode {
@@ -94,18 +108,21 @@ export interface FreeMode {
     spins: number;
     /** 永続マルチプライヤーの初期値 */
     startMult: number;
-    /** タンブル1連鎖ごとの倍率の増分 */
+    /** 当たったスピンごとの倍率の増分(連鎖廃止で「1スピンごと」になった) */
     step: number;
 }
 export declare const FREE_MODES: FreeMode[];
 /** 最大配当(賭け金に対する倍率)。ここで頭打ちにする */
 export declare const MAX_WIN_X = 5000;
-/** 3つ以上のスキャッターで再抽選(リトリガー)。追加されるスピン数 */
-export declare const RETRIGGER_SPINS = 3;
+/**
+ * フリーゲーム中にスキャッターが止まったときの上乗せ。
+ * 第79弾から**1個につき1回**上乗せする(3個そろわなくても増える)。
+ */
+export declare const RETRIGGER_SPINS = 1;
 export type Grid = SlotSymKey[][];
-/** 1連鎖ぶんの結果。クライアントの演出用にそのまま送る */
+/** 1回の判定の結果。クライアントの演出用にそのまま送る(連鎖廃止後は最大1個) */
 export interface TumbleStep {
-    /** この連鎖の開始時点の盤面 */
+    /** 判定した盤面 */
     grid: Grid;
     /** 当たった位置 [reel, row][] */
     hits: [number, number][];
@@ -124,7 +141,7 @@ export interface TumbleStep {
         wildMult?: number;
         allWild?: boolean;
     }[];
-    /** この連鎖に適用された倍率 */
+    /** この判定に適用された倍率(フリーゲームの永続マルチプライヤー) */
     mult: number;
     /** 倍率適用後の配当(×賭け金) */
     payX: number;
@@ -136,19 +153,22 @@ export interface FreeSpinStep {
     /** このスピン終了時点の永続マルチプライヤー */
     multAfter: number;
     payX: number;
-    /** リトリガーしたか */
+    /** スキャッターで回数が上乗せされたか */
     retrigger: boolean;
+    /** このスピンで上乗せされた回数(スキャッターの個数) */
+    addedSpins: number;
     /**
-     * このスピンで固定WILDになっていたリールの番号(第76弾で複数リール対応)。
-     * フリーゲーム中に3連WILDが停止したリールは stickySpins のあいだ固定される。
-     * リスピンは発生させない(通常時の役割と分けて、フリーは「固定WILD+倍率」にする)
+     * このスピン時点でホールドされているWILDのマス(第79弾でコマ単位に変更)。
+     * フリーゲーム中にWILDが止まったマスは、そのフリーゲームが終わるまで残り続ける。
      */
-    stickyReels: number[];
+    heldCells: [number, number][];
+    /** そのうち「このスピンで新しくホールドされた」マス(演出用) */
+    freshCells: [number, number][];
 }
 export interface SlotOutcome {
     /** 最初に出た盤面。**当たりが1つも無いスピンでも盤面を描けるように必ず入れる** */
     grid0: Grid;
-    /** 通常時の連鎖 */
+    /** 通常時の判定結果(0個=ハズレ / 1個=当たり) */
     base: TumbleStep[];
     /** 通常時の配当(×賭け金。スキャッター配当込み) */
     basePayX: number;

@@ -1800,6 +1800,42 @@
   /* まだ止まっていないリールのうち、最後の1本だけ金色の縁を光らせる */
   .sl-reel.antic-target { box-shadow:0 0 0 2px rgba(255,207,90,.9), 0 0 22px rgba(255,180,60,.7);
     border-radius:6px; z-index:2; }
+  /* 回転中に落とした金枠の明るさを、停止時に段差なく戻す */
+  .sl-grid { transition:border-color .3s ease, box-shadow .3s ease; }
+  .sl-grid::before, .sl-grid::after { transition:height .3s ease; }
+  /* --- 第79弾: 当選ラインの巡回表示 --- */
+  /* 非当選マスは沈めるが**暗転はしない**。スクショで見せられる明るさを保つ */
+  .sl-cell.dim img { filter:brightness(.5) saturate(.55); transition:filter .2s ease; }
+  .sl-total { margin:8px auto 0; max-width:96%; padding:7px 12px; border-radius:10px;
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    background:linear-gradient(180deg, rgba(24,60,32,.92), rgba(10,26,14,.94));
+    border:1px solid rgba(140,240,170,.45); color:#d9ffe4; }
+  .sl-total span { font-size:11px; opacity:.8; }
+  .sl-total b { font-size:19px; font-weight:900; color:#8ff2a8; font-variant-numeric:tabular-nums; }
+  .sl-total .sl-cyc { font-size:10px; opacity:.65; }
+  /* ホールドされたWILDのマス(コマ単位) */
+  .sl-cell.held { box-shadow:0 0 0 2px #ffd76a, 0 0 14px rgba(255,215,106,.7); z-index:2; }
+  .sl-cell.held::after { content:"\1F512"; position:absolute; right:2px; top:1px;
+    font-size:9px; opacity:.9; z-index:3; }
+  .sl-cell.heldnew img { animation:slLockIn .55s cubic-bezier(.2,1.5,.4,1); }
+  /* --- 第79弾: WILD倍率の同心円ルーレット(実機の Bonus Wheel を模す) --- */
+  .wr-wrap { position:relative; width:210px; height:210px; margin:14px auto 4px; }
+  .wr-ring { position:absolute; border-radius:50%; inset:0;
+    display:flex; align-items:flex-start; justify-content:center;
+    font-weight:900; color:rgba(0,0,0,.55); padding-top:5px;
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.35); transition:filter .2s ease, transform .2s ease; }
+  .wr-ring.r5 { inset:0;    background:#c9202a; font-size:13px; }
+  .wr-ring.r3 { inset:26px; background:#f0b41c; font-size:13px; }
+  .wr-ring.r2 { inset:56px; background:#1fa85a; font-size:12px; }
+  .wr-ring.r1 { inset:84px; background:#efe8dc; font-size:15px; color:#241503;
+    align-items:center; padding-top:0; }
+  /* 抽選中は当たっている輪だけを光らせる */
+  .wr-ring.lit { filter:brightness(1.5) saturate(1.3); transform:scale(1.02);
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.75), 0 0 26px rgba(255,220,120,.8); }
+  .wr-ring:not(.lit) { filter:brightness(.42) saturate(.6); }
+  .wr-wrap.done .wr-ring.lit { animation:slPop .5s cubic-bezier(.2,1.6,.4,1); }
+  .wr-cap { text-align:center; font-size:12px; color:#ffe9a8; margin-top:2px; }
+  .wr-cap b { font-size:26px; color:#ffd76a; }
   .sl-grid.wildflash { animation:slWildFlash .32s ease-out; }
   /* 筐体化(第70弾): 「25 LINES」はリール枠に付いた金属プレート風にする(浮いた文字にしない) */
   .sl-ways { background:linear-gradient(180deg,#f0d488,#b8871f); color:#241503 !important;
@@ -1830,7 +1866,24 @@
   .spin-btn.king.idle { animation:slKing 2.2s ease-in-out infinite; }
   @keyframes slKing { 0%,100% { box-shadow:0 6px 0 #7c5512, 0 10px 24px rgba(0,0,0,.55), 0 0 0 rgba(255,200,90,0), inset 0 1px 0 rgba(255,255,255,.7); }
     50% { box-shadow:0 6px 0 #7c5512, 0 10px 24px rgba(0,0,0,.55), 0 0 26px rgba(255,200,90,.65), inset 0 1px 0 rgba(255,255,255,.7); } }
+  /* 本当に遊べないとき(チップ不足・本日の上限)だけ暗く落とす */
   .spin-btn.king:disabled { filter:grayscale(.55) brightness(.7); animation:none; }
+  /* 回転中は**一時的に押せないだけ**なので、金色のまま光らせ続ける。
+     ここで暗くすると「壊れている」ように見える(実際そう見えていた) */
+  .spin-btn.king.busy:disabled { filter:none; opacity:1; animation:slBusy 1.1s ease-in-out infinite; }
+  @keyframes slBusy {
+    0%,100% { box-shadow:0 6px 0 #7c5512, 0 10px 24px rgba(0,0,0,.55), 0 0 10px rgba(255,200,90,.35), inset 0 1px 0 rgba(255,255,255,.7); }
+    50%     { box-shadow:0 6px 0 #7c5512, 0 10px 24px rgba(0,0,0,.55), 0 0 30px rgba(255,200,90,.8), inset 0 1px 0 rgba(255,255,255,.7); }
+  }
+  .spin-btn.king.busy b { letter-spacing:.16em; }
+  /* AUTO は副操作。文字がはみ出していたので収まるようにする */
+  .sl-autorow { align-items:stretch; }
+  .sl-autorow .spin-btn.king { flex:1 1 auto; margin:0; }
+  .sl-autobtn { flex:0 0 88px; min-width:0; margin:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:1px; line-height:1.15;
+    background:linear-gradient(180deg, rgba(60,44,20,.95), rgba(30,21,9,.95)); }
+  .sl-autobtn b { font-size:13px; }
+  .sl-autobtn span { font-size:9px; white-space:nowrap; }
 
   /* ===== D: BETの内訳 ===== */
   .sl-cost { margin-top:8px; padding:8px 11px; border-radius:10px; font-size:12px;
@@ -4790,7 +4843,10 @@
   var slotCaf = (typeof cancelAnimationFrame === "function") ? (h) => cancelAnimationFrame(h) : (h) => clearTimeout(h);
 
   var slotSpinSndTimer = null;
-  var slotLockedReels = [];    // スタックドWILD/固定WILD中のリール番号(第76弾で複数対応)
+  var slotLockedReels = [];    // 通常時のリスピンで固定するリール番号(いまはリール1のみ)
+  // フリーゲームでホールドされたWILDのマス("reel,row" の集合)。第79弾でコマ単位になった
+  var slotHeldCells = new Set();
+  var slotFreshCells = new Set();
   // オートスピン(第77弾)。left>0 のあいだ自動で回す
   var slotAuto = { left: 0, stopOnFree: true, stopOnBig: false, stopping: false };
   /** オート中は演出を短縮する。ただし見せ場(フリー・高額)は短縮しない */
@@ -4902,7 +4958,10 @@
             const k = (finalCol && finalCol[y]) || "chip";
             const im = c.querySelector("img");
             if (im && SLOT_IMG[k]) im.src = SLOT_IMG[k];
-            c.classList.remove("land"); void c.offsetWidth; c.classList.add("land");
+            // **絵柄だけでなく格(lo/hi/sp)も貼り替える**。ここを直しておけば
+            // 停止直後に盤面を作り直す必要がなくなり、着地の跳ねが途中で消えない
+            c.className = slotCellClass(k, false, false);
+            void c.offsetWidth; c.classList.add("land");
             if (k === "wild") wilds.push(c);
           }
         }
@@ -4995,6 +5054,9 @@
       // 3個目が出る余地があるか＝残りリール数が足りているか、だけで判断する
       if (!o.fast && !antic && scatters >= 2 && r <= 4 && (5 - r) >= 1) {
         antic = true;
+        // **ここまでのリールが着地しきるのを待ってから**光らせる。
+        // 停止は非同期なので、待たないと「見えているSCATTER」がまだDOMに無く取りこぼす
+        await Promise.all(done);
         slotAnticStart(grid, r);
         await slotSleep(420);
       }
@@ -5101,7 +5163,7 @@
         </div>
         ${slotBetOpen ? `<div class="sl-betlist">${betList.map((b, i) => `<button class="sl-betitem ${b === curBet ? "sel" : ""}" data-bet="${b}">${coin} ${fmt(b)}</button>`).join("")}</div>` : ""}
         <div class="sl-autorow">
-        <button class="spin-btn king ${canSpin && !slotSpinning ? "idle" : ""}" id="slot-spin" ${canSpin ? "" : "disabled"}>
+        <button class="spin-btn king ${canSpin && !slotSpinning ? "idle" : ""}${slotSpinning ? " busy" : ""}" id="slot-spin" ${canSpin ? "" : "disabled"}>
           ${slotSpinning ? "<b>\u56DE\u8EE2\u4E2D\u2026</b>"
             : left <= 0 ? "<b>\u672C\u65E5\u306F\u7D42\u4E86</b>"
             : have < cost ? "<b>" + (isChips ? "\u30C1\u30C3\u30D7\u4E0D\u8DB3" : "\u30B4\u30FC\u30EB\u30C9\u4E0D\u8DB3") + "</b>"
@@ -5192,11 +5254,15 @@
         return;
       }
       slotSpinning = true;
+      // 前のスピンの巡回表示を片付ける(次の操作まで残す仕様なのでここで消す)
+      slotStopCycle(); slotClearLines();
+      { const t = document.getElementById("sl-total"); if (t) t.remove(); }
       slotWinText = ""; slotWinCls = ""; slotChainMult = 1;
       renderSlot();
       slotSpinAnimStart();
       play("click");
       slotSpinAt = Date.now();   // 最低回転時間の計測用
+      slotPaceStart = slotSpinAt; // 演出の早送り判定もここから数える
       send({ t: "slot.spin", bet: curBet, ante: slotAnte, mode: slotMode });
     };
   }
@@ -5440,6 +5506,18 @@
   }
 
   /** 盤面(列×行)をタイルのHTMLにする。hits に入っているマスは光らせる */
+  /**
+   * 1マスのクラス名。**盤面を作り直すときと、停止時に貼り替えるときの両方**で使う。
+   * 2か所に同じ判定を書くと必ずずれるので、ここだけに置く。
+   */
+  function slotCellClass(k, isHit, dimmed) {
+    // 低配当は沈め、高配当は光らせる(停止した瞬間に当たりの格が視覚で分かるように)
+    const tier = (k === "wild" || k === "scatter") ? " sp"
+      : ("spade crown seven".indexOf(k) >= 0 ? " hi" : " lo");
+    return "sl-cell" + tier + (isHit ? " hit" : (dimmed ? " dim" : ""))
+      + (k === "scatter" ? " sc" : "") + (k === "wild" ? " wd" : "");
+  }
+
   function slotGridHtml(grid, hits) {
     const hit = new Set((hits || []).map((h) => h[0] + "," + h[1]));
     let html = "";
@@ -5448,12 +5526,7 @@
       let col = "";
       for (let y = 0; y < 3; y++) {
         const k = (grid[r] && grid[r][y]) || "chip";
-        // 低配当は沈め、高配当は光らせる(停止した瞬間に当たりの格が視覚で分かるように)
-        const tier = (k === "wild" || k === "scatter") ? " sp"
-          : ("spade crown seven".indexOf(k) >= 0 ? " hi" : " lo");
-        const isHit = hit.has(r + "," + y);
-        const cls = "sl-cell" + tier + (isHit ? " hit" : (hits && hits.length ? " dim" : ""))
-          + (k === "scatter" ? " sc" : "") + (k === "wild" ? " wd" : "");
+        const cls = slotCellClass(k, hit.has(r + "," + y), !!(hits && hits.length));
         col += '<div class="' + cls + '"><img src="' + (SLOT_IMG[k] || SLOT_IMG.chip) + '" alt=""></div>';
       }
       html += '<div class="sl-reel" data-reel="' + r + '"' + (slotIsLocked(r) ? ' style="z-index:2"' : "") + '>' + col + "</div>";
@@ -5489,12 +5562,18 @@
       const had = reel.querySelector(".sl-lockwild");
       if (had) had.remove();
       reel.classList.toggle("locked", slotIsLocked(r));
-      if (!slotIsLocked(r)) return;
-      const layer = document.createElement("div");
-      layer.className = "sl-lockwild" + (fresh && fresh.indexOf(r) >= 0 ? " fresh" : "");
-      // 3段ぶん。**カッコを付けないと repeat が最後の文字列にしか掛からない**
-      layer.innerHTML = ('<img src="' + SLOT_IMG.wild + '" alt="">').repeat(3);
-      reel.appendChild(layer);
+      if (slotIsLocked(r)) {
+        const layer = document.createElement("div");
+        layer.className = "sl-lockwild" + (fresh && fresh.indexOf(r) >= 0 ? " fresh" : "");
+        layer.innerHTML = ('<img src="' + SLOT_IMG.wild + '" alt="">').repeat(3);
+        reel.appendChild(layer);
+      }
+      // フリーゲームのホールドは**コマ単位**。該当マスにだけ金枠と鍵を出す
+      reel.querySelectorAll(".sl-cell").forEach((c, y) => {
+        const key = r + "," + y;
+        c.classList.toggle("held", slotHeldCells.has(key));
+        c.classList.toggle("heldnew", slotFreshCells.has(key));
+      });
     });
   }
 
@@ -5507,6 +5586,16 @@
     el.textContent = "\u56FA\u5B9AWILD +" + n;
     grid.appendChild(el);
     setTimeout(() => el.remove(), 1100);
+  }
+
+  /**
+   * 停止アニメーションが並べた盤面を**そのまま採用**する(作り直さない)。
+   * ここで innerHTML を作り直すと、最後のリールの着地アニメーションが
+   * 始まった直後に消えてしまい「5本目だけ跳ねない」ことになる。
+   */
+  function slotAdoptGrid(grid) {
+    slotGrid = grid;
+    slotApplyLocks(document.getElementById("sl-grid"));
   }
 
   function slotSetMult(m) {
@@ -5693,10 +5782,54 @@
   }
 
   /**
+   * スピンが終わったあとも、当選ラインを**次の操作まで巡回表示し続ける**。
+   * 消えてしまうとスクリーンショットが撮れないし、何で当たったのかも確認できない。
+   * 総額と「いま出しているラインの額」を必ず併記する。
+   */
+  var slotCycleTimer = null;
+  function slotStopCycle() {
+    if (slotCycleTimer) { clearInterval(slotCycleTimer); slotCycleTimer = null; }
+  }
+  function slotStartCycle(st, sv, bet, totalWon) {
+    slotStopCycle();
+    const wins = (st && st.wins || []).slice().sort((a, b) => b.pay - a.pay);
+    if (!wins.length) return;
+    const paylines = (sv && sv.paylines) || [];
+    let i = 0;
+    const show = () => {
+      const w = wins[i % wins.length];
+      slotSetGrid(st.grid, st.hits);        // 当選マスを光らせたままにする
+      slotClearLines();
+      slotDrawLine(w, paylines);
+      slotShowLineInfo(w, sv, bet, st.mult);
+      slotShowTotal(totalWon, i % wins.length, wins.length);
+      i++;
+    };
+    show();
+    if (wins.length > 1) slotCycleTimer = setInterval(show, 1600);
+  }
+
+  /** 総額と「何本目を出しているか」。巡回中ずっと出しておく */
+  function slotShowTotal(totalWon, idx, n) {
+    const machine = document.querySelector("#slot .slot-machine");
+    const winEl = document.getElementById("sl-win");
+    if (!machine || !winEl) return;
+    let el = document.getElementById("sl-total");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "sl-total";
+      el.className = "sl-total";
+      machine.insertBefore(el, winEl.nextSibling);
+    }
+    el.innerHTML = '<span>\u7DCF\u7372\u5F97</span><b>+' + fmt(totalWon) + '</b>'
+      + (n > 1 ? '<span class="sl-cyc">' + (idx + 1) + " / " + n + ' \u30E9\u30A4\u30F3</span>' : "");
+  }
+
+  /**
    * 当選ラインを順に見せる。資料どおり本数で見せ方を変える。
    * 画面のどこかをタップすると残りを飛ばして合計へ進む。
    */
-  async function slotShowWinLines(st, sv, bet) {
+  async function slotShowWinLines(st, sv, bet, chainIndex) {
     const wins = (st.wins || []).slice().sort((a, b) => b.pay - a.pay);   // 配当が高い順
     if (!wins.length) return;
     const paylines = (sv && sv.paylines) || [];
@@ -5918,15 +6051,38 @@
     renderSlot();
   }
 
-  /** 次の1回を回す。1回ぶんの演出が終わるたびに onSlotResult から呼ばれる */
-  function slotAutoStep() {
+  /**
+   * 次の1回を回す。1回ぶんの演出が終わるたびに onSlotResult から呼ばれる。
+   *
+   * **その瞬間ボタンが押せないだけで諦めない**。演出の後始末と重なると一瞬 disabled に
+   * なることがあり、そこで止めるとオートが理由もなく死ぬ(実際に起きていた)。
+   * 本当の停止理由(チップ不足・上限・通信断)が無い限り、少しだけ待って再挑戦する。
+   */
+  function slotAutoStep(retry) {
     const stop = slotAutoStopReason();
     if (stop) { slotAutoStop(stop); return; }
     const btn = document.getElementById("slot-spin");
-    if (!btn || btn.disabled) { slotAutoStop("\u56DE\u305B\u306A\u304F\u306A\u308A\u307E\u3057\u305F"); return; }
+    if (!btn || btn.disabled) {
+      const n = (retry || 0) + 1;
+      if (n <= 15) { setTimeout(() => slotAutoStep(n), 200); return; }   // 最大3秒待つ
+      slotAutoStop("\u56DE\u305B\u306A\u304F\u306A\u308A\u307E\u3057\u305F");
+      return;
+    }
     slotAuto.left--;
     slotSetAutoLabel();
     btn.click();
+  }
+
+  /**
+   * 演出が長引いたら自動で早送りする。
+   * WILDが多いと連鎖が延々続き、素直に全部見せると **1スピンで40秒**を超える(実測)。
+   * 見せ場(祝福・フリーゲーム)は削らず、**繰り返しの部分だけ**を詰める。
+   *   0 … 通常 / 1 … ライン演出を省く / 2 … 連鎖の間も詰める
+   */
+  var slotPaceStart = 0;
+  function slotPace() {
+    const t = Date.now() - (slotPaceStart || Date.now());
+    return t > 11000 ? 2 : t > 5500 ? 1 : 0;
   }
 
   /** 各リールで何マス消えたか(＝上から何マス落ちてくるか) */
@@ -5941,17 +6097,17 @@
       const st = steps[i];
       slotSetGrid(st.grid, st.hits);          // 当たったマスを光らせる
       slotSetMult(st.mult);
-      // 2連鎖目からは「連鎖」であることを明示する(勝手に絵柄が変わったように見せない)
-      slotSetChain(i + 1, steps.length);
       play(fs ? "win" : "chipSmall");
       // チップ建ては倍率も換算も無し(賭け金 × 配当倍率がそのままチップ)
       const chips = slotCur === "chips"
         ? Math.round(st.payX * bet)
         : Math.round(st.payX * bet * sv.chipsPerGold * sv.multiplier);
       slotSetWin(slotWinLabel(st, sv, chips), "big");
+      if (slotPace() >= 2) await slotSleep(140);
       // どのラインで当たったのかを1本ずつ見せる(本数が多いときは上位だけ)
-      await slotShowWinLines(st, sv, bet);
-      await slotSleep(220);
+      await slotShowWinLines(st, sv, bet, i);
+      const pace = slotPace();
+      await slotSleep(pace >= 2 ? 60 : pace >= 1 ? 150 : 220);
 
       if (i + 1 < steps.length) {
         slotClearLines();
@@ -5965,10 +6121,10 @@
           }
         }
         play("chipTick");
-        await slotSleep(220);
+        await slotSleep(pace >= 2 ? 90 : 220);
         // ②空いた分だけ上から新しい絵柄が落ちてくる
         slotSetGrid(steps[i + 1].grid, [], slotDropCounts(st.hits));
-        await slotSleep(260);
+        await slotSleep(pace >= 2 ? 110 : 260);
       } else {
         slotClearLines();
         slotSetGrid(st.grid, []);             // 最後の当選盤面はそのまま残す
@@ -5988,8 +6144,12 @@
       + '<div class="fsin-ja">\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0\u7A81\u5165\uFF01</div>'
       + '<div class="fsin-count"><b>' + total + '</b> \u30B2\u30FC\u30E0</div>'
       + (modeName ? '<div class="fsin-mode">' + escapeHtml(modeName) + '</div>' : "")
-      + (wildMult ? '<div class="sl-wildmult" id="fsin-wm">WILD\u914D\u5F53 <b id="fsin-wmv">\u00D7?</b>'
-        + '<span style="opacity:.7;font-weight:600">WILD\u3092\u542B\u3080\u5F53\u9078\u30E9\u30A4\u30F3\u306B1\u56DE\u9069\u7528</span></div>' : "")
+      + (wildMult ? '<div class="wr-wrap" id="fsin-wheel">'
+        + '<i class="wr-ring r5" data-m="5">5X</i>'
+        + '<i class="wr-ring r3" data-m="3">3X</i>'
+        + '<i class="wr-ring r2" data-m="2">2X</i>'
+        + '<i class="wr-ring r1" data-m="1">1X</i>'
+        + '</div><div class="wr-cap" id="fsin-wcap">WILD\u914D\u5F53</div>' : "")
       + '</div>';
     document.body.appendChild(el);
     await slotSleep(30);
@@ -6002,25 +6162,32 @@
     // WILD倍率の抽選を見せる。×2→×3→×4→×5 を循環させてから当選値で止める。
     // 値はサーバーが決めた oc.free.wildMult。ここは**見せ方だけ**で結果には影響しない
     if (wildMult) {
-      const v = document.getElementById("fsin-wmv");
-      const seq = [2, 3, 4, 5];
+      // 同心円のルーレット。外側から内側へ光が移り、当たった輪で止まる。
+      // 値はサーバーが決めた oc.free.wildMult。ここは**見せ方だけ**で結果には影響しない
+      const wrap = document.getElementById("fsin-wheel");
+      const cap = document.getElementById("fsin-wcap");
+      const rings = wrap ? [...wrap.querySelectorAll(".wr-ring")] : [];
+      const order = [1, 2, 3, 5];                 // 内側→外側の順に光らせる
+      const litOf = (m) => rings.forEach((el) => el.classList.toggle("lit", Number(el.dataset.m) === m));
       const t0 = (typeof performance !== "undefined" ? performance : Date).now();
       await new Promise((res) => {
         const tick = (now) => {
           const t = now - t0;
-          if (t < 1000) {                       // 1.0秒だけ循環させる(だんだん遅く)
-            const idx = Math.floor(t / (70 + t / 12)) % seq.length;
-            if (v) v.textContent = "\u00D7" + seq[idx];
+          if (t < 1700) {                         // だんだん遅くなる
+            const idx = Math.floor(t / (80 + t / 9)) % order.length;
+            litOf(order[idx]);
+            if (cap) cap.textContent = "WILD\u914D\u5F53\u3092\u62BD\u9078\u4E2D\u2026";
             slotRaf(tick);
           } else res();
         };
         slotRaf(tick);
       });
-      if (v) { v.textContent = "\u00D7" + wildMult; }
-      const wm = document.getElementById("fsin-wm");
-      if (wm) { wm.classList.remove("pop"); void wm.offsetWidth; wm.classList.add("pop"); }
+      litOf(wildMult);
+      if (wrap) wrap.classList.add("done");
+      if (cap) cap.innerHTML = "WILD\u914D\u5F53 <b>\u00D7" + wildMult + "</b>"
+        + '<div style="font-size:10px;opacity:.7">WILD\u3092\u542B\u3080\u5F53\u9078\u30E9\u30A4\u30F3\u306B1\u56DE\u9069\u7528</div>';
       play("bigwin");
-      await slotSleep(700);
+      await slotSleep(1100);
     } else {
       await slotSleep(1500);
     }
@@ -6110,7 +6277,9 @@
     // 3連WILDが止まったリールを、この瞬間から金枠+前面レイヤーで固定する
     const stacked = oc.stackedReels || [];
     slotLockedReels = stacked.slice();
-    if (oc.grid0) slotSetGrid(oc.grid0, []);
+    // 停止アニメーションが並べた盤面をそのまま使う(作り直すと着地の跳ねが消える)
+    if (oc.grid0) slotAdoptGrid(oc.grid0);
+    await slotSleep(240);                         // 着地の余韻。すぐ当選演出に入ると忙しない
     if (stacked.length) {
       slotApplyLocks(document.getElementById("sl-grid"), stacked);   // 新規なので拡大演出つき
       slotLockMessage(stacked.length);
@@ -6132,7 +6301,8 @@
       slotSpinAnimStart();
       await slotSleep(950);                       // リスピンは通常より短い(約1秒)
       await slotSpinAnimStop(oc.respin.grid0, { fast: true });
-      slotSetGrid(oc.respin.grid0, []);
+      slotAdoptGrid(oc.respin.grid0);
+      await slotSleep(200);
       if (oc.respin.steps.length) {
         await slotPlaySteps(oc.respin.steps, r.bet, sv, false);
         slotSetGrid(oc.respin.steps[oc.respin.steps.length - 1].grid, []);
@@ -6156,7 +6326,6 @@
       const ov = slotFsOverlay(modeName ? modeName.name : "", oc.free.spinsTotal, oc.free.wildMult);
       await slotSleep(500);
       let i = 0;
-      let prevSticky = [];
       let acc = 0;
       for (const fsp of oc.free.spins) {
         i++;
@@ -6165,23 +6334,32 @@
         const bar = document.getElementById("slfs-bar");
         const tot = Number(ov.dataset.total) || oc.free.spinsTotal || i;
         if (bar) bar.style.width = Math.min(100, Math.round(i / tot * 100)) + "%";
-        // 固定WILD(3スピン): 該当リールをロック表示。新しく固定されたぶんだけ演出する
-        const sticky = fsp.stickyReels || [];
-        const fresh = sticky.filter((r) => prevSticky.indexOf(r) < 0);
-        slotLockedReels = sticky.slice();
+        { const tc = ov.querySelector(".slfs-count");
+          if (tc) tc.innerHTML = '<b id="slfs-i">' + i + '</b> / ' + tot
+            + ' <span class="slfs-unit">\u30B2\u30FC\u30E0\u76EE</span>'; }
+        // WILDは**コマ単位でホールド**される(第79弾)。新しく増えたぶんだけ演出する
+        const held = (fsp.heldCells || []).map((c) => c[0] + "," + c[1]);
+        const fresh = (fsp.freshCells || []).map((c) => c[0] + "," + c[1]);
+        slotHeldCells = new Set(held);
+        slotFreshCells = new Set(fresh);
         // ③**毎ゲーム、実際にリールを回す**。差し替えるだけだと「動いていない」ように見える。
         // 固定リールも後ろで回るが、前面のWILDレイヤーが残るので固定に見える
+        slotPaceStart = Date.now();   // フリーは1ゲームごとに時計を入れ直す
         slotSpinAnimStart();
         await slotSleep(300);
         await slotSpinAnimStop(fsp.grid0, { fast: true });
-        if (fsp.grid0) slotSetGrid(fsp.grid0, []);
+        if (fsp.grid0) slotAdoptGrid(fsp.grid0);
         if (fresh.length) {
           play("bigwin");
-          slotApplyLocks(document.getElementById("sl-grid"), fresh);
+          slotApplyLocks(document.getElementById("sl-grid"));
           slotLockMessage(fresh.length);
-          await slotSleep(560);                   // 新規固定の演出(1.12倍→戻る)を見せる
+          await slotSleep(520);                   // 新しくホールドされた合図を見せる
+          slotFreshCells = new Set();             // 演出は1回だけ
         }
-        prevSticky = sticky.slice();
+        // 上乗せがあったら総回数の表示を伸ばす
+        if (fsp.addedSpins > 0) {
+          ov.dataset.total = String((Number(ov.dataset.total) || 0) + fsp.addedSpins);
+        }
         await slotPlaySteps(fsp.steps, r.bet, sv, true);
         const mc = document.getElementById("slfs-m");
         if (mc) { mc.textContent = fsp.multAfter; mc.classList.remove("pop"); void mc.offsetWidth; mc.classList.add("pop"); }
@@ -6194,6 +6372,7 @@
         await slotSleep(fsp.steps.length ? 260 : 340);
       }
       slotLockedReels = [];
+      slotHeldCells = new Set(); slotFreshCells = new Set();
       const wc = document.getElementById("slfs-w");
       if (wc) wc.textContent = "+" + fmt(r.won);
       await slotSleep(700);
@@ -6217,6 +6396,15 @@
     const payX = (r.outcome && r.outcome.totalPayX) || 0;
     if (payX >= 5) { await slotCelebrate(payX, r.won, r.bet); }
     else if (r.kind === "small") play("chipSmall");
+
+    // 当選ラインは**次に操作するまで巡回表示し続ける**(スクリーンショットを撮れるように)。
+    // 通常時の当選が対象。フリーゲームは合計だけを出す
+    if (r.won > 0) {
+      const last = (oc.base && oc.base[oc.base.length - 1])
+        || (oc.respin && oc.respin.steps[oc.respin.steps.length - 1]);
+      if (last) slotStartCycle(last, sv, r.bet, r.won);
+      else slotShowTotal(r.won, 0, 1);
+    }
 
     // --- オートスピンの続き ---
     if (slotAutoRunning() || slotAuto.stopping) {
