@@ -1718,6 +1718,88 @@
   .sl-wildmult.pop { animation:slPop .4s cubic-bezier(.2,1.6,.4,1); }
   #sl-fsin .sl-wildmult { margin-top:12px; font-size:12px; flex-direction:column; gap:2px; padding:6px 14px; }
   #sl-fsin .sl-wildmult b { font-size:30px; }
+  /* --- 第77弾 §7: ペイライン一覧 --- */
+  .sl-ways { cursor:pointer; }
+  .sl-ways .sl-i { display:inline-flex; align-items:center; justify-content:center;
+    width:13px; height:13px; margin-left:5px; border-radius:50%;
+    background:rgba(36,21,3,.75); color:#ffd76a; font-size:9px; font-weight:900; }
+  #sl-lines-modal { position:fixed; inset:0; z-index:100006; display:flex;
+    align-items:center; justify-content:center; padding:16px;
+    background:rgba(4,3,8,.86); -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); }
+  .plm-card { width:100%; max-width:420px; border-radius:16px; padding:14px;
+    background:linear-gradient(180deg,#1c1410,#0d0908);
+    border:1px solid rgba(212,175,55,.55); box-shadow:0 18px 50px rgba(0,0,0,.7); color:#ffe9c0; }
+  .plm-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .plm-head b { font-size:14px; letter-spacing:.1em; color:#ffd76a; }
+  .plm-close { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18);
+    color:#ffe9c0; border-radius:8px; padding:4px 12px; font-size:12px; font-weight:700; }
+  .plm-pages { display:flex; gap:5px; margin-bottom:8px; }
+  .plm-pages button { flex:1; padding:5px 0; font-size:11px; font-weight:800; border-radius:8px;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14); color:#cfc3ad; }
+  .plm-pages button.on { background:linear-gradient(180deg,#ffd76a,#c9992e); color:#241503;
+    border-color:rgba(255,240,190,.8); }
+  .plm-board { position:relative; display:grid; grid-template-columns:repeat(5,1fr);
+    gap:3px; padding:6px; border-radius:10px; background:#120c18;
+    border:1px solid rgba(212,175,55,.35); }
+  .plm-cell { aspect-ratio:1; border-radius:6px; background:rgba(255,255,255,.035); }
+  .plm-svg { position:absolute; inset:0; pointer-events:none; overflow:visible; }
+  .plm-svg polyline { fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; opacity:.4; }
+  .plm-svg polyline.sel { stroke-width:4.5; opacity:1; filter:drop-shadow(0 0 4px rgba(255,255,255,.5)); }
+  .plm-svg .plm-badge { stroke:rgba(0,0,0,.55); stroke-width:1; }
+  .plm-svg .plm-num { font:700 9px/1 sans-serif; fill:#140d04; }
+  .plm-list { display:flex; flex-wrap:wrap; gap:5px; margin-top:9px; }
+  .plm-list button { display:flex; align-items:center; gap:5px; padding:4px 9px; border-radius:8px;
+    font-size:11px; font-weight:800; background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.14); color:#e8dcc4; }
+  .plm-list button.on { background:rgba(255,215,106,.16); border-color:rgba(255,215,106,.75); color:#ffe9a8; }
+  .plm-list i { width:14px; height:3px; border-radius:2px; display:inline-block; }
+  .plm-note { margin-top:9px; font-size:10.5px; opacity:.7; line-height:1.5; }
+  /* --- 第77弾 §8: オートスピン --- */
+  .sl-autorow { display:flex; gap:8px; margin-top:8px; }
+  .sl-autobtn { flex:none; min-width:96px; padding:11px 10px; border-radius:12px; font-weight:800;
+    font-size:12.5px; background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,215,106,.45); color:#ffe9a8; }
+  .sl-autobtn.running { background:linear-gradient(180deg,#7a1f2c,#4a1018);
+    border-color:rgba(255,120,120,.7); color:#ffd9d9; }
+  .sl-autobtn b { display:block; font-size:15px; line-height:1.15; }
+  .sl-autobtn span { display:block; font-size:9.5px; opacity:.75; }
+  #sl-auto-modal { position:fixed; inset:0; z-index:100006; display:flex;
+    align-items:center; justify-content:center; padding:16px;
+    background:rgba(4,3,8,.86); -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); }
+  .am-card { width:100%; max-width:360px; border-radius:16px; padding:16px;
+    background:linear-gradient(180deg,#1c1410,#0d0908);
+    border:1px solid rgba(212,175,55,.55); color:#ffe9c0; box-shadow:0 18px 50px rgba(0,0,0,.7); }
+  .am-card h3 { margin:0 0 10px; font-size:14px; letter-spacing:.1em; color:#ffd76a; }
+  .am-counts { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .am-counts button { padding:10px 0; border-radius:10px; font-size:14px; font-weight:900;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.16); color:#ffe9c0; }
+  .am-counts button.on { background:linear-gradient(180deg,#ffd76a,#c9992e); color:#241503; }
+  .am-opts { margin-top:12px; display:flex; flex-direction:column; gap:7px; }
+  .am-opts label { display:flex; align-items:center; gap:8px; font-size:12px; }
+  .am-opts input { width:16px; height:16px; accent-color:#d9b45f; }
+  .am-btns { display:flex; gap:8px; margin-top:14px; }
+  .am-btns button { flex:1; padding:10px 0; border-radius:10px; font-size:13px; font-weight:800;
+    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18); color:#ffe9c0; }
+  .am-btns button.primary { background:linear-gradient(180deg,#ffd76a,#c9992e); color:#241503; border:none; }
+  .am-note { margin-top:10px; font-size:10.5px; opacity:.7; line-height:1.5; }
+  /* --- 第77弾 §6: SCATTER の焦らし --- */
+  /* 画面外周を暗くして中央に集中させる。盤面はわずかに拡大(1.015倍) */
+  body.sl-antic::after { content:""; position:fixed; inset:0; z-index:60; pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 42%, rgba(0,0,0,.55) 100%);
+    animation:slAnticIn .35s ease-out; }
+  @keyframes slAnticIn { from { opacity:0; } to { opacity:1; } }
+  .sl-grid.antic { transform:scale(1.015); transition:transform .35s ease-out;
+    border-color:#ffcf5a !important;
+    box-shadow:inset 0 2px 12px rgba(0,0,0,.6), 0 0 30px rgba(255,180,60,.55) !important; }
+  /* 既に見えているSCATTERだけを脈動させる */
+  .sl-cell.sc.antic-lit img { animation:slScPulse .62s ease-in-out infinite; }
+  @keyframes slScPulse {
+    0%,100% { filter:brightness(1) drop-shadow(0 0 6px rgba(255,150,60,.8)); transform:scale(1); }
+    50%     { filter:brightness(1.6) drop-shadow(0 0 18px rgba(255,190,90,1)); transform:scale(1.09); }
+  }
+  /* まだ止まっていないリールのうち、最後の1本だけ金色の縁を光らせる */
+  .sl-reel.antic-target { box-shadow:0 0 0 2px rgba(255,207,90,.9), 0 0 22px rgba(255,180,60,.7);
+    border-radius:6px; z-index:2; }
   .sl-grid.wildflash { animation:slWildFlash .32s ease-out; }
   /* 筐体化(第70弾): 「25 LINES」はリール枠に付いた金属プレート風にする(浮いた文字にしない) */
   .sl-ways { background:linear-gradient(180deg,#f0d488,#b8871f); color:#241503 !important;
@@ -13443,6 +13525,10 @@ window.__offlineSave = PokerOffline.startOfflineServer();
 
   var slotSpinSndTimer = null;
   var slotLockedReels = [];    // スタックドWILD/固定WILD中のリール番号(第76弾で複数対応)
+  // オートスピン(第77弾)。left>0 のあいだ自動で回す
+  var slotAuto = { left: 0, stopOnFree: true, stopOnBig: false, stopping: false };
+  /** オート中は演出を短縮する。ただし見せ場(フリー・高額)は短縮しない */
+  const slotAutoRunning = () => slotAuto.left > 0;
   const slotIsLocked = (r) => slotLockedReels.indexOf(r) >= 0;
 
   function slotRandKey() { return SYM_KEYS[Math.floor(Math.random() * SYM_KEYS.length)]; }
@@ -13489,13 +13575,14 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     const span = bandH;                             // 一周ぶんの移動量(帯1枚分)
     const st = { el: strip, reel: reelEl, step, span, pos: span * Math.random(), raf: 0 };
     const vMax = step * 22 / 1000;                  // px/ms(1秒で約22マス)
+    st.slow = 1;                                    // 焦らし中に 0.25 まで落とす
     let t0 = null, last = null;
     const tick = (now) => {
       if (t0 === null) { t0 = now; last = now; }
       const dt = Math.min(48, now - last); last = now;
       const t = now - t0;
       // 始動100ms: 引き上げ / その後120msで最高速へ
-      const v = t < 100 ? -8 / 100 : Math.min(vMax, (t - 100) / 120 * vMax);
+      const v = t < 100 ? -8 / 100 : Math.min(vMax, (t - 100) / 120 * vMax) * (st.slow || 1);
       st.pos += v * dt;
       while (st.pos >= st.span) st.pos -= st.span;
       while (st.pos < 0) st.pos += st.span;
@@ -13595,9 +13682,38 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     });
   }
 
+  /** 焦らしを始める: 音を落とし、外周を暗くし、既存SCATTERを脈動させ、残りリールを減速する */
+  function slotAnticStart(grid, stoppedReels) {
+    document.body.classList.add("sl-antic");
+    grid.classList.add("antic");
+    // 既に見えているSCATTERだけ光らせる
+    grid.querySelectorAll(".sl-cell.sc").forEach((c) => c.classList.add("antic-lit"));
+    // まだ止まっていないリールを25%まで減速し、最後の1本を金縁にする
+    for (let i = stoppedReels; i < 5; i++) {
+      const st = slotReelState[i];
+      if (st) st.slow = 0.25;
+    }
+    const reels = grid.querySelectorAll(".sl-reel");
+    if (reels[4]) reels[4].classList.add("antic-target");
+    // 回転音は間隔を空けて音程が上がっていくように鳴らす
+    if (slotSpinSndTimer) { clearInterval(slotSpinSndTimer); slotSpinSndTimer = null; }
+  }
+
+  /** 焦らしを終える。**外れても大きな失敗音は鳴らさず**、静かに戻す */
+  function slotAnticEnd(grid) {
+    document.body.classList.remove("sl-antic");
+    grid.classList.remove("antic");
+    grid.querySelectorAll(".antic-lit").forEach((c) => c.classList.remove("antic-lit"));
+    grid.querySelectorAll(".antic-target").forEach((c) => c.classList.remove("antic-target"));
+  }
+
   /**
    * 左のリールから120ms差で順番に止める。同時停止は手応えが無いので必ずずらす。
-   * スキャッターが2つ以上見えているときは、最後の1本だけ長く引っ張る(煽り)。
+   *
+   * 焦らし(アンティシペーション)の発動条件は資料どおり:
+   *   「2個以上のSCATTERが**すでに見えていて**、残りのリールに3個目が出うる」
+   * ならば**結果にかかわらず**発動する。当たるときだけ焦らすと結果を読まれるため、
+   * ここでは finalGrid の未停止ぶんを覗かない。
    */
   async function slotSpinAnimStop(finalGrid, opts) {
     const o = opts || {};
@@ -13606,16 +13722,34 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (slotSpinSndTimer) { clearInterval(slotSpinSndTimer); slotSpinSndTimer = null; }
     const done = [];
     let scatters = 0;
+    let antic = false;
     for (let r = 0; r < 5; r++) {
       const col = finalGrid && finalGrid[r];
-      // 煽りは「止まった4本までに2つ見えている」ときだけ(5本目を先に覗かない)
-      const anticipate = !o.fast && scatters >= 2 && r === 4;
-      if (anticipate) { grid.classList.add("anticipate"); await slotSleep(900); }
-      done.push(slotReelStop(r, col, o.fast ? 240 : 320));
+      // 「ここまでに2個見えている」かつ「残りのリールで3個目が出うる」なら焦らす。
+      // 3個目が出る余地があるか＝残りリール数が足りているか、だけで判断する
+      if (!o.fast && !antic && scatters >= 2 && r <= 4 && (5 - r) >= 1) {
+        antic = true;
+        slotAnticStart(grid, r);
+        await slotSleep(420);
+      }
+      // 焦らし中の最終リールは、停止直前にさらに減速し、直前に無音を挟む
+      if (antic && r === 4) {
+        const st = slotReelState[4];
+        if (st) st.slow = 0.12;
+        await slotSleep(560);
+        await slotSleep(100);                        // 停止直前の無音
+      }
+      done.push(slotReelStop(r, col, o.fast ? 240 : antic && r >= 3 ? 460 : 320));
       if (col) for (let y = 0; y < 3; y++) if (col[y] === "scatter") scatters++;
-      if (r < 4) await slotSleep(o.fast ? 100 : 120);
+      if (r < 4) await slotSleep(o.fast ? 100 : antic ? 220 : 120);
     }
     await Promise.all(done);
+    if (antic) {
+      // 3個そろったかどうかで締め方を変える。外れても静かに戻すだけ
+      if (scatters >= 3) { play("bigwin"); await slotSleep(120); }
+      else await slotSleep(200);
+      slotAnticEnd(grid);
+    }
     grid.classList.remove("spinning", "anticipate");
     slotSpinAnimAbort();
   }
@@ -13683,7 +13817,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           </div>
         </div>
         <div class="sl-head">
-          <span class="sl-ways">${sv.lines || 20} LINES</span>
+          <span class="sl-ways" id="sl-ways" role="button" tabindex="0">${sv.lines || 25} LINES<i class="sl-i">i</i></span>
           <span class="sl-mult-now" id="sl-mult">${slotChainMult > 1 ? "\u00D7" + slotChainMult : ""}</span>
         </div>
         <div class="sl-grid" id="sl-grid">${slotGridHtml(grid)}</div>
@@ -13700,12 +13834,19 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           <button class="sl-betop" data-betop="max">MAX</button>
         </div>
         ${slotBetOpen ? `<div class="sl-betlist">${betList.map((b, i) => `<button class="sl-betitem ${b === curBet ? "sel" : ""}" data-bet="${b}">${coin} ${fmt(b)}</button>`).join("")}</div>` : ""}
+        <div class="sl-autorow">
         <button class="spin-btn king ${canSpin && !slotSpinning ? "idle" : ""}" id="slot-spin" ${canSpin ? "" : "disabled"}>
           ${slotSpinning ? "<b>\u56DE\u8EE2\u4E2D\u2026</b>"
             : left <= 0 ? "<b>\u672C\u65E5\u306F\u7D42\u4E86</b>"
             : have < cost ? "<b>" + (isChips ? "\u30C1\u30C3\u30D7\u4E0D\u8DB3" : "\u30B4\u30FC\u30EB\u30C9\u4E0D\u8DB3") + "</b>"
             : "<b>\u30B9\u30D4\u30F3</b><span>\u6D88\u8CBB " + coin + " " + fmt(cost) + "</span>"}
         </button>
+        <button class="sl-autobtn ${slotAutoRunning() ? "running" : ""}" id="sl-auto">
+          ${slotAutoRunning()
+            ? "<b>AUTO " + slotAuto.left + "</b><span>" + (slotAuto.stopping ? "\u3053\u306E1\u56DE\u3067\u505C\u6B62" : "\u505C\u6B62") + "</span>"
+            : "<b>AUTO</b><span>\u81EA\u52D5\u30B9\u30D4\u30F3</span>"}
+        </button>
+        </div>
         <div class="note" style="margin-top:9px;font-size:12px">\u6240\u6301 ${coin} ${fmt(have)} \uFF0F \u672C\u65E5\u3042\u3068 ${left} \u56DE</div>
       </div>
 
@@ -13763,6 +13904,18 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     const betNow = document.getElementById("sl-betnow");
     if (betNow) betNow.onclick = () => { slotBetOpen = !slotBetOpen; renderSlot(); };
     each("[data-cur]", (b) => { b.onclick = () => { slotCur = b.dataset.cur; renderSlot(); }; });
+    const autoBtn = document.getElementById("sl-auto");
+    if (autoBtn) autoBtn.onclick = () => {
+      if (slotAutoRunning()) {
+        // 走行中の1回は最後まで処理する(途中で切ると残高と演出の整合が崩れる)
+        slotAuto.stopping = true;
+        slotSetAutoLabel();
+      } else {
+        slotAskAuto();
+      }
+    };
+    const waysBtn = document.getElementById("sl-ways");
+    if (waysBtn) waysBtn.onclick = () => slotShowPaylineList(sv);
     const spinBtn = document.getElementById("slot-spin");
     if (spinBtn) spinBtn.onclick = () => {
       const c = Math.ceil(curBet * (slotAnte ? (slotView.anteCost || 1.5) : 1));
@@ -14282,9 +14435,13 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (!wins.length) return;
     const paylines = (sv && sv.paylines) || [];
     // 本数で表示方針を決める
-    const plan = wins.length <= 3 ? { show: wins.length, hold: 620 }
+    let plan = wins.length <= 3 ? { show: wins.length, hold: 620 }
       : wins.length <= 8 ? { show: 5, hold: 460 }
       : { show: 3, hold: 400 };
+    // オート中はテンポを優先して短縮する(資料どおり)。
+    // ただし高額当選は見せ場なので短縮しない
+    const totalPay = wins.reduce((a, w) => a + w.pay * (w.wildMult || 1), 0) * (st.mult || 1);
+    if (slotAutoRunning() && totalPay < 20) plan = { show: Math.min(3, wins.length), hold: 280 };
 
     let skipped = false;
     const onSkip = () => { skipped = true; };
@@ -14314,6 +14471,196 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     } finally {
       document.removeEventListener("pointerdown", onSkip);
     }
+  }
+
+  /**
+   * ペイライン一覧。25本を一度に描くと重なって読めないので **5本ずつ5ページ**に分ける。
+   * 色は当選演出と同じ slotLineColor を使うので、出たラインを後から確認できる。
+   * 色だけでは25本を区別できないため、**番号バッジ**も必ず添える。
+   */
+  function slotShowPaylineList(sv) {
+    const paylines = (sv && sv.paylines) || [];
+    if (!paylines.length) return;
+    const PER = 5;
+    const pages = Math.ceil(paylines.length / PER);
+    let page = 0, sel = 0;
+
+    const el = document.createElement("div");
+    el.id = "sl-lines-modal";
+    el.innerHTML = '<div class="plm-card">'
+      + '<div class="plm-head"><b>PAYLINES</b>'
+      + '<button class="plm-close" id="plm-close">\u9589\u3058\u308B</button></div>'
+      + '<div class="plm-pages" id="plm-pages"></div>'
+      + '<div class="plm-board" id="plm-board"></div>'
+      + '<div class="plm-list" id="plm-list"></div>'
+      + '<p class="plm-note">\u5DE6\u7AEF\u306E\u30EA\u30FC\u30EB\u304B\u3089\u9023\u7D9A\u3067\u540C\u3058\u7D75\u67C4\u304C3\u3064\u4EE5\u4E0A\u4E26\u3076\u3068\u914D\u5F53\u3067\u3059\u3002'
+      + '\u756A\u53F7\u3092\u62BC\u3059\u3068\u305D\u306E\u30E9\u30A4\u30F3\u3060\u3051\u592A\u304F\u8868\u793A\u3055\u308C\u307E\u3059\u3002</p>'
+      + '</div>';
+    document.body.appendChild(el);
+
+    const board = el.querySelector("#plm-board");
+    // 5×3のマスを置いてから、その上にラインを描く
+    board.innerHTML = new Array(15).fill('<div class="plm-cell"></div>').join("");
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("class", "plm-svg");
+    board.appendChild(svg);
+
+    const centerOf = (reel, row) => {
+      const cells = board.querySelectorAll(".plm-cell");
+      const c = cells[row * 5 + reel];
+      if (!c) return null;
+      const bb = board.getBoundingClientRect(), cb = c.getBoundingClientRect();
+      return { x: cb.left - bb.left + cb.width / 2, y: cb.top - bb.top + cb.height / 2 };
+    };
+
+    const draw = () => {
+      svg.innerHTML = "";
+      const from = page * PER;
+      const ids = [];
+      for (let i = from; i < Math.min(from + PER, paylines.length); i++) ids.push(i);
+      for (const li of ids) {
+        const pts = [];
+        for (let r = 0; r < 5; r++) { const c = centerOf(r, paylines[li][r]); if (c) pts.push(c); }
+        if (pts.length < 2) continue;
+        const color = slotLineColor(li);
+        const pl = document.createElementNS(svgNS, "polyline");
+        pl.setAttribute("points", pts.map((p) => p.x.toFixed(1) + "," + p.y.toFixed(1)).join(" "));
+        pl.setAttribute("stroke", color);
+        // 選択中は太く。**隣り合う番号は破線にして、色が似ていても見分けられるようにする**
+        if (li === sel) pl.setAttribute("class", "sel");
+        else if (li % 2 === 1) pl.setAttribute("stroke-dasharray", "5 4");
+        svg.appendChild(pl);
+        if (li === sel) {
+          for (const p of [pts[0], pts[pts.length - 1]]) {
+            const b = document.createElementNS(svgNS, "circle");
+            b.setAttribute("class", "plm-badge");
+            b.setAttribute("cx", p.x.toFixed(1)); b.setAttribute("cy", p.y.toFixed(1));
+            b.setAttribute("r", "8"); b.setAttribute("fill", color);
+            svg.appendChild(b);
+            const t = document.createElementNS(svgNS, "text");
+            t.setAttribute("class", "plm-num");
+            t.setAttribute("x", p.x.toFixed(1)); t.setAttribute("y", (p.y + 3).toFixed(1));
+            t.setAttribute("text-anchor", "middle");
+            t.textContent = String(li + 1);
+            svg.appendChild(t);
+          }
+        }
+      }
+      // 番号ボタン
+      const list = el.querySelector("#plm-list");
+      list.innerHTML = ids.map((li) =>
+        '<button data-line="' + li + '" class="' + (li === sel ? "on" : "") + '">'
+        + '<i style="background:' + slotLineColor(li) + '"></i>' + (li + 1) + '</button>').join("");
+      each2(list, "[data-line]", (b) => { b.onclick = () => { sel = Number(b.dataset.line); draw(); }; });
+      // ページ切り替え
+      const pg = el.querySelector("#plm-pages");
+      pg.innerHTML = "";
+      for (let p = 0; p < pages; p++) {
+        const a = p * PER + 1, b2 = Math.min((p + 1) * PER, paylines.length);
+        pg.innerHTML += '<button data-page="' + p + '" class="' + (p === page ? "on" : "") + '">' + a + "\u2013" + b2 + "</button>";
+      }
+      each2(pg, "[data-page]", (b) => {
+        b.onclick = () => { page = Number(b.dataset.page); sel = page * PER; draw(); };
+      });
+    };
+
+    const close = () => el.remove();
+    el.querySelector("#plm-close").onclick = close;
+    el.onclick = (e) => { if (e.target === el) close(); };
+    // 盤面の大きさが確定してから描く
+    slotRaf(() => draw());
+  }
+
+  /** 指定要素の中だけに対して each を掛ける小道具 */
+  function each2(root, sel, fn) { root.querySelectorAll(sel).forEach(fn); }
+
+  /** AUTO ボタンの見た目だけを更新する(全体を描き直すと演出が飛ぶため) */
+  function slotSetAutoLabel() {
+    const b = document.getElementById("sl-auto");
+    if (!b) return;
+    b.classList.toggle("running", slotAutoRunning());
+    b.innerHTML = slotAutoRunning()
+      ? "<b>AUTO " + slotAuto.left + "</b><span>" + (slotAuto.stopping ? "\u3053\u306E1\u56DE\u3067\u505C\u6B62" : "\u505C\u6B62") + "</span>"
+      : "<b>AUTO</b><span>\u81EA\u52D5\u30B9\u30D4\u30F3</span>";
+  }
+
+  /** 回数と停止条件を選ばせる */
+  function slotAskAuto() {
+    if (document.getElementById("sl-auto-modal")) return;
+    let count = 25;
+    const el = document.createElement("div");
+    el.id = "sl-auto-modal";
+    el.innerHTML = '<div class="am-card">'
+      + '<h3>\u30AA\u30FC\u30C8\u30B9\u30D4\u30F3</h3>'
+      + '<div class="am-counts" id="am-counts">'
+      + [10, 25, 50, 100].map((n) => '<button data-n="' + n + '"' + (n === count ? ' class="on"' : "") + '>' + n + "</button>").join("")
+      + '</div>'
+      + '<div class="am-opts">'
+      + '<label><input type="checkbox" id="am-free" ' + (slotAuto.stopOnFree ? "checked" : "") + '>'
+      + '\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0\u5F53\u9078\u3067\u505C\u6B62</label>'
+      + '<label><input type="checkbox" id="am-big" ' + (slotAuto.stopOnBig ? "checked" : "") + '>'
+      + 'BIG WIN\uFF08BET\u306E20\u500D\u4EE5\u4E0A\uFF09\u3067\u505C\u6B62</label>'
+      + '</div>'
+      + '<div class="am-btns"><button id="am-cancel">\u3084\u3081\u308B</button>'
+      + '<button class="primary" id="am-go">\u958B\u59CB</button></div>'
+      + '<p class="am-note">\u30C1\u30C3\u30D7\u4E0D\u8DB3\u30FB\u672C\u65E5\u306E\u4E0A\u9650\u30FB\u901A\u4FE1\u65AD\u3067\u3082\u81EA\u52D5\u3067\u6B62\u307E\u308A\u307E\u3059\u3002'
+      + '\u505C\u6B62\u3092\u62BC\u3057\u305F\u5834\u5408\u306F\u3001\u3044\u307E\u306E1\u56DE\u3092\u6700\u5F8C\u307E\u3067\u51E6\u7406\u3057\u3066\u304B\u3089\u6B62\u307E\u308A\u307E\u3059\u3002</p>'
+      + '</div>';
+    document.body.appendChild(el);
+    each2(el, "[data-n]", (b) => {
+      b.onclick = () => {
+        count = Number(b.dataset.n);
+        each2(el, "[data-n]", (x) => x.classList.toggle("on", Number(x.dataset.n) === count));
+      };
+    });
+    const close = () => el.remove();
+    el.querySelector("#am-cancel").onclick = close;
+    el.onclick = (e) => { if (e.target === el) close(); };
+    el.querySelector("#am-go").onclick = () => {
+      slotAuto.stopOnFree = el.querySelector("#am-free").checked;
+      slotAuto.stopOnBig = el.querySelector("#am-big").checked;
+      slotAuto.left = count;
+      slotAuto.stopping = false;
+      close();
+      renderSlot();
+      slotAutoStep();
+    };
+  }
+
+  /** 自動で止まる条件。止めるべきなら理由を返す */
+  function slotAutoStopReason() {
+    if (slotAuto.stopping) return "\u505C\u6B62\u3057\u307E\u3057\u305F";
+    if (slotAuto.left <= 0) return "\u56DE\u6570\u3092\u3059\u3079\u3066\u56DE\u3057\u307E\u3057\u305F";
+    if (!(ws && ws.readyState === WebSocket.OPEN)) return "\u901A\u4FE1\u304C\u5207\u308C\u307E\u3057\u305F";
+    const sv = slotView;
+    if (!sv) return "\u8AAD\u307F\u8FBC\u307F\u4E2D";
+    if ((sv.chipSpinsLeft || 0) <= 0) return "\u672C\u65E5\u306E\u4E0A\u9650\u306B\u9054\u3057\u307E\u3057\u305F";
+    if ((sv.chips || 0) < slotChipBet) return "\u30C1\u30C3\u30D7\u304C\u8DB3\u308A\u307E\u305B\u3093";
+    // スロット画面から離れたら止める
+    const el = document.getElementById("slot");
+    if (!el || el.offsetParent === null && el.clientHeight === 0) return "\u753B\u9762\u3092\u96E2\u308C\u307E\u3057\u305F";
+    return null;
+  }
+
+  function slotAutoStop(reason) {
+    if (!slotAutoRunning() && !slotAuto.stopping) return;
+    slotAuto.left = 0;
+    slotAuto.stopping = false;
+    slotSetAutoLabel();
+    if (reason) slotSetWin("AUTO \u7D42\u4E86\uFF1A" + reason, "");
+    renderSlot();
+  }
+
+  /** 次の1回を回す。1回ぶんの演出が終わるたびに onSlotResult から呼ばれる */
+  function slotAutoStep() {
+    const stop = slotAutoStopReason();
+    if (stop) { slotAutoStop(stop); return; }
+    const btn = document.getElementById("slot-spin");
+    if (!btn || btn.disabled) { slotAutoStop("\u56DE\u305B\u306A\u304F\u306A\u308A\u307E\u3057\u305F"); return; }
+    slotAuto.left--;
+    slotSetAutoLabel();
+    btn.click();
   }
 
   /** 各リールで何マス消えたか(＝上から何マス落ちてくるか) */
@@ -14604,6 +14951,15 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     const payX = (r.outcome && r.outcome.totalPayX) || 0;
     if (payX >= 5) { await slotCelebrate(payX, r.won, r.bet); }
     else if (r.kind === "small") play("chipSmall");
+
+    // --- オートスピンの続き ---
+    if (slotAutoRunning() || slotAuto.stopping) {
+      // 見せ場に当たったら、設定に応じてここで止める
+      if (slotAuto.stopOnFree && oc.freeEntered) slotAutoStop("\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0\u306B\u5F53\u9078");
+      else if (slotAuto.stopOnBig && payX >= 20) slotAutoStop("BIG WIN");
+      else if (slotAuto.stopping) slotAutoStop("\u505C\u6B62\u3057\u307E\u3057\u305F");
+      else setTimeout(() => slotAutoStep(), 320);
+    }
   }
 
   function renderShop() {
