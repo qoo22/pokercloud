@@ -136,7 +136,12 @@ export const FREE_MODES = [
     { key: 'many', name: '回数多め', desc: '15回 / ×1から+3ずつ', spins: 15, startMult: 1, step: 3 },
     { key: 'few', name: '一撃高倍率', desc: '8回 / ×5から+7ずつ', spins: 8, startMult: 5, step: 7 },
 ];
-/** 最大配当(賭け金に対する倍率)。ここで頭打ちにする */
+/**
+ * MAX WIN の称号を出すしきい値(×賭け金)。
+ * **第80弾で配当の頭打ちを撤廃した**(オーナー判断)。チップは現金化されず、
+ * 1日の回転数に上限があるため、発行量はそこで抑えられる。
+ * この値はもう配当を切り詰めず、演出の格付けにだけ使う。
+ */
 export const MAX_WIN_X = 5000;
 /**
  * フリーゲーム中にスキャッターが止まったときの上乗せ。
@@ -334,8 +339,7 @@ export function spin(rnd, opts = {}) {
         // 4個/5個で追加スピン
         let left = mode.spins + (scatters >= 5 ? 6 : scatters === 4 ? 3 : 0);
         let total = left;
-        // 倍率は伸ばさない(上のコメント参照)。モードは回数の違いだけになった
-        const mult = 1;
+        let mult = mode.startMult;
         let payX = 0;
         const spins = [];
         // WILD倍率は**突入時に1回だけ**引き、このフリーゲーム中はずっと同じ値を使う。
@@ -380,24 +384,25 @@ export function spin(rnd, opts = {}) {
             }
             const run = evaluateOnce(g, { mult, wildMult });
             payX += run.payX;
-            // **第79弾で永続マルチプライヤーの成長を止めた**。
-            // WILDがコマ単位で溜まっていく仕様と掛け合わさると、盤面の強さと倍率が
-            // 同時に伸びて二乗で発散し、フリーゲームの66%がMAX WINに達していた(実測)。
-            // フリーゲームの倍率は「突入時にルーレットで決まるWILD倍率」に一本化する。
+            // 永続マルチプライヤー(第80弾で復活)。当たったスピンごとに mode.step ずつ伸びる。
+            // ホールドWILDと掛け合わさって期待値は大きく上振れするが、**オーナー判断で許容**:
+            // チップは現金化されず、1日の回転数上限が発行量の歯止めになる。
+            // 勝手に「壊れている」と判断して切り詰めないこと(第79弾でそれをやって差し戻された)。
+            if (run.payX > 0)
+                mult += mode.step;
             spins.push({
                 grid0: g, steps: run.steps, multAfter: mult, payX: run.payX,
                 retrigger: add > 0, addedSpins: add,
                 heldCells: [...held].map((k) => k.split(',').map(Number)),
                 freshCells: fresh,
             });
-            if (payX + basePayX + (out.respin?.payX ?? 0) >= MAX_WIN_X)
-                break; // 上限到達で打ち切り
+            // 第80弾: 上限による打ち切りは撤廃。ループは freeSpinsCap で必ず終わる
         }
         out.free = { mode: mode.key, spinsTotal: total, spins, finalMult: mult, wildMult, payX };
     }
     const sum = basePayX + (out.respin?.payX ?? 0) + (out.free?.payX ?? 0);
-    out.totalPayX = Math.min(sum, MAX_WIN_X);
-    out.maxWin = sum >= MAX_WIN_X;
+    out.totalPayX = sum; // 頭打ちしない(第80弾)
+    out.maxWin = sum >= MAX_WIN_X; // 称号(MAX WIN)のしきい値としてだけ使う
     return out;
 }
 //# sourceMappingURL=slot.js.map

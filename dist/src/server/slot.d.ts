@@ -112,7 +112,12 @@ export interface FreeMode {
     step: number;
 }
 export declare const FREE_MODES: FreeMode[];
-/** 最大配当(賭け金に対する倍率)。ここで頭打ちにする */
+/**
+ * MAX WIN の称号を出すしきい値(×賭け金)。
+ * **第80弾で配当の頭打ちを撤廃した**(オーナー判断)。チップは現金化されず、
+ * 1日の回転数に上限があるため、発行量はそこで抑えられる。
+ * この値はもう配当を切り詰めず、演出の格付けにだけ使う。
+ */
 export declare const MAX_WIN_X = 5000;
 /**
  * フリーゲーム中にスキャッターが止まったときの上乗せ。
@@ -202,9 +207,9 @@ export interface SlotOutcome {
         wildMult: number;
         payX: number;
     };
-    /** 合計配当(×賭け金)。MAX_WIN_X で頭打ち */
+    /** 合計配当(×賭け金)。第80弾から頭打ちなし */
     totalPayX: number;
-    /** 上限に到達したか(演出用) */
+    /** MAX WIN の称号しきい値(5000x)を超えたか(演出用。もう配当は切り詰めない) */
     maxWin: boolean;
 }
 type Rnd = () => number;
