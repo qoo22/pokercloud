@@ -6818,8 +6818,18 @@ var PokerOffline = (() => {
     // --- 最終兵器 ---
     PHOENIX500T: 5e14,
     // 500兆
-    INFINITY1000T: 1e15
+    INFINITY1000T: 1e15,
     // 1000兆
+    // --- 神域(第81弾で追加) ---
+    // 注意: store.post は Number.isSafeInteger を要求するため、**1回の付与は 9000兆が実質上限**
+    // (2^53 ≒ 9007兆)。これを超える額のコードを足すと適用時にエラーになる。
+    // 残高の合計が壁を超えるのは実測で問題なし(残高と監査が同じ計算経路のため)。
+    ZEUS2000T: 2e15,
+    // 2000兆
+    COSMOS4000T: 4e15,
+    // 4000兆
+    OMEGA9000T: 9e15
+    // 9000兆(1回で付与できる最大)
   };
   var CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   function randomTableCode() {
