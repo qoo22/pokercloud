@@ -1844,6 +1844,94 @@
     justify-content:flex-start; gap:0; }
   .sl-result .slot-win { min-height:26px; }
   .sl-result .sl-lineinfo, .sl-result .sl-total { margin-top:6px; }
+  /* ===== 第86弾: リール直下を詰める =====
+     リール → 配当ドック(64px) → BET(52px) → スピン/AUTO → 所持金
+     ドックは**当選の有無にかかわらず同じ高さ**なので、下のボタンが一切動かない */
+  #slot .slot-machine { padding:10px 12px 14px; }
+  /* バナーを薄くして上を詰める。文字は小さく、装飾画像も低く */
+  #slot .sl-banner .slot-marquee { max-height:62px; margin-bottom:4px; }
+  #slot .sl-bantitle { font-size:11px; letter-spacing:.1em; }
+  #slot .sl-banrow { font-size:9px; gap:8px; }
+  #slot .sl-banrow b { font-size:10.5px; }
+  /* 「25 LINES」はリール枠の左上に重ねる(独立した帯をやめる) */
+  #slot .sl-head { display:none; }
+  .sl-gridwrap { position:relative; }
+  /* 告知(FREE GAME / WILD RE-SPIN / MAX WIN)はリールに**重ねる**。
+     行として積むと当選のたびに下のスピンボタンが動いてしまう */
+  .sl-gridwrap .slot-win { position:absolute; left:50%; transform:translateX(-50%);
+    bottom:8px; z-index:6; width:auto; max-width:92%; white-space:nowrap;
+    margin:0; padding:4px 14px; text-align:center; pointer-events:none;
+    font-size:13px; font-weight:900; letter-spacing:.04em; border-radius:999px;
+    text-shadow:0 2px 10px rgba(0,0,0,.85), 0 0 18px rgba(0,0,0,.7); }
+  .sl-gridwrap .slot-win:empty { display:none; }
+  .sl-gridwrap .sl-ways { position:absolute; left:6px; top:-9px; z-index:5;
+    font-size:9.5px; padding:1px 8px; }
+  .sl-gridwrap .sl-mult-now { position:absolute; right:6px; top:-9px; z-index:5;
+    font-size:11px; font-weight:900; color:#ffd76a; }
+
+  /* --- 配当ドック --- */
+  .sl-dock { height:64px; margin:8px 0 0; padding:5px 10px; border-radius:10px;
+    display:flex; flex-direction:column; justify-content:center; gap:3px;
+    background:linear-gradient(180deg, rgba(14,16,20,.92), rgba(8,9,12,.95));
+    border:1px solid rgba(206,214,224,.28);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 3px 12px rgba(0,0,0,.5); }
+  /* 1段目: 総獲得(最大)+ライン数(タップで一覧) */
+  .sl-dock-top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .sl-dock-top .lbl { font-size:9.5px; letter-spacing:.12em; color:#9fb0c2; }
+  .sl-dock-top .amt { font-size:21px; font-weight:900; color:#f2efe6;
+    font-variant-numeric:tabular-nums; line-height:1.05;
+    text-shadow:0 0 14px rgba(220,232,255,.28); }
+  .sl-dock-top .amt.zero { color:#7b8794; text-shadow:none; font-size:15px; }
+  .sl-dock-lines { flex:none; font-size:10.5px; font-weight:800; color:#cfe0f2;
+    background:rgba(255,255,255,.07); border:1px solid rgba(206,214,224,.3);
+    border-radius:7px; padding:2px 8px; white-space:nowrap; }
+  .sl-dock-lines:disabled { opacity:.35; }
+  /* 2段目: いま見せている当選ライン(1本だけ) */
+  .sl-dock-line { display:flex; align-items:center; gap:7px; min-height:20px;
+    font-size:11.5px; color:#e6ecf3; }
+  .sl-dock-line .no { font-size:9.5px; font-weight:900; color:#141a20;
+    border-radius:5px; padding:1px 6px; }
+  .sl-dock-line img { width:14px; height:14px; object-fit:contain; }
+  .sl-dock-line .pay { color:#ffd76a; font-weight:800; font-variant-numeric:tabular-nums; }
+  .sl-dock-line .idx { margin-left:auto; font-size:9.5px; color:#8d9aa8; }
+  .sl-dock-line .muted { color:#8d9aa8; }
+  /* 所持金の行。AUTOの起動はここに置く(行を増やさないので縦が伸びない) */
+  .sl-foot { display:flex; align-items:center; justify-content:space-between; gap:8px;
+    margin-top:6px; font-size:12px; color:#8b97a5; }
+  .sl-autopill { font-size:10.5px; font-weight:800; letter-spacing:.1em; color:#cfe0f2;
+    background:rgba(255,255,255,.06); border:1px solid rgba(206,214,224,.3);
+    border-radius:7px; padding:3px 12px; }
+
+  /* BET列とスピンを詰める */
+  #slot .sl-betsel { margin:8px 0 0 !important; }
+  /* 「回転中…」は1行、「スピン/消費 …」は2行なので、そのままだと高さが 58⇔76px で
+     揺れて下の所持金行が動く。高さを固定して中央寄せにする */
+  #slot .spin-btn.king { margin-top:8px !important; padding:10px 14px !important;
+    min-height:76px; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:2px; }
+  #slot .spin-btn.king + .note { margin-top:6px !important; }
+  /* AUTO中はスピンボタン自体が AUTO 表示になる(独立ボタンは廃止) */
+  .spin-btn.king.autorun { background:linear-gradient(180deg,#e9edf3 0%,#aeb9c7 40%,#7b8898 72%,#5c6875 100%);
+    color:#161b21; border-color:rgba(255,255,255,.8);
+    box-shadow:0 6px 0 #39424c, 0 10px 24px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.8); }
+  .spin-btn.king.autorun b { letter-spacing:.06em; }
+
+  /* 当選ライン一覧のボトムシート */
+  #sl-sheet { position:fixed; inset:0; z-index:100006; display:flex; align-items:flex-end;
+    background:rgba(4,5,8,.7); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); }
+  .ss-card { width:100%; max-height:45vh; overflow:auto; border-radius:16px 16px 0 0;
+    padding:14px 14px 20px;
+    background:linear-gradient(180deg,#141821,#0a0c11);
+    border-top:1px solid rgba(206,214,224,.35); color:#e6ecf3; }
+  .ss-head { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:8px; }
+  .ss-head b { font-size:13px; letter-spacing:.08em; color:#cfe0f2; }
+  .ss-head .tot { font-size:18px; font-weight:900; color:#f2efe6; }
+  .ss-row { display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+    padding:8px 6px; border:0; border-bottom:1px solid rgba(255,255,255,.07);
+    background:transparent; color:#e6ecf3; font-size:12px; }
+  .ss-row .no { font-size:9.5px; font-weight:900; color:#141a20; border-radius:5px; padding:1px 6px; }
+  .ss-row img { width:16px; height:16px; object-fit:contain; }
+  .ss-row .pay { margin-left:auto; color:#ffd76a; font-weight:800; font-variant-numeric:tabular-nums; }
   .sl-grid.wildflash { animation:slWildFlash .32s ease-out; }
   /* 筐体化(第70弾): 「25 LINES」はリール枠に付いた金属プレート風にする(浮いた文字にしない) */
   .sl-ways { background:linear-gradient(180deg,#f0d488,#b8871f); color:#241503 !important;
@@ -13627,6 +13715,14 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   var slotFreshCells = new Set();
   // オートスピン(第77弾)。left>0 のあいだ自動で回す
   var slotAuto = { left: 0, stopOnFree: true, stopOnBig: false, stopping: false };
+  /** 1回まわす処理。renderSlot のたびに最新の賭け金を閉じ込めて差し替わる */
+  var slotDoSpin = null;
+  /**
+   * いまドックに出している内容。**renderSlot が #slot ごと作り直すので、
+   * 覚えておいて描き直す**。覚えないと、サーバーからの残高更新(slot.info)が来た拍子に
+   * 当選表示が消える(1ラインの当選は巡回タイマーが無いので二度と戻らない)
+   */
+  var slotDockState = null;
   /** オート中は演出を短縮する。ただし見せ場(フリー・高額)は短縮しない */
   const slotAutoRunning = () => slotAuto.left > 0;
   const slotIsLocked = (r) => slotLockedReels.indexOf(r) >= 0;
@@ -13921,13 +14017,21 @@ window.__offlineSave = PokerOffline.startOfflineServer();
             </div>
           </div>
         </div>
-        <div class="sl-head">
+        <div class="sl-gridwrap">
           <span class="sl-ways" id="sl-ways" role="button" tabindex="0">${sv.lines || 25} LINES<i class="sl-i">i</i></span>
           <span class="sl-mult-now" id="sl-mult">${slotChainMult > 1 ? "\u00D7" + slotChainMult : ""}</span>
-        </div>
-        <div class="sl-grid" id="sl-grid">${slotGridHtml(grid)}</div>
-        <div class="sl-result" id="sl-result">
+          <div class="sl-grid" id="sl-grid">${slotGridHtml(grid)}</div>
           <div class="slot-win ${slotWinCls}" id="sl-win">${escapeHtml(slotWinText)}</div>
+        </div>
+        <div class="sl-dock" id="sl-dock">
+          <div class="sl-dock-top">
+            <div><span class="lbl">\u7DCF\u7372\u5F97</span>
+              <span class="amt zero" id="sl-dock-amt">\u2014</span></div>
+            <button class="sl-dock-lines" id="sl-dock-lines" disabled>\u2014</button>
+          </div>
+          <div class="sl-dock-line" id="sl-dock-line">
+            <span class="muted" id="sl-dock-msg">\u30B9\u30D4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044</span>
+          </div>
         </div>
         
 
@@ -13941,19 +14045,19 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           <button class="sl-betop" data-betop="max">MAX</button>
         </div>
         ${slotBetOpen ? `<div class="sl-betlist">${betList.map((b, i) => `<button class="sl-betitem ${b === curBet ? "sel" : ""}" data-bet="${b}">${coin} ${fmt(b)}</button>`).join("")}</div>` : ""}
-        <div class="sl-autorow">
-        <button class="spin-btn king ${canSpin && !slotSpinning ? "idle" : ""}${slotSpinning ? " busy" : ""}" id="slot-spin" ${canSpin ? "" : "disabled"}>
-          ${slotSpinning ? "<b>\u56DE\u8EE2\u4E2D\u2026</b>"
+        <button class="spin-btn king ${slotAutoRunning() ? "autorun" : (canSpin && !slotSpinning ? "idle" : "")}${slotSpinning && !slotAutoRunning() ? " busy" : ""}" id="slot-spin"
+          ${slotAutoRunning() || canSpin ? "" : "disabled"}>
+          ${slotAutoRunning()
+            ? "<b>AUTO " + slotAuto.left + "</b><span>" + (slotAuto.stopping ? "\u3053\u306E1\u56DE\u3067\u505C\u6B62" : "\u30BF\u30C3\u30D7\u3067\u505C\u6B62") + "</span>"
+            : slotSpinning ? "<b>\u56DE\u8EE2\u4E2D\u2026</b>"
             : have < cost ? "<b>" + (isChips ? "\u30C1\u30C3\u30D7\u4E0D\u8DB3" : "\u30B4\u30FC\u30EB\u30C9\u4E0D\u8DB3") + "</b>"
             : "<b>\u30B9\u30D4\u30F3</b><span>\u6D88\u8CBB " + coin + " " + fmt(cost) + "</span>"}
         </button>
-        <button class="sl-autobtn ${slotAutoRunning() ? "running" : ""}" id="sl-auto">
-          ${slotAutoRunning()
-            ? "<b>AUTO " + slotAuto.left + "</b><span>" + (slotAuto.stopping ? "\u3053\u306E1\u56DE\u3067\u505C\u6B62" : "\u505C\u6B62") + "</span>"
-            : "<b>AUTO</b><span>\u81EA\u52D5\u30B9\u30D4\u30F3</span>"}
-        </button>
+        <button class="sl-autobtn" id="sl-auto" hidden></button>
+        <div class="sl-foot">
+          <span>\u6240\u6301 ${coin} ${fmt(have)}</span>
+          <button class="sl-autopill" id="sl-auto-open"${slotAutoRunning() ? " hidden" : ""}>AUTO</button>
         </div>
-        <div class="note" style="margin-top:9px;font-size:12px">\u6240\u6301 ${coin} ${fmt(have)}</div>
       </div>
 
       
@@ -14012,31 +14116,28 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     const betNow = document.getElementById("sl-betnow");
     if (betNow) betNow.onclick = () => { slotBetOpen = !slotBetOpen; renderSlot(); };
     each("[data-cur]", (b) => { b.onclick = () => { slotCur = b.dataset.cur; renderSlot(); }; });
-    const autoBtn = document.getElementById("sl-auto");
-    if (autoBtn) autoBtn.onclick = () => {
-      if (slotAutoRunning()) {
-        // 走行中の1回は最後まで処理する(途中で切ると残高と演出の整合が崩れる)
-        slotAuto.stopping = true;
-        slotSetAutoLabel();
-      } else {
-        slotAskAuto();
-      }
-    };
+    // AUTO は独立ボタンをやめ、スピンボタンに統合した(第86弾)。
+    // 起動は所持金の行の小さな「AUTO」ピルから。AUTO中はスピンボタン自体が
+    // 「AUTO n / タップで停止」に変わるので、赤い専用ボタンは不要になった
+    const autoOpen = document.getElementById("sl-auto-open");
+    if (autoOpen) autoOpen.onclick = () => slotAskAuto();
     const waysBtn = document.getElementById("sl-ways");
     if (waysBtn) waysBtn.onclick = () => slotShowPaylineList(sv);
     const spinBtn = document.getElementById("slot-spin");
-    if (spinBtn) spinBtn.onclick = () => {
+    // 1回まわす処理。**AUTOからも呼ぶので関数にしてある**
+    // (AUTO中のスピンボタンは「停止」なので click では回せない)
+    slotDoSpin = (skipWarn) => {
       const c = Math.ceil(curBet * (slotAnte ? (slotView.anteCost || 1.5) : 1));
       if (slotSpinning || !slotView || curBet <= 0 || have < c) return;
       // 誤タップで一気に溶かさないよう、所持の半分以上を賭けるときは最初の1回だけ確認する
-      if (!slotBigBetOk && have > 0 && c >= have * 0.5) {
-        slotAskBigBet(c, have, () => { spinBtn.onclick(); });
+      if (!skipWarn && !slotBigBetOk && have > 0 && c >= have * 0.5) {
+        slotAskBigBet(c, have, () => slotDoSpin(true));
         return;
       }
       slotSpinning = true;
       // 前のスピンの巡回表示を片付ける(次の操作まで残す仕様なのでここで消す)
       slotStopCycle(); slotClearLines();
-      { const t = document.getElementById("sl-total"); if (t) t.remove(); }
+      slotResetDock("\u62BD\u9078\u4E2D\u2026");
       slotWinText = ""; slotWinCls = ""; slotChainMult = 1;
       renderSlot();
       slotSpinAnimStart();
@@ -14045,6 +14146,14 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       slotPaceStart = slotSpinAt; // 演出の早送り判定もここから数える
       send({ t: "slot.spin", bet: curBet, ante: slotAnte, mode: slotMode });
     };
+    if (spinBtn) spinBtn.onclick = () => {
+      // AUTO中はこのボタンが「停止」になる(いまの1回は最後まで処理してから止まる)
+      if (slotAutoRunning()) { slotAuto.stopping = true; slotSetAutoLabel(); return; }
+      slotDoSpin();
+    };
+    // 作り直したドックに、いま出していた当選内容を描き戻す
+    slotRestoreDock();
+    slotSetAutoLabel();
   }
 
   /**
@@ -14530,36 +14639,86 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     }
   }
 
-  /** ラインの内訳パネル(ライン番号・絵柄×個数・基礎WIN・WILD倍率・獲得) */
+  /** 配当ドックの2段目に「いま見せている1ライン」を書く */
   function slotShowLineInfo(win, sv, bet, chainMult) {
-    const machine = document.querySelector("#slot .slot-machine");
-    const winEl = document.getElementById("sl-win");
-    if (!machine || !winEl) return;
-    let info = document.getElementById("sl-lineinfo");
-    if (!info) {
-      info = document.createElement("div");
-      info.id = "sl-lineinfo";
-      info.className = "sl-lineinfo";
-      // 高さを予約した結果エリアの中に入れる(外に挿すとスピンボタンがズレる)
-      (document.getElementById("sl-result") || machine).appendChild(info);
-    }
+    slotDockState = Object.assign(slotDockState || {}, { win, sv, bet, chainMult });
+    const row = document.getElementById("sl-dock-line");
+    if (!row) return;
     const wm = win.wildMult || 0;
     const base = Math.round(win.pay * bet);
     const total = Math.round(win.pay * (wm || 1) * (chainMult || 1) * bet);
     const name = win.allWild
-      ? "WILD\u00D7" + win.count + "\uFF08" + slotSymName(sv, win.key) + "\u6271\u3044\uFF09"
-      : slotSymName(sv, win.key) + " \u00D7" + win.count;
-    info.innerHTML =
-      '<div class="li-head">'
-      + '<span class="li-no" style="background:' + slotLineColor(win.line) + '">LINE ' + (win.line + 1) + '</span>'
-      + '<span class="li-sym"><img src="' + (SLOT_IMG[win.key] || "") + '" alt="">' + name + '</span>'
-      + '</div>'
-      + '<div class="li-rows">'
-      + '<span>\u57FA\u790EWIN <b>' + fmt(base) + '</b></span>'
-      + (wm ? '<span>WILD\u500D\u7387 <b class="li-wm">\u00D7' + wm + '</b></span>' : "")
-      + ((chainMult || 1) > 1 ? '<span>\u9023\u9396 <b>\u00D7' + chainMult + '</b></span>' : "")
-      + '<span>\u7372\u5F97 <b class="li-total">' + fmt(total) + '</b></span>'
+      ? "WILD\u00D7" + win.count
+      : slotSymName(sv, win.key) + "\u00D7" + win.count;
+    // スマホの1行に収まるよう「L12 ♠×3 9.47T ×4 = 37.88T」形式にする
+    const mult = (wm || 1) * (chainMult || 1);
+    row.innerHTML =
+      '<span class="no" style="background:' + slotLineColor(win.line) + '">L' + (win.line + 1) + '</span>'
+      + '<img src="' + (SLOT_IMG[win.key] || "") + '" alt="">'
+      + '<span>' + escapeHtml(name) + '</span>'
+      + '<span class="pay">' + fmt(base) + (mult > 1 ? " \u00D7" + mult + " = " + fmt(total) : "") + '</span>'
+      + '<span class="idx" id="sl-dock-idx"></span>';
+  }
+
+  /** 配当ドックの1段目(総獲得とライン数)。当選が無いときは薄く「—」 */
+  function slotShowTotal(totalWon, idx, n) {
+    slotDockState = Object.assign(slotDockState || {}, { totalWon, idx, n });
+    const amt = document.getElementById("sl-dock-amt");
+    const btn = document.getElementById("sl-dock-lines");
+    if (amt) {
+      amt.textContent = totalWon > 0 ? "+" + fmt(totalWon) : "\u2014";
+      amt.classList.toggle("zero", !(totalWon > 0));
+    }
+    if (btn) {
+      btn.textContent = n > 0 ? n + " \u30E9\u30A4\u30F3 \u3009" : "\u2014";
+      btn.disabled = !(n > 0);
+    }
+    const ix = document.getElementById("sl-dock-idx");
+    if (ix) ix.textContent = n > 1 ? (idx + 1) + " / " + n : "";
+  }
+
+  /** ドックを初期状態(スピン待ち)に戻す */
+  function slotResetDock(msg) {
+    slotDockState = null;              // 覚えている表示は捨てる
+    slotShowTotal(0, 0, 0);
+    slotDockState = null;
+    const row = document.getElementById("sl-dock-line");
+    if (row) row.innerHTML = '<span class="muted">' + escapeHtml(msg || "\u30B9\u30D4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044") + '</span>';
+  }
+
+  /** renderSlot でドックが作り直されたあと、覚えている内容を描き戻す */
+  function slotRestoreDock() {
+    const d = slotDockState;
+    if (!d) return;
+    if (d.win) slotShowLineInfo(d.win, d.sv, d.bet, d.chainMult);
+    if (d.totalWon != null) slotShowTotal(d.totalWon, d.idx || 0, d.n || 0);
+  }
+
+  /** 「n ライン 〉」を押したときの一覧。下から出るシートで、押すとそのラインを再表示する */
+  function slotShowLineSheet(wins, sv, bet, chainMult, totalWon, onPick) {
+    if (document.getElementById("sl-sheet")) return;
+    const el = document.createElement("div");
+    el.id = "sl-sheet";
+    el.innerHTML = '<div class="ss-card">'
+      + '<div class="ss-head"><b>\u4ECA\u56DE\u306E\u5F53\u9078</b>'
+      + '<span class="tot">+' + fmt(totalWon) + '</span></div>'
+      + wins.map((w, i) => {
+          const mult = (w.wildMult || 1) * (chainMult || 1);
+          const total = Math.round(w.pay * mult * bet);
+          const name = w.allWild ? "WILD\u00D7" + w.count : slotSymName(sv, w.key) + "\u00D7" + w.count;
+          return '<button class="ss-row" data-i="' + i + '">'
+            + '<span class="no" style="background:' + slotLineColor(w.line) + '">L' + (w.line + 1) + '</span>'
+            + '<img src="' + (SLOT_IMG[w.key] || "") + '" alt="">'
+            + '<span>' + escapeHtml(name) + '</span>'
+            + '<span class="pay">+' + fmt(total) + '</span></button>';
+        }).join("")
       + '</div>';
+    document.body.appendChild(el);
+    const close = () => el.remove();
+    el.onclick = (e) => { if (e.target === el) close(); };
+    each2(el, "[data-i]", (b) => {
+      b.onclick = () => { const i = Number(b.dataset.i); close(); if (onPick) onPick(i); };
+    });
   }
 
   /**
@@ -14574,38 +14733,28 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   function slotStartCycle(st, sv, bet, totalWon) {
     slotStopCycle();
     const wins = (st && st.wins || []).slice().sort((a, b) => b.pay - a.pay);
-    if (!wins.length) return;
+    if (!wins.length) { slotResetDock(); return; }
     const paylines = (sv && sv.paylines) || [];
     let i = 0;
-    const show = () => {
-      const w = wins[i % wins.length];
+    const showAt = (k) => {
+      const w = wins[k % wins.length];
       slotSetGrid(st.grid, st.hits);        // 当選マスを光らせたままにする
       slotClearLines();
       slotDrawLine(w, paylines);
       slotShowLineInfo(w, sv, bet, st.mult);
-      slotShowTotal(totalWon, i % wins.length, wins.length);
-      i++;
+      slotShowTotal(totalWon, k % wins.length, wins.length);
     };
+    const show = () => { showAt(i); i++; };
     show();
-    if (wins.length > 1) slotCycleTimer = setInterval(show, 1600);
+    // 「n ライン 〉」で一覧。選んだラインをその場で出して巡回を止める
+    const btn = document.getElementById("sl-dock-lines");
+    if (btn) btn.onclick = () => {
+      slotShowLineSheet(wins, sv, bet, st.mult, totalWon, (k) => { slotStopCycle(); i = k; show(); });
+    };
+    if (wins.length > 1) slotCycleTimer = setInterval(show, 900);
   }
 
   /** 総額と「何本目を出しているか」。巡回中ずっと出しておく */
-  function slotShowTotal(totalWon, idx, n) {
-    const machine = document.querySelector("#slot .slot-machine");
-    const winEl = document.getElementById("sl-win");
-    if (!machine || !winEl) return;
-    let el = document.getElementById("sl-total");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "sl-total";
-      el.className = "sl-total";
-      (document.getElementById("sl-result") || machine).appendChild(el);
-    }
-    el.innerHTML = '<span>\u7DCF\u7372\u5F97</span><b>+' + fmt(totalWon) + '</b>'
-      + (n > 1 ? '<span class="sl-cyc">' + (idx + 1) + " / " + n + ' \u30E9\u30A4\u30F3</span>' : "");
-  }
-
   /**
    * 当選ラインを順に見せる。資料どおり本数で見せ方を変える。
    * 画面のどこかをタップすると残りを飛ばして合計へ進む。
@@ -14627,27 +14776,21 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     const onSkip = () => { skipped = true; };
     document.addEventListener("pointerdown", onSkip, { once: true });
     try {
+      // 演出中も総獲得を出しておく(ここを忘れるとドックが「—」のままになる)
+      const stepWon = Math.round(st.payX * bet);
       for (let i = 0; i < Math.min(plan.show, wins.length); i++) {
         if (skipped) break;
         slotClearLines();
         slotDrawLine(wins[i], paylines);
         slotShowLineInfo(wins[i], sv, bet, st.mult);
+        slotShowTotal(stepWon, i, wins.length);
         play("chipSmall");
         await slotSleep(plan.hold);
       }
       slotClearLines();
       // 残りは本数だけまとめて伝える(全部見せると25秒かかる)
-      if (wins.length > plan.show) {
-        const rest = wins.length - plan.show;
-        const el = document.getElementById("sl-win");
-        if (el) {
-          const sum = document.createElement("div");
-          sum.className = "sl-linesum";
-          sum.textContent = "\u307B\u304B " + rest + " \u30E9\u30A4\u30F3";
-          el.appendChild(sum);
-        }
-        await slotSleep(320);
-      }
+      // 残りは「n ライン 〉」から一覧で見られるので、ここでは足さない(高さを固定したいため)
+      if (wins.length > plan.show) await slotSleep(220);
     } finally {
       document.removeEventListener("pointerdown", onSkip);
     }
@@ -14757,12 +14900,17 @@ window.__offlineSave = PokerOffline.startOfflineServer();
 
   /** AUTO ボタンの見た目だけを更新する(全体を描き直すと演出が飛ぶため) */
   function slotSetAutoLabel() {
-    const b = document.getElementById("sl-auto");
+    // 第86弾: AUTOの表示先はスピンボタン本体
+    const b = document.getElementById("slot-spin");
+    const pill = document.getElementById("sl-auto-open");
+    if (pill) pill.hidden = slotAutoRunning();
     if (!b) return;
-    b.classList.toggle("running", slotAutoRunning());
-    b.innerHTML = slotAutoRunning()
-      ? "<b>AUTO " + slotAuto.left + "</b><span>" + (slotAuto.stopping ? "\u3053\u306E1\u56DE\u3067\u505C\u6B62" : "\u505C\u6B62") + "</span>"
-      : "<b>AUTO</b><span>\u81EA\u52D5\u30B9\u30D4\u30F3</span>";
+    b.classList.toggle("autorun", slotAutoRunning());
+    if (slotAutoRunning()) {
+      b.disabled = false;   // 停止操作を受けるため押せるままにする
+      b.innerHTML = "<b>AUTO " + slotAuto.left + "</b><span>"
+        + (slotAuto.stopping ? "\u3053\u306E1\u56DE\u3067\u505C\u6B62" : "\u30BF\u30C3\u30D7\u3067\u505C\u6B62") + "</span>";
+    }
   }
 
   /** 回数と停止条件を選ばせる */
@@ -14843,6 +14991,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (stop) { slotAutoStop(stop); return; }
     const btn = document.getElementById("slot-spin");
     if (!btn) { slotAutoStop("\u56DE\u305B\u306A\u304F\u306A\u308A\u307E\u3057\u305F"); return; }
+    // AUTO中はボタンが「停止」を兼ねるので disabled にならない。
+    // 実際に回せるかは slotSpinning で判断する
+    if (slotSpinning) { setTimeout(() => slotAutoStep(0), 250); return; }
     if (btn.disabled) {
       // **演出が走っている間は無期限に待つ**。フリーゲームの再生は30秒を超えることがあり、
       // 秒数で見切ると「開始した直後に理由もなく止まる」ことになる(実際そうなっていた)。
@@ -14856,7 +15007,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     }
     slotAuto.left--;
     slotSetAutoLabel();
-    btn.click();
+    // btn.click() は「AUTO中は停止」に解釈されるので、スピン処理を直接呼ぶ
+    if (slotDoSpin) slotDoSpin();
   }
 
   /**
@@ -15174,7 +15326,10 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     slotSpinning = false;
     const label = r.kind === "max" ? "\u{1F389} MAX WIN\uFF01 +" : r.kind === "mega" ? "\u{1F389} \u30E1\u30AC\u30A6\u30A3\u30F3\uFF01 +"
       : r.kind === "big" ? "\u30D3\u30C3\u30B0\u30A6\u30A3\u30F3\uFF01 +" : r.kind === "small" ? "+" : "";
-    slotWinText = r.won > 0 ? label + fmt(r.won) : "\u30CF\u30BA\u30EC";
+    // 金額と「ハズレ」は配当ドックが受け持つ。バナーはリールに重なるので、
+    // ビッグ以上の見せ場だけに絞る(毎回出すと下段の絵柄が隠れる)
+    const bigEnough = r.kind === "max" || r.kind === "mega" || r.kind === "big";
+    slotWinText = bigEnough ? label + fmt(r.won) : "";
     slotWinCls = (r.kind === "max" || r.kind === "mega") ? "jackpot" : r.kind === "big" ? "big" : "";
     slotChainMult = 1;
     renderSlot();
@@ -15189,7 +15344,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       const last = (oc.base && oc.base[oc.base.length - 1])
         || (oc.respin && oc.respin.steps[oc.respin.steps.length - 1]);
       if (last) slotStartCycle(last, sv, r.bet, r.won);
-      else slotShowTotal(r.won, 0, 1);
+      else { slotShowTotal(r.won, 0, 0); slotResetDock("\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0\u306E\u7372\u5F97"); slotShowTotal(r.won, 0, 0); }
+    } else {
+      slotResetDock("\u30CF\u30BA\u30EC");
     }
 
     // --- オートスピンの続き ---
