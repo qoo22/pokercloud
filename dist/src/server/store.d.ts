@@ -271,6 +271,15 @@ export declare class SqliteStore implements Store {
      */
     pruneBots(olderThanMs: number): number;
     private rowToUser;
+    /**
+     * 残高系の列は必ず REAL に変換して読む。
+     * node:sqlite は 2^53 を超える INTEGER を読むと RangeError を投げるため、
+     * `SELECT *` のままだと残高9007兆超のアカウントは**読むだけで例外**になる
+     * (書き込みは int64 として通るので、超えた瞬間からそのユーザーだけ壊れる)。
+     * REAL 経由なら精度は2^53で頭打ちになるが例外にはならない(チップ1枚の精度は
+     * その領域では既に放棄している・第84弾)。
+     */
+    private static readonly USER_COLS;
     getUser(userId: string): UserRow | null;
     createUser(userId: string, name: string): UserRow;
     upsertUser(userId: string, name: string): UserRow;

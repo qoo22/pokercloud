@@ -93,8 +93,18 @@ export class Gateway {
                     this.lobby.onRaw(sessionId, text);
                 }
                 catch (e) {
-                    // 1 人の異常系で全員を巻き込まない
+                    // 1 人の異常系で全員を巻き込まない。ただし**黙って捨てない**。
+                    // 以前ここで握りつぶしていたため、残高が2^53を超えたアカウントは
+                    // hello が RangeError で落ちても客側は「接続済みのまま無反応」になり、
+                    // 原因究明が本番のプローブ頼みになった。返事だけは必ず返す
                     console.error('[gateway] メッセージ処理で例外', e);
+                    try {
+                        ws.send(JSON.stringify({
+                            t: 'error', code: 'INTERNAL',
+                            message: 'サーバー内部でエラーが起きました。時間をおいて再読み込みしてください',
+                        }));
+                    }
+                    catch { }
                 }
             });
             ws.on('pong', () => this.alive.set(sessionId, true));
