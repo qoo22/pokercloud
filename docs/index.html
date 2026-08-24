@@ -12003,20 +12003,40 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     } catch (e) {}
   }
 
+  var __helloOk = false, __helloTimer = 0;
   function connect() {
     __pokerUrlRecovery();
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const url = `${proto}://${location.host}`;
     ws = new WebSocket(url);
     ws.onopen = () => {
-      setStatus("\u63A5\u7D9A\u6E08\u307F", true);
+      // **まだ「接続済み」にしない**。Render の無料プランは休止から復帰する間、
+      // ルーターが WebSocket を先に受け付けてしまう。この間に送った hello は
+      // アプリに届かず捨てられ、クライアントは「接続済み」のまま何も来ない状態で
+      // 永久に待つ(卓もスロットも出ない、という症状になる)。
+      // hello.ok が返るまでは「起動中」を出し、hello を再送し続ける。
+      setStatus("\u30B5\u30FC\u30D0\u30FC\u8D77\u52D5\u4E2D\u2026", false);
       reconnectDelay = 500;
-      send({
+      const sayHello = () => send({
         t: "hello",
         v: PROTOCOL_VERSION,
         name: store.get("poker.name") ?? void 0,
         resumeToken: store.get("poker.resume") ?? void 0
       });
+      sayHello();
+      let tries = 0;
+      clearInterval(__helloTimer);
+      __helloTimer = setInterval(() => {
+        if (__helloOk) { clearInterval(__helloTimer); return; }
+        tries++;
+        if (tries > 20) {                     // 20回(約60秒)で諦めて張り直す
+          clearInterval(__helloTimer);
+          try { ws.close(); } catch (e) {}
+          return;
+        }
+        if (tries === 4) setStatus("\u30B5\u30FC\u30D0\u30FC\u8D77\u52D5\u4E2D\u2026(\u6700\u521D\u306E1\u56DE\u306F1\u5206\u307B\u3069\u304B\u304B\u308A\u307E\u3059)", false);
+        if (ws && ws.readyState === 1) sayHello();
+      }, 3000);
     };
     ws.onmessage = (ev) => {
       let msg;
@@ -12028,6 +12048,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       handle(msg);
     };
     ws.onclose = () => {
+      __helloOk = false;
+      clearInterval(__helloTimer);
       setStatus("\u5207\u65AD\uFF08\u518D\u63A5\u7D9A\u3057\u307E\u3059\uFF09", false);
       setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, 1e4);
@@ -12046,6 +12068,10 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   function handle(msg) {
     switch (msg.t) {
       case "hello.ok":
+        // ここで初めて「本当に繋がった」と言える
+        __helloOk = true;
+        clearInterval(__helloTimer);
+        setStatus("\u63A5\u7D9A\u6E08\u307F", true);
         store.set("poker.resume", msg.resumeToken);
         if (__pendingRedeem) { const pr = __pendingRedeem; __pendingRedeem = null; send({ t: "transfer.redeem", code: pr.code, pin: pr.pin }); }
         store.set("poker.name", msg.name);
