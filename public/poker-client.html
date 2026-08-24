@@ -3177,6 +3177,14 @@
   var committedFor = null;
   var mySeedForHand = null;
   var reconnectDelay = 500;
+  // 再接続まわりの見張り。携帯では裏に回した瞬間に WebSocket が黙って死に、
+  // 戻ってきても「切断（再接続します）」のまま固まることがあるので状態を持って監視する
+  var reconnectTimer = null;
+  var connectWatchdog = null;
+  var connectStartedAt = 0;
+  var lastRecvAt = 0;
+  var CONNECT_TIMEOUT_MS = 8e3;
+  var SILENCE_LIMIT_MS = 2e4;
   var goldBalance = 0;
   var lastVerdict = null;
   var lastBoardLen = 0;
@@ -3231,14 +3239,71 @@
     } catch (e) {}
   }
 
+  function clearReconnectTimer() {
+    if (reconnectTimer !== null) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  }
+  function clearConnectWatchdog() {
+    if (connectWatchdog !== null) { clearTimeout(connectWatchdog); connectWatchdog = null; }
+  }
+  // 次の接続を予約する。指数バックオフ(最大10秒)なのは即時リトライの連打を避けるため
+  function scheduleReconnect(wait) {
+    clearReconnectTimer();
+    const delay = wait === void 0 ? reconnectDelay : wait;
+    reconnectDelay = Math.min(reconnectDelay * 2, 1e4);
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, delay);
+  }
+  // 死んだソケットを完全に切り離す。ハンドラを外さないと、
+  // 後から飛んでくる onclose で二重に再接続してしまう
+  function dropSocket(sock) {
+    if (!sock) return;
+    sock.onopen = null;
+    sock.onmessage = null;
+    sock.onclose = null;
+    sock.onerror = null;
+    try { sock.close(); } catch (e) {}
+  }
+  // 接続を捨てて次を予約する。切断表示もここに一本化する
+  function giveUp(sock) {
+    dropSocket(sock);
+    if (ws === sock) ws = null;
+    clearConnectWatchdog();
+    setStatus("\u5207\u65AD\uFF08\u518D\u63A5\u7D9A\u3057\u307E\u3059\uFF09", false);
+    scheduleReconnect();
+  }
   function connect() {
+    clearReconnectTimer();
+    // 生きている接続があるなら何もしない(多重接続は席の奪い合いになる)
+    if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
     __pokerUrlRecovery();
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const url = `${proto}://${location.host}`;
-    ws = new WebSocket(url);
-    ws.onopen = () => {
+    let sock;
+    try {
+      sock = new WebSocket(url);
+    } catch (e) {
+      // 生成そのものが失敗する環境がある。ここで諦めると二度と戻れないので必ず予約し直す
+      ws = null;
+      setStatus("\u5207\u65AD\uFF08\u518D\u63A5\u7D9A\u3057\u307E\u3059\uFF09", false);
+      scheduleReconnect();
+      return;
+    }
+    ws = sock;
+    connectStartedAt = Date.now();
+    setStatus("\u63A5\u7D9A\u4E2D\u2026", false);
+    // iOS では復帰直後の接続が CONNECTING のまま固まり、onclose すら来ないことがある。
+    // 見切りをつけないと切断表示のまま永久に止まる
+    clearConnectWatchdog();
+    connectWatchdog = setTimeout(() => {
+      connectWatchdog = null;
+      if (ws !== sock || sock.readyState === WebSocket.OPEN) return;
+      giveUp(sock);
+    }, CONNECT_TIMEOUT_MS);
+    sock.onopen = () => {
+      if (ws !== sock) { dropSocket(sock); return; }
+      clearConnectWatchdog();
       setStatus("\u63A5\u7D9A\u6E08\u307F", true);
       reconnectDelay = 500;
+      lastRecvAt = Date.now();
       send({
         t: "hello",
         v: PROTOCOL_VERSION,
@@ -3246,7 +3311,9 @@
         resumeToken: store.get("poker.resume") ?? void 0
       });
     };
-    ws.onmessage = (ev) => {
+    sock.onmessage = (ev) => {
+      if (ws !== sock) return;
+      lastRecvAt = Date.now();
       let msg;
       try {
         msg = JSON.parse(ev.data);
@@ -3255,14 +3322,60 @@
       }
       handle(msg);
     };
-    ws.onclose = () => {
-      setStatus("\u5207\u65AD\uFF08\u518D\u63A5\u7D9A\u3057\u307E\u3059\uFF09", false);
-      setTimeout(connect, reconnectDelay);
-      reconnectDelay = Math.min(reconnectDelay * 2, 1e4);
+    sock.onclose = () => {
+      // 差し替え済みの古いソケットの後始末は無視する
+      if (ws !== sock) return;
+      giveUp(sock);
     };
-    ws.onerror = () => {
+    sock.onerror = () => {
     };
   }
+  // 通信が死んでいないか見張る。裏に回っている間は誤判定するので見送る
+  function checkConnection() {
+    if (document.visibilityState === "hidden") return;
+    if (!ws) {
+      // 接続も予約も無い(タイマーが飛んだ等)なら、ここが最後の砦
+      if (reconnectTimer === null) connect();
+      return;
+    }
+    if (ws.readyState === WebSocket.OPEN && lastRecvAt && Date.now() - lastRecvAt > SILENCE_LIMIT_MS) {
+      // 5秒ごとの ping に pong が返ってこない。OPEN に見えても中身は死んでいる
+      giveUp(ws);
+      return;
+    }
+    if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      if (reconnectTimer === null && connectWatchdog === null) giveUp(ws);
+      return;
+    }
+    // 見切りのタイマーごと飛んだ接続中のソケット。ここで拾わないと切断表示のまま止まる
+    if (ws.readyState === WebSocket.CONNECTING && connectWatchdog === null && Date.now() - connectStartedAt > CONNECT_TIMEOUT_MS) {
+      giveUp(ws);
+    }
+  }
+  // 画面に戻った・回線が戻った瞬間は、バックオフを待たずにつなぎ直す
+  function wakeUp() {
+    if (document.visibilityState === "hidden") return;
+    reconnectDelay = 500;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      // 生きて見えても裏で死んでいることがあるので、すぐ ping を打って確かめる
+      if (!lastRecvAt) lastRecvAt = Date.now();
+      send({ t: "ping", ts: Date.now() });
+      return;
+    }
+    // 復帰前から居座っている接続中のソケットは、たいてい二度とつながらない
+    if (ws && ws.readyState === WebSocket.CONNECTING && Date.now() - connectStartedAt > 2e3) {
+      dropSocket(ws);
+      ws = null;
+    }
+    if (ws && ws.readyState === WebSocket.CONNECTING) return;
+    clearReconnectTimer();
+    clearConnectWatchdog();
+    connect();
+  }
+  document.addEventListener("visibilitychange", wakeUp);
+  window.addEventListener("pageshow", wakeUp);
+  window.addEventListener("focus", wakeUp);
+  window.addEventListener("online", wakeUp);
   function send(msg) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   }
@@ -4716,6 +4829,8 @@
       send({ t: "ping", ts: Date.now() });
       if (!currentTableId) send({ t: "lobby.list" });
     }
+    // ping のついでに接続の生死も見る(半開き・予約消失からの復帰)
+    checkConnection();
   }, 5e3);
   setInterval(() => {
     if (!state || state.actingSeat === null) { bpWarnAt = -1; bpWarnKey = ""; return; }
