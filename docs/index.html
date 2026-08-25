@@ -1911,10 +1911,6 @@
     to   { transform:rotate(360deg); opacity:0; }
   }
   /* --- 第92弾: 配当の着弾 --- */
-  /* 盤面から総獲得へ飛ぶチップ。着弾するまで数字は動かない */
-  .sl-payfly { position:fixed; z-index:100007; pointer-events:none; opacity:1;
-    filter:drop-shadow(0 2px 6px rgba(0,0,0,.6));
-    transition:transform .55s cubic-bezier(.45,-.15,.55,1), opacity .55s ease-in; }
   /* ルーレット確定時: 当たった輪が光り輝く */
   .wr-wrap.shine .wr-ring.lit { animation:wrShine 1.1s ease-out; }
   @keyframes wrShine {
@@ -14509,35 +14505,12 @@ window.__offlineSave = PokerOffline.startOfflineServer();
    */
   async function slotPayout(amount, targetId, opts) {
     const o = opts || {};
-    const grid = document.getElementById("sl-grid");
     const tgt = document.getElementById(targetId);
     if (!(amount > 0)) return;
-    if (grid && tgt) {
-      const g = grid.getBoundingClientRect(), t = tgt.getBoundingClientRect();
-      const n = o.coins || Math.min(12, 5 + Math.round(Math.log10(amount + 1)));
-      for (let i = 0; i < n; i++) {
-        const im = document.createElement("img");
-        im.src = FX_COIN;
-        im.className = "sl-payfly";
-        const sx = g.left + g.width * (0.25 + Math.random() * 0.5);
-        const sy = g.top + g.height * (0.3 + Math.random() * 0.4);
-        im.style.left = sx.toFixed(0) + "px";
-        im.style.top = sy.toFixed(0) + "px";
-        im.style.width = (14 + Math.random() * 10).toFixed(0) + "px";
-        im.style.transitionDelay = (i * 0.045).toFixed(2) + "s";
-        document.body.appendChild(im);
-        const dx = t.left + t.width / 2 - sx, dy = t.top + t.height / 2 - sy;
-        // requestAnimationFrame はテスト環境(linkedom)に無いので slotRaf を使う
-        slotRaf(() => slotRaf(() => {
-          im.style.transform = "translate(" + dx.toFixed(0) + "px," + dy.toFixed(0) + "px) scale(.45)";
-          im.style.opacity = "0";
-        }));
-        setTimeout(() => im.remove(), 950 + i * 45);
-      }
-      play("chipSmall");
-      await slotSleep(480 + Math.min(10, n) * 45);   // 先頭のチップが届くまで数字は動かさない
-    }
-    // 着弾: ここで初めて金額が回り始める
+    // 総獲得の反映にチップは飛ばさない(第93弾・オーナー指定)。
+    // ライン表示が終わったあと、一拍おいて金額が0から回り始めるだけにする
+    play("chipSmall");
+    await slotSleep(180);
     if (o.mode === "dock") {
       const dock = document.getElementById("sl-dock");
       if (dock) { dock.classList.remove("hit"); void dock.offsetWidth; dock.classList.add("hit"); }
@@ -14910,11 +14883,16 @@ window.__offlineSave = PokerOffline.startOfflineServer();
    * **一番高いラインの絵柄と個数**を必ず出す。
    * WILDだけで成立した列は盤面にその絵柄が無いので「WILD×3（セブン扱い）」と書く。
    */
+  /**
+   * 当選バナーの文言。**chips が null のときは金額を出さない**(第93弾)。
+   * リールが止まった瞬間のバナーに金額を入れると、ライン表示や着弾より先に
+   * 結果が割れてしまう。金額は着弾後のドックと締めのバナーだけが出す
+   */
   function slotWinLabel(st, sv, chips) {
     const wins = st.wins || [];
     let top = null;
     for (const w of wins) if (!top || w.pay > top.pay) top = w;
-    let head = "WIN " + fmt(chips);
+    let head = chips == null ? "WIN" : "WIN " + fmt(chips);
     if (top) {
       head += "\u3000" + (top.allWild
         ? "WILD\u00D7" + top.count + "\uFF08" + slotSymName(sv, top.key) + "\u6271\u3044\uFF09"
@@ -15428,7 +15406,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       const chips = slotCur === "chips"
         ? Math.round(st.payX * bet)
         : Math.round(st.payX * bet * sv.chipsPerGold * sv.multiplier);
-      slotSetWin(slotWinLabel(st, sv, chips), "big");
+      // 表示中のバナーは金額なし(chips=null)。金額は着弾後に出る
+      slotSetWin(slotWinLabel(st, sv, null), "big");
       if (slotPace() >= 2) await slotSleep(140);
       // どのラインで当たったのかを1本ずつ見せる(本数が多いときは上位だけ)
       await slotShowWinLines(st, sv, bet, i);
