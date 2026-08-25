@@ -140,8 +140,12 @@ export const SCATTER_PAY = { 3: 2, 4: 5, 5: 20 };
  */
 export const TUMBLE_LADDER = [1];
 export const FREE_MODES = [
-    { key: 'many', name: '回数多め', desc: '15回 / ×1から+3ずつ', spins: 15, startMult: 1, step: 3 },
-    { key: 'few', name: '一撃高倍率', desc: '8回 / ×5から+7ずつ', spins: 8, startMult: 5, step: 7 },
+    // 第94弾(オーナー指定): 持続倍率(当たるたびに +step)は廃止した。
+    // フリーゲームの倍率は「突入時に抽選する WILD配当(×2〜×5)」の1本だけで、
+    // WILDを含む当選ラインに1回掛かる。最大支払いは ライン配当 × 5 で頭打ちになる。
+    // startMult / step は互換のため残しているが**もう使われない**
+    { key: 'many', name: '回数多め', desc: '回数はスキャッター数で決定', spins: 15, startMult: 1, step: 0 },
+    { key: 'few', name: '一撃高倍率', desc: 'WILD配当×2〜×5', spins: 8, startMult: 1, step: 0 },
 ];
 /**
  * MAX WIN の称号を出すしきい値(×賭け金)。
@@ -354,7 +358,6 @@ export function spin(rnd, opts = {}) {
         // 突入回数はスキャッターの個数で決まる(3個=8 / 4個=12 / 5個=16)
         let left = SLOT_CFG.freeSpinsByScatter[Math.min(scatters, 5)] ?? SLOT_CFG.freeSpinsByScatter[3];
         let total = left;
-        let mult = mode.startMult;
         let payX = 0;
         const spins = [];
         // WILD倍率は**突入時に1回だけ**引き、このフリーゲーム中はずっと同じ値を使う。
@@ -395,16 +398,13 @@ export function spin(rnd, opts = {}) {
                 left += add;
                 total += add;
             }
-            const run = evaluateOnce(g, { mult, wildMult });
+            // 第94弾(オーナー指定): 持続倍率(当たるたび+7)は廃止。
+            // 掛かるのは WILD配当だけなので、1ラインの支払いは「ライン配当 × wildMult」で頭打ち。
+            // 例: セブン5個(20x) × WILD配当×5 = 100x が1ラインの最大
+            const run = evaluateOnce(g, { wildMult });
             payX += run.payX;
-            // 永続マルチプライヤー(第80弾で復活)。当たったスピンごとに mode.step ずつ伸びる。
-            // ホールドWILDと掛け合わさって期待値は大きく上振れするが、**オーナー判断で許容**:
-            // チップは現金化されず、1日の回転数上限が発行量の歯止めになる。
-            // 勝手に「壊れている」と判断して切り詰めないこと(第79弾でそれをやって差し戻された)。
-            if (run.payX > 0)
-                mult += mode.step;
             spins.push({
-                grid0: g, steps: run.steps, multAfter: mult, payX: run.payX,
+                grid0: g, steps: run.steps, multAfter: 1, payX: run.payX,
                 retrigger: add > 0, addedSpins: add,
                 scatters: sc,
                 // このスピンを消化したあとに何回残っているか。上乗せぶんは加算済み
@@ -414,7 +414,7 @@ export function spin(rnd, opts = {}) {
             });
             // 第80弾: 上限による打ち切りは撤廃。ループは freeSpinsCap で必ず終わる
         }
-        out.free = { mode: mode.key, spinsTotal: total, spins, finalMult: mult, wildMult, payX };
+        out.free = { mode: mode.key, spinsTotal: total, spins, finalMult: 1, wildMult, payX };
     }
     const sum = basePayX + (out.respin?.payX ?? 0) + (out.free?.payX ?? 0);
     out.totalPayX = sum; // 頭打ちしない(第80弾)

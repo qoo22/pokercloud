@@ -1519,6 +1519,7 @@
   .slfs-title { font-size:11px; font-weight:900; letter-spacing:.14em; color:#ffd76a; }
   .slfs-mode { font-size:10px; opacity:.75; margin-top:1px; }
   .slfs-mult { font-size:15px; font-weight:800; color:#ffb54d; line-height:1; }
+  .slfs-wlbl { display:block; font-size:8.5px; letter-spacing:.14em; color:#e2d3ae; margin-bottom:1px; }
   .slfs-mult b { font-size:30px; line-height:1; text-shadow:0 0 16px rgba(255,150,60,.8); }
   .slfs-mult b.pop { animation:slPop .34s cubic-bezier(.2,1.6,.4,1); }
   .slfs-count { font-size:11px; opacity:.8; }
@@ -2720,8 +2721,12 @@ var PokerOffline = (() => {
   var SCATTER_PAY = { 3: 2, 4: 5, 5: 20 };
   var TUMBLE_LADDER = [1];
   var FREE_MODES = [
-    { key: "many", name: "\u56DE\u6570\u591A\u3081", desc: "15\u56DE / \xD71\u304B\u3089+3\u305A\u3064", spins: 15, startMult: 1, step: 3 },
-    { key: "few", name: "\u4E00\u6483\u9AD8\u500D\u7387", desc: "8\u56DE / \xD75\u304B\u3089+7\u305A\u3064", spins: 8, startMult: 5, step: 7 }
+    // 第94弾(オーナー指定): 持続倍率(当たるたびに +step)は廃止した。
+    // フリーゲームの倍率は「突入時に抽選する WILD配当(×2〜×5)」の1本だけで、
+    // WILDを含む当選ラインに1回掛かる。最大支払いは ライン配当 × 5 で頭打ちになる。
+    // startMult / step は互換のため残しているが**もう使われない**
+    { key: "many", name: "\u56DE\u6570\u591A\u3081", desc: "\u56DE\u6570\u306F\u30B9\u30AD\u30E3\u30C3\u30BF\u30FC\u6570\u3067\u6C7A\u5B9A", spins: 15, startMult: 1, step: 0 },
+    { key: "few", name: "\u4E00\u6483\u9AD8\u500D\u7387", desc: "WILD\u914D\u5F53\xD72\u301C\xD75", spins: 8, startMult: 1, step: 0 }
   ];
   var MAX_WIN_X = 5e3;
   function reelTable(reel, scatterWeight) {
@@ -2870,7 +2875,6 @@ var PokerOffline = (() => {
       const mode = FREE_MODES.find((m) => m.key === (opts.mode ?? "many")) ?? FREE_MODES[0];
       let left = SLOT_CFG.freeSpinsByScatter[Math.min(scatters, 5)] ?? SLOT_CFG.freeSpinsByScatter[3];
       let total = left;
-      let mult = mode.startMult;
       let payX = 0;
       const spins = [];
       const wildMult = drawWildMult(rnd2);
@@ -2899,13 +2903,12 @@ var PokerOffline = (() => {
           left += add;
           total += add;
         }
-        const run = evaluateOnce(g, { mult, wildMult });
+        const run = evaluateOnce(g, { wildMult });
         payX += run.payX;
-        if (run.payX > 0) mult += mode.step;
         spins.push({
           grid0: g,
           steps: run.steps,
-          multAfter: mult,
+          multAfter: 1,
           payX: run.payX,
           retrigger: add > 0,
           addedSpins: add,
@@ -2917,7 +2920,7 @@ var PokerOffline = (() => {
           freshCells: fresh
         });
       }
-      out.free = { mode: mode.key, spinsTotal: total, spins, finalMult: mult, wildMult, payX };
+      out.free = { mode: mode.key, spinsTotal: total, spins, finalMult: 1, wildMult, payX };
     }
     const sum = basePayX + (out.respin?.payX ?? 0) + (out.free?.payX ?? 0);
     out.totalPayX = sum;
@@ -14344,7 +14347,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         \u30EA\u30FC\u30EB1\u306BWILD\u304C3\u3064\u91CD\u306A\u308B\u3068<b>WILD RE-SPIN</b>\uFF1A\u30EA\u30FC\u30EB1\u3092\u56FA\u5B9A\u3057\u305F\u307E\u307E\u6B8B\u308A\u3092\u7121\u6599\u3067\u3082\u30461\u56DE\u56DE\u3057\u307E\u3059\u3002
         \u2605\u306F\u5168\u30EA\u30FC\u30EB\u306B\u51FA\u3066\uFF081\u30EA\u30FC\u30EB\u306B\u6700\u59271\u500B\uFF09\u3001<b>3\u500B=8\u56DE / 4\u500B=12\u56DE / 5\u500B=16\u56DE</b>\u306E<b>\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0</b>\u3002
         \u958B\u59CB\u6642\u306B<b>WILD\u914D\u5F53\uFF08\u00D72\u301C\u00D75\uFF09</b>\u3092\u30EB\u30FC\u30EC\u30C3\u30C8\u3067\u62BD\u9078\u3057\u3001\u7D42\u4E86\u307E\u3067\u56FA\u5B9A\u3002
-        \u30D5\u30EA\u30FC\u4E2D\u306F\u6B62\u307E\u3063\u305FWILD\u304C<b>\u305D\u306E\u30DE\u30B9\u306B\u30DB\u30FC\u30EB\u30C9</b>\u3055\u308C\u3001\u5F53\u305F\u308B\u305F\u3073\u306B<b>\u500D\u7387\u304C\u7A4D\u307F\u4E0A\u304C\u308A</b>\u307E\u3059\uFF08\u4E00\u6483\u9AD8\u500D\u7387: \u00D75\u304B\u3089+7\u305A\u3064\uFF09\u3002
+        \u30D5\u30EA\u30FC\u4E2D\u306F\u6B62\u307E\u3063\u305FWILD\u304C<b>\u305D\u306E\u30DE\u30B9\u306B\u30DB\u30FC\u30EB\u30C9</b>\u3055\u308C\u3001WILD\u3092\u542B\u3080\u5F53\u9078\u30E9\u30A4\u30F3\u306B\u306F<b>\u62BD\u9078\u3057\u305FWILD\u914D\u5F53\u304C1\u56DE</b>\u639B\u304B\u308A\u307E\u3059\uFF08\u540C\u3058\u30E9\u30A4\u30F3\u306BWILD\u304C\u8907\u6570\u3042\u3063\u3066\u3082\u91CD\u8907\u3057\u307E\u305B\u3093\uFF09\u3002
         \u30D5\u30EA\u30FC\u4E2D\u306E\u2605\u306F<b>3\u500B=\uFF0B4\u56DE / 4\u500B=\uFF0B8\u56DE / 5\u500B=\uFF0B12\u56DE</b>\u306E\u4E0A\u4E57\u305B\uFF08\u56DE\u6570\u306B\u4E0A\u9650\u306A\u3057\u30FB\u56FA\u5B9AWILD\u306F\u305D\u306E\u307E\u307E\u6B8B\u308B\uFF09\u3002\u914D\u5F53\u306B\u4E0A\u9650\u306F\u3042\u308A\u307E\u305B\u3093\u3002
       </div>
 
@@ -15607,7 +15610,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       + '<div class="fsout-amt" id="fsout-amt">+0</div>'
       + '<div class="fsout-rows">'
       + '<div><span>\u30B2\u30FC\u30E0\u6570</span><b>' + spinsPlayed + '</b></div>'
-      + '<div><span>\u6700\u7D42\u500D\u7387</span><b>\u00D7' + (free.finalMult || 1) + '</b></div>'
       + '<div><span>WILD\u914D\u5F53</span><b>\u00D7' + (free.wildMult || 1) + '</b></div>'
       + '</div></div>';
     document.body.appendChild(el);
@@ -15653,7 +15655,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     ov.innerHTML = '<div class="slfs-row">'
       + '<div class="slfs-l"><div class="slfs-title">FREE GAME</div>'
       + '<div class="slfs-mode">' + escapeHtml(mode) + '</div></div>'
-      + '<div class="slfs-mult">\u00D7<b id="slfs-m">1</b></div>'
+      + '<div class="slfs-mult"><span class="slfs-wlbl">WILD\u914D\u5F53</span>\u00D7<b id="slfs-m">'
+      + (wildMult || 1) + '</b></div>'
       + '<div class="slfs-r">'
       +   '<div class="slfs-left">\u6B8B\u308A <b id="slfs-left">' + total + '</b> \u56DE</div>'
       +   '<div class="slfs-count"><b id="slfs-i">0</b> / <span id="slfs-tot">' + total + '</span>'
@@ -15665,8 +15668,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       +   '<div class="slfs-wcell"><span>\u7DCF\u7372\u5F97</span><b id="slfs-w">\u2014</b></div>'
       +   '<div class="slfs-wcell now"><span>\u4ECA\u56DE</span><b id="slfs-wnow">\u2014</b></div>'
       + '</div>'
-      + (wildMult ? '<div class="sl-wildmult">WILD\u914D\u5F53 <b>\u00D7' + wildMult + '</b>'
-        + '<span>WILD\u3092\u542B\u3080\u30E9\u30A4\u30F3\u306B1\u56DE\u9069\u7528</span></div>' : "");
+      + (wildMult ? '<div class="sl-wildmult"><span>WILD\u3092\u542B\u3080\u5F53\u9078\u30E9\u30A4\u30F3\u306B1\u56DE\u9069\u7528\u3055\u308C\u307E\u3059</span></div>' : "");
     ov.dataset.total = total;
     ov.classList.add("show");
     document.body.classList.add("fs-play");                  // 盤面を光らせる
@@ -15818,8 +15820,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           if (bar2) bar2.style.width = Math.min(100, Math.round(i / tot * 100)) + "%";
         }
         await slotPlaySteps(fsp.steps, r.bet, sv, true);
-        const mc = document.getElementById("slfs-m");
-        if (mc) { mc.textContent = fsp.multAfter; mc.classList.remove("pop"); void mc.offsetWidth; mc.classList.add("pop"); }
+        // 第94弾: 持続倍率は廃止。中央のWILD配当は突入時から変わらないので更新しない
         // **今回の獲得**と**総獲得**は別物なので別の枠に出す。
         // どちらも**チップが着弾してから**数字が回る(先に出すとネタバレ・第92弾)
         const now = Math.round((fsp.payX || 0) * r.bet);
