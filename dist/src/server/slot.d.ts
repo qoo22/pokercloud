@@ -46,6 +46,12 @@ export declare const PAY_SYMBOLS: SlotPaySymbol[];
  */
 export declare const SLOT_CFG: {
     wildWeight: number;
+    /**
+     * 第95弾: 持続倍率の廃止(第94弾)で RTP が 85% まで下がったため、
+     * オーナーの目標「99.99%ぐらい」に合わせて 11→13 に引き上げた(2026-08-26)。
+     * 実測(8シード×37,500スピン): 13 で RTP 100.0% / フリー突入 1/221。
+     * 14 だと 106.8% と上振れる。仕組み(1ラインの上限=配当×WILD配当)には触っていない
+     */
     scatterWeight: number;
     /**
      * アンティベット時のスキャッター重み。
