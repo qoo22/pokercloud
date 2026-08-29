@@ -16453,11 +16453,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     }
 
     // --- 締め ---
-    // ファンファーレ・小当たり音が鳴り終わり、チップが残高に反映されてから
-    // 次のスピンへ(第107/109弾)。slotSpinning はこの下で解除されるので、
-    // ここで待てばオートも手動も待たされる
-    await fanfareWait();
-    await sfxWait("smallwin");
     // どの経路でも残高の凍結を持ち越さない(ハズレ・ゴールド建てなど)
     if (slotBalFreeze != null) {
       if (sv && balTo != null && r.currency === "chips") sv.chips = balTo;
@@ -16465,7 +16460,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       renderBalance();
     }
     slotLast = r;
-    slotSpinning = false;
     const label = r.kind === "max" ? "\u{1F389} MAX WIN\uFF01 +" : r.kind === "mega" ? "\u{1F389} \u30E1\u30AC\u30A6\u30A3\u30F3\uFF01 +"
       : r.kind === "big" ? "\u30D3\u30C3\u30B0\u30A6\u30A3\u30F3\uFF01 +" : r.kind === "small" ? "+" : "";
     // 金額と「ハズレ」は配当ドックが受け持つ。バナーはリールに重なるので、
@@ -16485,6 +16479,14 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       // ここが無音だと、当たったのに何も起きていないように見える
       sfx("smallwin");
     }
+    // **音が鳴り終わるまで「回転中」のまま待つ**(第110弾)。
+    // 第109弾は待つ位置が音を鳴らす**前**にあり(残り0秒で素通り)、
+    // さらに slotSpinning も先に解除していたため、音の途中で次が回せてしまっていた。
+    // 鳴らした**後**に待ち、待ち終わってから解除する
+    await fanfareWait();
+    await sfxWait("smallwin");
+    slotSpinning = false;
+    renderSlot();                                // ボタンを「スピン」に戻す
 
     // 当選ラインは**次に操作するまで巡回表示し続ける**(スクリーンショットを撮れるように)。
     // 通常時の当選が対象。フリーゲームは合計だけを出す
