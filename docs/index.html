@@ -12742,7 +12742,17 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (actx.state === "suspended") void actx.resume();
     return actx;
   }
-  function unlockAudio() { aEnsure(); }
+  function unlockAudio() {
+    aEnsure();
+    // 音源のデコードは重い(実測: BGM 647KB で 4.4秒)。フリーゲーム突入時にやると
+    // 演出と重なって危ないので、**音が解錠された時点で暇なうちに**済ませておく。
+    // どちらも1回きり。すでに済んでいれば何もしない
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(() => { fsBgmEnsure(); fanfareEnsure(); }, { timeout: 4000 });
+    } else {
+      setTimeout(() => { fsBgmEnsure(); fanfareEnsure(); }, 1200);
+    }
+  }
   function isMuted() { return amuted; }
   function setMuted(v) {
     amuted = v;
@@ -14772,7 +14782,12 @@ window.__offlineSave = PokerOffline.startOfflineServer();
    * 高額当選の演出。資料の構成に沿って
    * 予兆(無音)→確定(閃光)→称号→カウントアップ→称号昇格→祝勝→結果固定 の順に出す。
    */
-  async function slotCelebrate(payX, won, bet) {
+  /**
+   * 高額当選の全画面演出。
+   * opts.fanfare=false のときはファンファーレを鳴らさない(第101弾)。
+   * フリーゲームは**リザルト画面**で鳴らすので、締めのここでは鳴らさない
+   */
+  async function slotCelebrate(payX, won, bet, opts) {
     const top = slotRankFor(payX);
     if (!top) return;                       // 5倍未満は通常表示のまま
     const rec = slotBestX(payX);
@@ -14799,8 +14814,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     await slotSleep(350);
     el.classList.add("show");
     // 高額当選の「おめでとう」= 支給のファンファーレ(第100弾)。
-    // 金額のカウントアップに重なるよう、演出が現れた瞬間から鳴らす
-    fanfarePlay();
+    // 金額のカウントアップに重なるよう、演出が現れた瞬間から鳴らす。
+    // フリーゲームはリザルト画面で鳴らすため、ここでは鳴らさない(第101弾)
+    if (!opts || opts.fanfare !== false) fanfarePlay();
     // ②確定: 中央からカメラ方向へ金貨が爆発する
     slotBurstCoins(fx, 10 + lvl * 6);
     await slotSleep(240);
@@ -15742,7 +15758,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     document.body.appendChild(el);
     await slotSleep(30);
     el.classList.add("show");
-    play("bigwin");
+    // フリーゲームの締めくくり。ここでファンファーレを鳴らす(第101弾・オーナー指定)。
+    // フリー中の当選ごとに鳴らすとテンポが悪くなるので、結果発表の1回だけにする
+    fanfarePlay();
     slotSpawnCoins(el, { back: 12, mid: 10, front: 4, bills: true, spread: 1.2 });
     slotBurstCoins(el, 16);
     // 総獲得は0から滑らかに数え上げる(ここでも先に出さない)
@@ -16010,7 +16028,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     renderSlot();
     // BET倍率で祝福の強さを段階的に変える(5倍未満は通常表示のまま)
     const payX = (r.outcome && r.outcome.totalPayX) || 0;
-    if (payX >= 5) { await slotCelebrate(payX, r.won, r.bet); }
+    // フリーゲームに入ったスピンは、ファンファーレを**リザルト画面**で鳴らし済み。
+    // ここで重ねるとテンポが悪くなるので鳴らさない
+    if (payX >= 5) { await slotCelebrate(payX, r.won, r.bet, { fanfare: !oc.freeEntered }); }
     else if (r.kind === "small") play("chipSmall");
 
     // 当選ラインは**次に操作するまで巡回表示し続ける**(スクリーンショットを撮れるように)。
