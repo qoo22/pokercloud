@@ -15835,7 +15835,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       const modeName = (sv.freeModes || []).find((m) => m.key === oc.free.mode);
       // ①突入を盛大に祝う(全画面)
       // 突入演出は**絶対に飛ばさない**(WILD倍率の抽選はフリーゲームの前提になる情報)
-      fsBgmStart();                               // フリーゲームの間だけBGMを流す(第96弾)
+      // BGMは**ルーレットが終わってリールが回り始めた瞬間**から(第99弾・オーナー指定)。
+      // ここでは鳴らさず、デコードだけ先に済ませておく(初回の取りこぼし防止)
+      fsBgmEnsure();
       await slotFsIntro(modeName ? modeName.name : "", oc.free.spinsTotal, oc.free.wildMult, oc.scatters || 3);
       // ②盤面の上にHUDを出す。盤面は覆わないので、リールはずっと見えている
       const ov = slotFsOverlay(modeName ? modeName.name : "", oc.free.spinsTotal, oc.free.wildMult);
@@ -15868,6 +15870,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         // 固定リールも後ろで回るが、前面のWILDレイヤーが残るので固定に見える
         slotPaceStart = Date.now();   // フリーは1ゲームごとに時計を入れ直す
         slotSpinAnimStart();
+        // 1ゲーム目の回転と同時にBGMを流し始める(2ゲーム目以降は既に鳴っているので何もしない)
+        if (i === 1) fsBgmStart();
         // 1ゲームずつ**ちゃんと回っているのが見える**長さを取る。
         // 300ms だと止まる前に次へ行くので「盤面が差し替わっただけ」に見えていた
         await slotSleep(560);
