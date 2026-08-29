@@ -13092,6 +13092,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     } catch (e) { try { src.stop(); } catch (e2) {} }
   }
   var sfxBuf = {}, sfxLoading = {}, sfxLast = null;
+  /** 各効果音を最後に鳴らした時刻。sfxWait で「鳴り終わるまで待つ」ために使う(第109弾) */
+  var sfxLastAt = {};
   /** 1つデコードしておく。済んでいれば何もしない */
   function sfxEnsure(key, cb) {
     const c = aEnsure(); if (!c) return;
@@ -13122,6 +13124,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   function sfx(key, opts) {
     const o = opts || {};
     const c = aEnsure(); if (!c || !amaster || amuted) return false;
+    sfxLastAt[key] = Date.now();
     const play1 = () => {
       const buf = sfxBuf[key]; if (!buf) return;
       if (o.solo && sfxLast) { try { sfxLast.stop(); } catch (e) {} }
@@ -13137,6 +13140,18 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (sfxBuf[key]) { play1(); return true; }
     sfxEnsure(key, play1);                 // 未デコードなら読めてから鳴らす
     return false;
+  }
+
+  /**
+   * その効果音が鳴り終わるまで待つ(第109弾)。
+   * 「音の途中で次のスピンが始まる」と祝いが途切れるので、締めで待ってから解放する
+   */
+  async function sfxWait(key) {
+    const at = sfxLastAt[key];
+    if (!at) return;
+    const left = (SFX_SEC[key] || 0) * 1000 - (Date.now() - at);
+    if (left > 0) await slotSleep(left);
+    sfxLastAt[key] = 0;
   }
 
   /**
@@ -14919,8 +14934,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       slotResetDock("\u62BD\u9078\u4E2D\u2026");
       slotWinText = ""; slotWinCls = ""; slotChainMult = 1;
       renderSlot();
-      // **ボタン音が鳴ってからリールが回る**(第108弾・オーナー指定)。
-      // 同時に始めると回転音に食われて押した感が無い。280ms だけ音に先行させる
+      // **ボタン音が鳴り終わってからリールが回る**(第109弾・オーナー指定)。
+      // 送信も同じだけ遅らせる(結果が先に届いて回転が短く見えるのを防ぐ)
       sfx("btn");
       setTimeout(() => {
         if (!slotSpinning) return;            // その間に例外で止まっていたら何もしない
@@ -14929,7 +14944,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         slotSpinAt = Date.now();   // 最低回転時間の計測用
         slotPaceStart = slotSpinAt; // 演出の早送り判定もここから数える
         send({ t: "slot.spin", bet: curBet, ante: slotAnte, mode: slotMode });
-      }, 280);
+      }, Math.round((SFX_SEC.btn || 1) * 1000));
     };
     if (spinBtn) spinBtn.onclick = () => {
       // AUTO中はこのボタンが「停止」になる(いまの1回は最後まで処理してから止まる)
@@ -16438,9 +16453,11 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     }
 
     // --- 締め ---
-    // ファンファーレが鳴り終わり、チップが残高に反映されてから次のスピンへ(第107弾)。
-    // slotSpinning はこの下で解除されるので、ここで待てばオートも手動も待たされる
+    // ファンファーレ・小当たり音が鳴り終わり、チップが残高に反映されてから
+    // 次のスピンへ(第107/109弾)。slotSpinning はこの下で解除されるので、
+    // ここで待てばオートも手動も待たされる
     await fanfareWait();
+    await sfxWait("smallwin");
     // どの経路でも残高の凍結を持ち越さない(ハズレ・ゴールド建てなど)
     if (slotBalFreeze != null) {
       if (sv && balTo != null && r.currency === "chips") sv.chips = balTo;
