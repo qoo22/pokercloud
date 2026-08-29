@@ -81,6 +81,8 @@ export class Tournament {
     entrants = new Map();
     tables = new Map();
     levelIndex = 0;
+    /** 現在のレベルが始まった時刻。「次のレベルまで残り何秒」の計算に使う(第107弾) */
+    levelStartedAt = 0;
     startedAt = null;
     timers = [];
     nextTableSeq = 1;
@@ -269,6 +271,7 @@ export class Tournament {
         this.state = 'running';
         this.startedAt = this.clock.now();
         this.levelIndex = 0;
+        this.levelStartedAt = this.clock.now();
         // 席順はランダム。事前に並びが分かると結託の余地が生まれる
         const players = [...this.entrants.values()];
         shuffleInPlace(players, () => Math.random());
@@ -345,6 +348,7 @@ export class Tournament {
             if (this.state !== 'running')
                 return;
             this.levelIndex = Math.min(this.levelIndex + 1, this.cfg.levels.length - 1);
+            this.levelStartedAt = this.clock.now();
             const l = this.currentLevel();
             for (const r of this.tables.values())
                 r.setBlinds({ smallBlind: l.smallBlind, bigBlind: l.bigBlind, ante: l.ante });
@@ -615,7 +619,18 @@ export class Tournament {
             bigBlind: level.bigBlind,
             ante: level.ante,
             isBreak: !!level.isBreak,
-            nextLevelInMs: null,
+            // 次のレベルまでの残り時間と、上がった後のブラインド(第107弾)。
+            // 最終レベルに到達していたら null(もう上がらない)
+            nextLevelInMs: this.state === 'running' && this.levelIndex < this.cfg.levels.length - 1
+                ? Math.max(0, this.cfg.levelDurationMs - (this.clock.now() - this.levelStartedAt))
+                : null,
+            nextSmallBlind: this.levelIndex < this.cfg.levels.length - 1
+                ? this.cfg.levels[this.levelIndex + 1].smallBlind : null,
+            nextBigBlind: this.levelIndex < this.cfg.levels.length - 1
+                ? this.cfg.levels[this.levelIndex + 1].bigBlind : null,
+            nextAnte: this.levelIndex < this.cfg.levels.length - 1
+                ? (this.cfg.levels[this.levelIndex + 1].ante ?? 0) : null,
+            levelDurationMs: this.cfg.levelDurationMs,
             averageStack: alive.length ? Math.round(alive.reduce((a, e) => a + e.stack, 0) / alive.length) : 0,
             paidPlaces,
             payouts: payoutStructure(this.totalEntries()).map((p, i) => ({

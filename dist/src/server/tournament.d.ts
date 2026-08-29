@@ -109,6 +109,8 @@ export declare class Tournament {
     private entrants;
     private tables;
     private levelIndex;
+    /** 現在のレベルが始まった時刻。「次のレベルまで残り何秒」の計算に使う(第107弾) */
+    private levelStartedAt;
     private startedAt;
     private timers;
     private nextTableSeq;

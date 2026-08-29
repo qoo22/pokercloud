@@ -329,6 +329,12 @@ export interface TournamentView extends TournamentSummaryView {
     ante: number;
     isBreak: boolean;
     nextLevelInMs: number | null;
+    /** 次のレベルのブラインド(最終レベルなら null)(第107弾) */
+    nextSmallBlind?: number | null;
+    nextBigBlind?: number | null;
+    nextAnte?: number | null;
+    /** 1レベルの長さ(ms)。カウントダウンの母数 */
+    levelDurationMs?: number;
     averageStack: number;
     paidPlaces: number;
     payouts: Array<{
