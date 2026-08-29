@@ -138,6 +138,11 @@ export const AD_REWARD_CAP = 2_000_000;
  * **無限にチップを増やせてしまう**。よってチップ建てでは倍率を掛けない(RTP 96% 固定 =
  * 4% がシンク)。倍率はゴールド建て専用として残す。
  */
+/**
+ * 賭け金の下限。所持が少なくても**必ずこの額では回せる**(第106弾)。
+ * 以前は「所持に近い側を12段だけ残す」処理のせいで、所持が増えると
+ * 下限の1,000が選択肢から消えていた
+ */
 export const SLOT_CHIP_MIN_BET = 1_000;
 /**
  * 賭け金の上限(第88弾・オーナー指定)。**50兆(50T)**。
@@ -191,9 +196,13 @@ export function chipBetLadder(balance) {
     }
     if (!out.length)
         return [];
-    // 段数が多すぎるときは「所持に近い側」を12段だけ残す(小さすぎる額は選ぶ意味が薄い)
+    // 段数が多すぎるときは「所持に近い側」を残す。ただし**下限は必ず残す**(第106弾)。
+    // 所持が増えるほど下の段から消えていき、少額で遊べなくなっていた
     const MAX_STEPS = 12;
-    return out.length <= MAX_STEPS ? out : out.slice(out.length - MAX_STEPS);
+    if (out.length <= MAX_STEPS)
+        return out;
+    const tail = out.slice(out.length - (MAX_STEPS - 1));
+    return tail[0] === out[0] ? tail : [out[0], ...tail];
 }
 /** ゴールド建ての選択肢。所持に合わせて同じ考え方で刻む(下限1) */
 export function goldBetLadder(balance) {
