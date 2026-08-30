@@ -881,17 +881,24 @@ export class Economy {
         if (stake < BAC_MIN_BET) {
             return { ok: false, error: `合計 ${BAC_MIN_BET.toLocaleString()} チップ以上賭けてください` };
         }
-        // 上限はスロットと同じ50T。台帳の1回上限(2^53)もスロットと同じ理由で弾く
-        if (stake > SLOT_CHIP_MAX_BET) {
-            return { ok: false, error: `賭け金の上限は合計 ${SLOT_CHIP_MAX_BET.toLocaleString()} チップです` };
-        }
-        if (stake > SAFE_POST) {
-            return { ok: false, error: `賭け金は ${SAFE_POST.toLocaleString()} チップまでです` };
-        }
+        // 上限なし(第121弾・オーナー指定)。残高だけが天井。
+        // 台帳の1回上限(2^53対策の SAFE_POST)を超える賭け金は分割して記帳する
         if (u.chips < stake)
             return { ok: false, error: 'チップが足りません' };
-        if (this.store.post(userId, 'chips', -stake, 'baccarat_bet', `day:${day}`) === null) {
-            return { ok: false, error: 'チップが足りません' };
+        {
+            let rest = stake;
+            let taken = 0;
+            while (rest > 0) {
+                const part = Math.min(rest, SAFE_POST);
+                if (this.store.post(userId, 'chips', -part, 'baccarat_bet', `day:${day}`) === null) {
+                    // 途中で失敗したら取った分を戻す(残高チェック済みなので通常は来ない)
+                    if (taken > 0)
+                        this.store.post(userId, 'chips', taken, 'baccarat_bet', `refund:${day}`);
+                    return { ok: false, error: 'チップが足りません' };
+                }
+                taken += part;
+                rest -= part;
+            }
         }
         const hand = dealBaccarat(rnd);
         const ret = baccaratReturn(bets, hand.res);
