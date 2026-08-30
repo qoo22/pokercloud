@@ -12269,7 +12269,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         break;
       case "slot.info":
         slotView = msg.slot;
-        renderSlot();
+        // 演出中の全再描画は盤面を作り直して一瞬チカつく(第112弾)。
+        // 回っている間は溜めておき、次の描画機会に反映される
+        if (!slotSpinning) renderSlot();
         break;
       case "slot.result":
         // 演出のどこかで例外が出ても slotSpinning が立ちっぱなしにならないようにする。
@@ -15044,6 +15046,38 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     }
   }
 
+  /**
+   * 締めでボタンとベット操作を「回せる状態」へ戻す(第112弾)。
+   * renderSlot(全再描画)は盤面DOMを作り直すため、停止後に画像が読み直されて
+   * チカチカして見える。締めでは**必要な要素だけ**を直接書き換える
+   */
+  function slotUnlockUI() {
+    const sv = slotView; if (!sv) return;
+    const have = sv.chips || 0;
+    const c = slotChipBet || 0;
+    const sb = document.getElementById("slot-spin");
+    if (sb) {
+      if (slotAutoRunning()) {
+        sb.disabled = false;
+      } else {
+        sb.disabled = !(c > 0 && have >= c);
+        sb.classList.remove("busy");
+        sb.classList.toggle("short", have < c);
+        sb.classList.toggle("idle", have >= c);
+        sb.innerHTML = have < c
+          ? "<b>\u30C1\u30C3\u30D7\u4E0D\u8DB3</b>"
+          : "<b>\u30B9\u30D4\u30F3</b><span>\u6D88\u8CBB \u{1F4B0} " + fmt(c) + "</span>";
+      }
+    }
+    // ベット操作の固定(第106弾)を解除
+    document.querySelectorAll(".sl-betstep, [data-betop], #sl-betnow").forEach((b) => {
+      b.disabled = false;
+    });
+    // 所持金の表示も直接更新(凍結解除後の値)
+    const foot = document.querySelector("#slot .sl-foot b");
+    if (foot) foot.textContent = fmt(have);
+  }
+
   /** 凍結していた所持金を、実額までカウントアップして解除する(着弾の締め) */
   async function slotReleaseBalance(from, to) {
     const sv = slotView;
@@ -15928,8 +15962,10 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       const chips = slotCur === "chips"
         ? Math.round(st.payX * bet)
         : Math.round(st.payX * bet * sv.chipsPerGold * sv.multiplier);
-      // 表示中のバナーは金額なし(chips=null)。金額は着弾後に出る
-      slotSetWin(slotWinLabel(st, sv, null), "big");
+      // 表示中のバナーは金額なし(chips=null)。金額は着弾後に出る。
+      // **フリーゲーム中は出さない**(第112弾): リールに被って見づらく、
+      // 内訳はドックの行とHUD(今回/総獲得)が担っている
+      if (!fs) slotSetWin(slotWinLabel(st, sv, null), "big");
       if (slotPace() >= 2) await slotSleep(140);
       // どのラインで当たったのかを1本ずつ見せる(本数が多いときは上位だけ)
       await slotShowWinLines(st, sv, bet, i);
@@ -16379,6 +16415,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         // ③**毎ゲーム、実際にリールを回す**。差し替えるだけだと「動いていない」ように見える。
         // 固定リールも後ろで回るが、前面のWILDレイヤーが残るので固定に見える
         slotPaceStart = Date.now();   // フリーは1ゲームごとに時計を入れ直す
+        slotSetWin("", "");           // 前のゲームのバナーが残ってリールに被らないように
         slotSpinAnimStart();
         // 1ゲーム目の回転と同時にBGMを流し始める(2ゲーム目以降は既に鳴っているので何もしない)
         if (i === 1) fsBgmStart();
@@ -16468,10 +16505,10 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     // 金額と「ハズレ」は配当ドックが受け持つ。バナーはリールに重なるので、
     // ビッグ以上の見せ場だけに絞る(毎回出すと下段の絵柄が隠れる)
     const bigEnough = r.kind === "max" || r.kind === "mega" || r.kind === "big";
-    slotWinText = bigEnough ? label + fmt(r.won) : "";
-    slotWinCls = (r.kind === "max" || r.kind === "mega") ? "jackpot" : r.kind === "big" ? "big" : "";
+    // renderSlot(全再描画)は盤面が点滅するので使わない(第112弾)。要素を直接更新する
+    slotSetWin(bigEnough ? label + fmt(r.won) : "", (r.kind === "max" || r.kind === "mega") ? "jackpot" : r.kind === "big" ? "big" : "");
     slotChainMult = 1;
-    renderSlot();
+    slotSetMult(1);
     // BET倍率で祝福の強さを段階的に変える(5倍未満は通常表示のまま)
     const payX = (r.outcome && r.outcome.totalPayX) || 0;
     // フリーゲームに入ったスピンは、ファンファーレを**リザルト画面**で鳴らし済み。
@@ -16483,7 +16520,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     await fanfareWait();
     await sfxWait("smallwin");
     slotSpinning = false;
-    renderSlot();                                // ボタンを「スピン」に戻す
+    slotUnlockUI();                              // ボタンとベット操作だけを戻す(全再描画しない)
 
     // 当選ラインは**次に操作するまで巡回表示し続ける**(スクリーンショットを撮れるように)。
     // 通常時の当選が対象。フリーゲームは合計だけを出す
