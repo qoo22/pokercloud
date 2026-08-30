@@ -14796,7 +14796,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         </div>
         <div class="sl-dock" id="sl-dock">
           <div class="sl-dock-top">
-            <div><span class="lbl">\u7DCF\u7372\u5F97</span>
+            <div><span class="lbl" id="sl-dock-lbl">\u7DCF\u7372\u5F97</span>
               <span class="amt zero" id="sl-dock-amt">\u2014</span></div>
             <button class="sl-dock-lines" id="sl-dock-lines" disabled>\u2014</button>
           </div>
@@ -15008,6 +15008,24 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     }
   }
 
+  /**
+   * 当選の要約「WIN クラブ×4 WILD×2」を作る(第115弾)。
+   * 旧バナー(第113弾で廃止)の中身を、ドックの数字の左のラベルとして出す
+   */
+  function slotWinSummary(st, sv) {
+    const wins = (st && st.wins) || [];
+    if (!wins.length) return null;
+    let top = null;
+    for (const w of wins) if (!top || w.pay > top.pay) top = w;
+    let t = "WIN " + (top.allWild
+      ? "WILD\u00D7" + top.count
+      : slotSymName(sv, top.key) + "\u00D7" + top.count);
+    let wm = 0;
+    for (const w of wins) if (w.wildMult && w.wildMult > wm) wm = w.wildMult;
+    if (wm) t += " WILD\u00D7" + wm;
+    return t;
+  }
+
   /** 「n ライン 〉」だけ先に出す。金額は着弾まで見せない(第92弾) */
   function slotShowLineCount(n) {
     const btn = document.getElementById("sl-dock-lines");
@@ -15031,10 +15049,10 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       if (dock) { dock.classList.remove("hit"); void dock.offsetWidth; dock.classList.add("hit"); }
       await slotCountUp(o.dur || 520, (tt) => {
         const eased = 1 - Math.pow(1 - tt, 2.2);
-        slotShowTotal(Math.round(amount * eased), 0, o.lines || 0);
+        slotShowTotal(Math.round(amount * eased), 0, o.lines || 0, o.label);
         return 0;
       });
-      slotShowTotal(amount, 0, o.lines || 0);
+      slotShowTotal(amount, 0, o.lines || 0, o.label);
     } else if (tgt) {
       await slotCountUp(o.dur || 400, (tt) => {
         const eased = 1 - Math.pow(1 - tt, 2.2);
@@ -15574,8 +15592,11 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   }
 
   /** 配当ドックの1段目(総獲得とライン数)。当選が無いときは薄く「—」 */
-  function slotShowTotal(totalWon, idx, n) {
-    slotDockState = Object.assign(slotDockState || {}, { totalWon, idx, n });
+  function slotShowTotal(totalWon, idx, n, label) {
+    slotDockState = Object.assign(slotDockState || {}, { totalWon, idx, n, label });
+    // 数字の左のラベル。当選中は「WIN クラブ×4」のように**何で当たったか**を出す(第115弾)
+    const lbl = document.getElementById("sl-dock-lbl");
+    if (lbl) lbl.textContent = label || "\u7DCF\u7372\u5F97";
     const amt = document.getElementById("sl-dock-amt");
     const btn = document.getElementById("sl-dock-lines");
     if (amt) {
@@ -15612,7 +15633,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     const d = slotDockState;
     if (!d) return;
     if (d.win) slotShowLineInfo(d.win, d.sv, d.bet, d.chainMult);
-    if (d.totalWon != null) slotShowTotal(d.totalWon, d.idx || 0, d.n || 0);
+    if (d.totalWon != null) slotShowTotal(d.totalWon, d.idx || 0, d.n || 0, d.label);
   }
 
   /** 「n ライン 〉」を押したときの一覧。下から出るシートで、押すとそのラインを再表示する */
@@ -15657,13 +15678,14 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (!wins.length) { slotResetDock(); return; }
     const paylines = (sv && sv.paylines) || [];
     let i = 0;
+    const cycleLabel = slotWinSummary(st, sv);
     const showAt = (k) => {
       const w = wins[k % wins.length];
       slotSetGrid(st.grid, st.hits);        // 当選マスを光らせたままにする
       slotClearLines();
       slotDrawLine(w, paylines);
       slotShowLineInfo(w, sv, bet, st.mult);
-      slotShowTotal(totalWon, k % wins.length, wins.length);
+      slotShowTotal(totalWon, k % wins.length, wins.length, cycleLabel);
     };
     const show = () => { showAt(i); i++; };
     show();
@@ -16363,7 +16385,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       // 小当たり音は**総獲得のカウント開始と同時**に鳴らす(第111弾・オーナー指定)。
       // 祝福(NICE WIN以上)が出る当たりはファンファーレが担当するので鳴らさない
       if (((oc.totalPayX || 0) < 5)) sfx("smallwin");
-      await slotPayout(r.won, "sl-dock-amt", { mode: "dock", lines: lineN });
+      await slotPayout(r.won, "sl-dock-amt", { mode: "dock", lines: lineN,
+        label: slotWinSummary(lastStep, sv) });
       await slotReleaseBalance(balFrom, balTo);
     }
 
@@ -16462,7 +16485,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           // バナー廃止(第113弾)で空いていたドックの総獲得欄にも、
           // このゲームの当選額とライン数を出す(第114弾・オーナー指定)。
           // HUDの「今回」と同じカウントで一緒に回す
-          const lastWins = fsp.steps.length ? (fsp.steps[fsp.steps.length - 1].wins || []).length : 0;
+          const lastStepF = fsp.steps.length ? fsp.steps[fsp.steps.length - 1] : null;
+          const lastWins = lastStepF ? (lastStepF.wins || []).length : 0;
+          const fsLabel = slotWinSummary(lastStepF, sv);
           play("chipSmall");
           await slotSleep(180);
           await slotCountUp(dur, (t) => {
@@ -16470,10 +16495,10 @@ window.__offlineSave = PokerOffline.startOfflineServer();
             const v = Math.round(now * eased);
             const wn2 = document.getElementById("slfs-wnow");
             if (wn2) wn2.textContent = "+" + fmt(v);
-            slotShowTotal(v, 0, lastWins);
+            slotShowTotal(v, 0, lastWins, fsLabel);
             return 0;
           });
-          slotShowTotal(now, 0, lastWins);
+          slotShowTotal(now, 0, lastWins, fsLabel);
           const wnF = document.getElementById("slfs-wnow");
           if (wnF) { wnF.textContent = "+" + fmt(now);
             wnF.classList.remove("pop"); void wnF.offsetWidth; wnF.classList.add("pop"); }
