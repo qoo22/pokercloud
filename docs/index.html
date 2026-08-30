@@ -15440,9 +15440,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
    * WILDだけで成立した列は盤面にその絵柄が無いので「WILD×3（セブン扱い）」と書く。
    */
   /**
-   * 当選バナーの文言。**chips が null のときは金額を出さない**(第93弾)。
-   * リールが止まった瞬間のバナーに金額を入れると、ライン表示や着弾より先に
-   * 結果が割れてしまう。金額は着弾後のドックと締めのバナーだけが出す
+   * 当選バナーの文言。**第113弾からどこからも呼ばれていない**(当選バナー自体を
+   * 廃止し、内訳はドックの行が出すため)。復活させるときのために残してある
    */
   function slotWinLabel(st, sv, chips) {
     const wins = st.wins || [];
@@ -15962,10 +15961,10 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       const chips = slotCur === "chips"
         ? Math.round(st.payX * bet)
         : Math.round(st.payX * bet * sv.chipsPerGold * sv.multiplier);
-      // 表示中のバナーは金額なし(chips=null)。金額は着弾後に出る。
-      // **フリーゲーム中は出さない**(第112弾): リールに被って見づらく、
-      // 内訳はドックの行とHUD(今回/総獲得)が担っている
-      if (!fs) slotSetWin(slotWinLabel(st, sv, null), "big");
+      // 当選のWINバナーは**通常時も出さない**(第113弾・オーナー指定)。
+      // リールに被って見づらく、内訳はドックの行(+フリー中はHUD)が担っている。
+      // バナーに残るのは: ハズレ / ビッグウィン以上の締めの告知 /
+      // WILD RE-SPIN / RETRIGGER などの「状態の告知」だけ
       if (slotPace() >= 2) await slotSleep(140);
       // どのラインで当たったのかを1本ずつ見せる(本数が多いときは上位だけ)
       await slotShowWinLines(st, sv, bet, i);
