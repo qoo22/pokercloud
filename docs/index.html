@@ -16415,6 +16415,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         // 固定リールも後ろで回るが、前面のWILDレイヤーが残るので固定に見える
         slotPaceStart = Date.now();   // フリーは1ゲームごとに時計を入れ直す
         slotSetWin("", "");           // 前のゲームのバナーが残ってリールに被らないように
+        slotResetDock("\u62BD\u9078\u4E2D\u2026");   // ドックも通常時と同じく回すたびに戻す(第114弾)
         slotSpinAnimStart();
         // 1ゲーム目の回転と同時にBGMを流し始める(2ゲーム目以降は既に鳴っているので何もしない)
         if (i === 1) fsBgmStart();
@@ -16458,7 +16459,24 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           // 焦らしを強化(第108弾): 1.6〜4.2秒かけて数える(大きい当たりほど長い)
           const bigness = Math.min(1, Math.log10(Math.max(now, 1)) / 9);
           const dur = 1600 + Math.round(2600 * bigness);
-          await slotPayout(now, "slfs-wnow", { coins: 4, dur });
+          // バナー廃止(第113弾)で空いていたドックの総獲得欄にも、
+          // このゲームの当選額とライン数を出す(第114弾・オーナー指定)。
+          // HUDの「今回」と同じカウントで一緒に回す
+          const lastWins = fsp.steps.length ? (fsp.steps[fsp.steps.length - 1].wins || []).length : 0;
+          play("chipSmall");
+          await slotSleep(180);
+          await slotCountUp(dur, (t) => {
+            const eased = 1 - Math.pow(1 - t, 2.2);
+            const v = Math.round(now * eased);
+            const wn2 = document.getElementById("slfs-wnow");
+            if (wn2) wn2.textContent = "+" + fmt(v);
+            slotShowTotal(v, 0, lastWins);
+            return 0;
+          });
+          slotShowTotal(now, 0, lastWins);
+          const wnF = document.getElementById("slfs-wnow");
+          if (wnF) { wnF.textContent = "+" + fmt(now);
+            wnF.classList.remove("pop"); void wnF.offsetWidth; wnF.classList.add("pop"); }
           const wc0 = document.getElementById("slfs-w");
           if (wc0) {
             await slotCountUp(Math.round(dur * 0.7), (t) => {
