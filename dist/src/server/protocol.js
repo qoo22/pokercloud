@@ -163,6 +163,20 @@ export function parseClientMessage(raw) {
                 return { ok: false, reason: 'pin がありません' };
             return { ok: true, msg: { t: 'transfer.redeem', code, pin } };
         }
+        case 'baccarat.deal': {
+            // 賭け金は3口とも非負整数。合計や残高は経済側(dealBaccaratHand)で最終判定する
+            const n = (v) => {
+                const x = Math.floor(Number(v));
+                return Number.isFinite(x) && x > 0 ? x : 0;
+            };
+            const src = (m.bets ?? {});
+            const bets = { p: n(src.p), b: n(src.b), tie: n(src.tie) };
+            if (bets.p + bets.b + bets.tie <= 0)
+                return { ok: false, reason: 'bets がありません' };
+            // 宣言は既知の2種のみ。未知の値は「宣言なし」に落とす
+            const declare = m.declare === 'H' || m.declare === 'L' ? m.declare : undefined;
+            return { ok: true, msg: { t: 'baccarat.deal', bets, declare } };
+        }
         case 'slot.spin': {
             // 賭け金は整数のみ。使える額かどうかは経済側(SLOT_BETS)で最終判定する
             const bet = Math.floor(Number(m.bet));

@@ -740,6 +740,20 @@ export class Lobby {
                 this.transport.send(sessionId, { t: 'slot.info', slot: this.economy.slotState(s.userId) });
                 return;
             }
+            case 'baccarat.deal': {
+                const r = this.economy.dealBaccaratHand(s.userId, msg.bets, msg.declare ?? null, Math.random);
+                if (!r.ok)
+                    return this.err(sessionId, 'ILLEGAL_ACTION', r.error ?? '配れませんでした');
+                this.sendBalance(s.userId);
+                this.transport.send(sessionId, {
+                    t: 'baccarat.result',
+                    result: {
+                        hand: r.hand, bets: r.bets, stake: r.stake, won: r.won, bonus: r.bonus,
+                        declare: msg.declare ?? null, balance: r.balance,
+                    },
+                });
+                return;
+            }
             case 'slot.spin': {
                 const r = this.economy.spinSlot(s.userId, msg.bet, Math.random, { ante: msg.ante, mode: msg.mode });
                 if (!r.ok)

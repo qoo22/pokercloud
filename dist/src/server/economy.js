@@ -10,6 +10,7 @@
  * クライアントの申告だけで付与する実装は、改造クライアントで無限にチップが増えます。
  */
 import { spin as spinReels, PAY_SYMBOLS, SLOT_CFG, FREE_MODES, MAX_WIN_X, TUMBLE_LADDER, SCATTER_PAY, REELS, ROWS, LINES, PAYLINES, } from './slot.js';
+import { dealBaccarat, baccaratReturn, declareHit, BAC_DECLARE_RATE, } from './baccarat.js';
 /** 恒常チップパック。単価差は最大 4.8 倍に抑えている（Zynga の約 10 倍は初回転換率を下げる） */
 export const CHIP_PACKS = [
     { sku: 'chips_160', name: 'スターター', priceJpy: 160, chips: 15_000_000, vipPoints: 160, kind: 'chips' },
@@ -175,6 +176,8 @@ export const SLOT_LIMIT_ENABLED = false;
  * 少し余裕を持って 9000兆 とする。これを超える支払いは postBig で分割する。
  */
 export const SAFE_POST = 9_000_000_000_000_000;
+/** バカラの最低合計賭け金。スロットの下限(1000常時開放)と揃える */
+export const BAC_MIN_BET = 1_000;
 export function chipBetLadder(balance) {
     const bal = Math.max(0, Math.floor(balance));
     if (bal < SLOT_CHIP_MIN_BET)
@@ -857,6 +860,66 @@ export class Economy {
     // クライアントは「広告を見終わった」と伝えるだけにし、**報酬額はサーバーが決める**。
     // (クライアントに金額を持たせると、いくらでも要求できてしまう)
     /** 広告の状態。UIの出し分けに使う */
+    /**
+     * バカラを1ハンド配る(第117弾)。チップを賭けてチップを払い出す閉じたループ。
+     * 配札・三枚目規則・払い戻し計算は baccarat.ts の純粋関数に任せ、
+     * ここはスロットと同じく支払い・上限・台帳だけを見る。
+     *
+     * declare(読み宣言)は**配る前に**受け取る。カードを見てから宣言できると
+     * 後出しで必ず当てられるため、プロトコル上も同じメッセージに載せる
+     */
+    dealBaccaratHand(userId, bets, declare = null, rnd = Math.random) {
+        const u = this.store.getUser(userId);
+        if (!u)
+            return { ok: false, error: 'ユーザーが見つかりません' };
+        const day = today(this.now());
+        const vals = [bets.p, bets.b, bets.tie];
+        if (vals.some((v) => !Number.isFinite(v) || !Number.isInteger(v) || v < 0)) {
+            return { ok: false, error: '賭け金が不正です' };
+        }
+        const stake = bets.p + bets.b + bets.tie;
+        if (stake < BAC_MIN_BET) {
+            return { ok: false, error: `合計 ${BAC_MIN_BET.toLocaleString()} チップ以上賭けてください` };
+        }
+        // 上限はスロットと同じ50T。台帳の1回上限(2^53)もスロットと同じ理由で弾く
+        if (stake > SLOT_CHIP_MAX_BET) {
+            return { ok: false, error: `賭け金の上限は合計 ${SLOT_CHIP_MAX_BET.toLocaleString()} チップです` };
+        }
+        if (stake > SAFE_POST) {
+            return { ok: false, error: `賭け金は ${SAFE_POST.toLocaleString()} チップまでです` };
+        }
+        if (u.chips < stake)
+            return { ok: false, error: 'チップが足りません' };
+        if (this.store.post(userId, 'chips', -stake, 'baccarat_bet', `day:${day}`) === null) {
+            return { ok: false, error: 'チップが足りません' };
+        }
+        const hand = dealBaccarat(rnd);
+        const ret = baccaratReturn(bets, hand.res);
+        const last = hand.order[hand.order.length - 1];
+        const lastCard = (last.s === 'p' ? hand.p : hand.b)[last.i];
+        const bonus = declareHit(declare, lastCard)
+            ? Math.round(stake * BAC_DECLARE_RATE[declare])
+            : 0;
+        const won = ret + bonus;
+        // 最大でも stake×9+α ≈ 450T で SAFE_POST(9000T) に収まるが、分割はスロットに合わせておく
+        if (won > 0) {
+            let rest = won;
+            while (rest > 0) {
+                const part = Math.min(rest, SAFE_POST);
+                this.store.post(userId, 'chips', part, 'baccarat_win', `day:${day}`);
+                rest -= part;
+            }
+        }
+        return {
+            ok: true,
+            hand,
+            bets,
+            stake,
+            won,
+            bonus,
+            balance: this.store.balance(userId, 'chips'),
+        };
+    }
     adState(userId) {
         const u = this.store.getUser(userId);
         const day = today(this.now());

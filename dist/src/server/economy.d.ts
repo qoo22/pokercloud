@@ -11,6 +11,7 @@
  */
 import type { Store, Currency, LedgerReason } from './store.js';
 import { type SlotOutcome, type FreeMode } from './slot.js';
+import { type BacBets, type BacHand } from './baccarat.js';
 export interface Sku {
     sku: string;
     name: string;
@@ -147,6 +148,8 @@ export declare const SLOT_LIMIT_ENABLED = false;
  * 少し余裕を持って 9000兆 とする。これを超える支払いは postBig で分割する。
  */
 export declare const SAFE_POST = 9000000000000000;
+/** バカラの最低合計賭け金。スロットの下限(1000常時開放)と揃える */
+export declare const BAC_MIN_BET = 1000;
 export declare function chipBetLadder(balance: number): number[];
 /** ゴールド建ての選択肢。所持に合わせて同じ考え方で刻む(下限1) */
 export declare function goldBetLadder(balance: number): number[];
@@ -461,6 +464,24 @@ export declare class Economy {
         mode?: FreeMode['key'];
     }): SlotSpinResult;
     /** 広告の状態。UIの出し分けに使う */
+    /**
+     * バカラを1ハンド配る(第117弾)。チップを賭けてチップを払い出す閉じたループ。
+     * 配札・三枚目規則・払い戻し計算は baccarat.ts の純粋関数に任せ、
+     * ここはスロットと同じく支払い・上限・台帳だけを見る。
+     *
+     * declare(読み宣言)は**配る前に**受け取る。カードを見てから宣言できると
+     * 後出しで必ず当てられるため、プロトコル上も同じメッセージに載せる
+     */
+    dealBaccaratHand(userId: string, bets: BacBets, declare?: 'H' | 'L' | null, rnd?: () => number): {
+        ok: boolean;
+        error?: string;
+        hand?: BacHand;
+        bets?: BacBets;
+        stake?: number;
+        won?: number;
+        bonus?: number;
+        balance?: number;
+    };
     adState(userId: string): {
         /** 広告除去を買っているか */
         removed: boolean;

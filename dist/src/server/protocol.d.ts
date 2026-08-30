@@ -131,6 +131,14 @@ export type ClientMessage =
     ante?: boolean;
     mode?: 'many' | 'few';
 } | {
+    t: 'baccarat.deal';
+    bets: {
+        p: number;
+        b: number;
+        tie: number;
+    };
+    declare?: 'H' | 'L';
+} | {
     t: 'transfer.issue';
 } | {
     t: 'transfer.redeem';
@@ -534,6 +542,9 @@ export type ServerMessage = {
 } | {
     t: 'slot.result';
     result: SlotResultView;
+} | {
+    t: 'baccarat.result';
+    result: BaccaratResultView;
 }
 /** 発行結果。生の PIN が返るのはこの一度きり(サーバーは保存しない) */
  | {
@@ -601,6 +612,37 @@ export interface SlotView {
     maxWinX: number;
 }
 /** スロット 1 回分の結果。outcome を順に再生すると演出になる */
+/** バカラ1ハンドの結果(第117弾)。配った瞬間に全カード・払い戻しが確定している */
+export type BaccaratResultView = {
+    hand: {
+        p: {
+            r: number;
+            s: number;
+        }[];
+        b: {
+            r: number;
+            s: number;
+        }[];
+        order: {
+            s: 'p' | 'b';
+            i: number;
+        }[];
+        pt: number;
+        bt: number;
+        res: 'P' | 'B' | 'T';
+    };
+    bets: {
+        p: number;
+        b: number;
+        tie: number;
+    };
+    stake: number;
+    /** 払い戻し合計(賭け金込みの戻り + 読み宣言ボーナス) */
+    won: number;
+    bonus: number;
+    declare: 'H' | 'L' | null;
+    balance: number;
+};
 export interface SlotResultView {
     /** 盤面・連鎖・フリーゲームの全記録(slot.ts の SlotOutcome をそのまま) */
     outcome: unknown;

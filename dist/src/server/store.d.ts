@@ -20,6 +20,10 @@ export type LedgerReason = 'signup_bonus' | 'table_buyin' | 'table_cashout' | 't
  | 'slot_spin'
 /** ゴールドスロット: チップの払い出し */
  | 'slot_win'
+/** バカラ: 賭け金の消費(第117弾) */
+ | 'baccarat_bet'
+/** バカラ: 払い戻し(第117弾) */
+ | 'baccarat_win'
 /** 落ちた卓に残っていたスタックの払い戻し(再起動時の自動復旧) */
  | 'table_recover' | 'adjustment' | 'ad_reward';
 export interface LedgerRow {
