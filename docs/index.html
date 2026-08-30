@@ -16325,6 +16325,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       const lastStep = (oc.respin && oc.respin.steps[oc.respin.steps.length - 1])
         || (oc.base && oc.base[oc.base.length - 1]);
       const lineN = lastStep && lastStep.wins ? lastStep.wins.length : 0;
+      // 小当たり音は**総獲得のカウント開始と同時**に鳴らす(第111弾・オーナー指定)。
+      // 祝福(NICE WIN以上)が出る当たりはファンファーレが担当するので鳴らさない
+      if (((oc.totalPayX || 0) < 5)) sfx("smallwin");
       await slotPayout(r.won, "sl-dock-amt", { mode: "dock", lines: lineN });
       await slotReleaseBalance(balFrom, balTo);
     }
@@ -16474,15 +16477,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     // フリーゲームに入ったスピンは、ファンファーレを**リザルト画面**で鳴らし済み。
     // ここで重ねるとテンポが悪くなるので鳴らさない
     if (payX >= 5) { await slotCelebrate(payX, r.won, r.bet, { fanfare: !oc.freeEntered }); }
-    else if (r.won > 0) {
-      // 祝福演出が出ない当たり(NICE WIN 未満)には支給の「小あたり」を鳴らす(第105弾)。
-      // ここが無音だと、当たったのに何も起きていないように見える
-      sfx("smallwin");
-    }
+    // 小当たり音は総獲得のカウント開始と同時に鳴らし済み(第111弾)。
     // **音が鳴り終わるまで「回転中」のまま待つ**(第110弾)。
-    // 第109弾は待つ位置が音を鳴らす**前**にあり(残り0秒で素通り)、
-    // さらに slotSpinning も先に解除していたため、音の途中で次が回せてしまっていた。
-    // 鳴らした**後**に待ち、待ち終わってから解除する
+    // 早く鳴り始めたぶん、ここでの残り待ちは短くなる(テンポは向上する)
     await fanfareWait();
     await sfxWait("smallwin");
     slotSpinning = false;
