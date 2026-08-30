@@ -2098,6 +2098,11 @@
     -webkit-background-clip:text; background-clip:text;
     -webkit-text-fill-color:transparent;
     filter:drop-shadow(0 0 10px rgba(255,190,80,.45)); }
+  /* 当選中、金額の左に付く小さな WIN(第116弾) */
+  .sl-dock-top .amt .winlbl { font-style:normal; font-size:11px; font-weight:900;
+    letter-spacing:.16em; margin-right:7px; vertical-align:3px; color:#ffe9b0;
+    font-family:-apple-system,"Hiragino Sans",sans-serif;
+    text-shadow:0 0 10px rgba(255,190,80,.55); }
   .sl-dock-top .amt.zero { font-size:16px; filter:none;
     background:none; -webkit-text-fill-color:#6f5c38; color:#6f5c38; }
   .sl-dock-lines { flex:none; font-size:10.5px; font-weight:800; letter-spacing:.06em;
@@ -15594,21 +15599,22 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   /** 配当ドックの1段目(総獲得とライン数)。当選が無いときは薄く「—」 */
   function slotShowTotal(totalWon, idx, n, label) {
     slotDockState = Object.assign(slotDockState || {}, { totalWon, idx, n, label });
-    // 数字の左のラベル。当選中は「WIN クラブ×4」のように**何で当たったか**を出す(第115弾)
+    // ラベルは常に「総獲得」。当選中は**金額の左に WIN を付ける**(第116弾・オーナー指定)。
+    // 「総獲得 WIN +340T」の形。何で当たったかは下の内訳行が出す
     const lbl = document.getElementById("sl-dock-lbl");
-    if (lbl) lbl.textContent = label || "\u7DCF\u7372\u5F97";
+    if (lbl) lbl.textContent = "\u7DCF\u7372\u5F97";
     const amt = document.getElementById("sl-dock-amt");
     const btn = document.getElementById("sl-dock-lines");
     if (amt) {
-      const next = totalWon > 0 ? "+" + fmt(totalWon) : "\u2014";
+      const next = totalWon > 0 ? '<i class="winlbl">WIN</i>+' + fmt(totalWon) : "\u2014";
       // 金額が新しく乗ったときだけ、金の光を1回流す(巡回中の再描画では光らせない)
       const dock = document.getElementById("sl-dock");
-      if (dock && totalWon > 0 && amt.textContent !== next) {
+      if (dock && totalWon > 0 && amt.innerHTML !== next) {
         dock.classList.remove("hit");
         void dock.offsetWidth;          // アニメーションを頭から再生させる
         dock.classList.add("hit");
       }
-      amt.textContent = next;
+      if (amt.innerHTML !== next) amt.innerHTML = next;
       amt.classList.toggle("zero", !(totalWon > 0));
     }
     if (btn) {
