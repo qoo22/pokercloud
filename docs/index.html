@@ -1073,7 +1073,8 @@
   .bac-oddsbar .ocards.none{color:#e0655a}
   .bac-oddsbar .bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:rgba(255,255,255,.1)}
   .bac-oddsbar .bar i{display:block;height:100%}
-  .bac-oddsbar .bar .op{background:#5a9de0}.bac-oddsbar .bar .ot{background:#4dbd7a}.bac-oddsbar .bar .ob{background:#e05a5a}
+  .bac-oddsbar .bar .ow{background:#4dbd7a}.bac-oddsbar .bar .oq{background:#5a9de0}.bac-oddsbar .bar .ol{background:#e05a5a}
+  .bac-oddsbar p.sub{font-size:9px;color:#6c7a88;margin-top:2px}
   .bac-oddsbar p{margin:5px 0 0;font-size:10.5px;color:#a9b7c2;letter-spacing:.04em;
     font-variant-numeric:tabular-nums;text-align:center}
   .bac-oddsbar p b{color:#f2e3b8}
@@ -1138,6 +1139,11 @@
   .bac-g10.tie{background:rgba(90,157,224,.24);border-color:rgba(90,157,224,.6);color:#cfeaff}
   .bac-g10.dead{opacity:.13;transform:scale(.9)}
   .bac-g10.hot{box-shadow:0 0 0 2px #d9b45f,0 0 14px rgba(217,180,95,.75);transform:scale(1.06)}
+  .bac-glegend{margin-top:6px;text-align:center;font-size:9.5px;color:#a9b7c2;letter-spacing:.03em}
+  .bac-glegend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin:0 3px -1px 0}
+  .bac-glegend i.w{background:rgba(77,189,122,.85)}
+  .bac-glegend i.q{background:rgba(90,157,224,.85)}
+  .bac-glegend i.l{background:rgba(224,90,90,.85)}
   .bac-g10.impossible{opacity:.08}
   .bac-stagemid{flex:1 1 auto;display:flex;align-items:center;justify-content:center;position:relative}
   .bac-bigwrap{position:relative}
@@ -15495,6 +15501,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   <div class="bac-stagetop">
     <div class="bac-need" id="bac-need"></div>
     <div class="bac-grid10" id="bac-grid10"></div>
+    <div class="bac-glegend">あなた目線: <i class="w"></i>出れば勝ち　<i class="q"></i>引き分け(返金)　<i class="l"></i>負け</div>
     <div class="bac-oddsbar" id="bac-odds"></div>
   </div>
   <div class="bac-stagemid">
@@ -16028,7 +16035,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   function bacUpdateOdds(alive) {
     var el = document.getElementById("bac-odds");
     if (!el || !bacSqHand) return;
-    var cnt = { P: 0, B: 0, T: 0 }, outs = 0, tot = 0;
+    // すべて「絞っているあなた」目線で数える(第127弾)。
+    // 勝ち=賭けが増える / 分け=返金(±0) / 負け=賭けが減る
+    var cnt = { P: 0, B: 0, T: 0 }, outs = 0, push = 0, lose = 0, tot = 0;
     for (var r = 1; r <= 13; r++) {
       if (!alive[r]) continue;
       var res = bacConsistent(bacSqHand, bacSqSlot, bacValue(r));
@@ -16040,11 +16049,14 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       if (res === "B") net += bacBets.b * 1.95;
       if (res === "T") net += bacBets.tie * 9 + bacBets.p + bacBets.b;
       if (net > 0.001) outs++;
+      else if (net < -0.001) lose++;
+      else push++;
     }
     if (!tot) { el.innerHTML = ""; return; }
+    var pw = Math.round(outs / tot * 100), pl = Math.round(lose / tot * 100);
+    var pq = Math.max(0, 100 - pw - pl);
     var pp = Math.round(cnt.P / tot * 100), pb = Math.round(cnt.B / tot * 100);
     var pt = Math.max(0, 100 - pp - pb);
-    var lead = cnt.P > cnt.B ? "PLAYER有利" : cnt.B > cnt.P ? "BANKER有利" : "互角";
     // 引けば勝つ札そのものを見せる(J/Q/Kはひとまとめ)
     var wl = [];
     for (var wr = 1; wr <= 13; wr++) {
@@ -16060,11 +16072,12 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     }
     // 勝ち目が無いときは何も出さない(オーナー指定: 煽らない)
     var wcards = wl.length
-      ? '<div class="ocards">引けば勝ち: ' + wl.map((x) => "<i>" + x + "</i>").join("") + "</div>"
+      ? '<div class="ocards">これが出ればあなたの勝ち: ' + wl.map((x) => "<i>" + x + "</i>").join("") + "</div>"
       : "";
     el.innerHTML = wcards +
-      '<div class="bar"><i class="op" style="width:' + pp + '%"></i><i class="ot" style="width:' + pt + '%"></i><i class="ob" style="width:' + pb + '%"></i></div>' +
-      "<p>" + lead + " — P " + pp + "% / T " + pt + "% / B " + pb + "%　勝ちのアウツ <b>" + outs + "</b> / " + tot + "</p>";
+      '<div class="bar"><i class="ow" style="width:' + pw + '%"></i><i class="oq" style="width:' + pq + '%"></i><i class="ol" style="width:' + pl + '%"></i></div>' +
+      "<p>あなた: <b>勝ち " + pw + "%</b> ・ 分け " + pq + "% ・ 負け " + pl + "%　勝ち札 <b>" + outs + "</b> / " + tot + "</p>" +
+      '<p class="sub">(結果の内訳: PLAYER ' + pp + "% / TIE " + pt + "% / BANKER " + pb + "%)</p>";
   }
 
   function bacUpdateCands() {
