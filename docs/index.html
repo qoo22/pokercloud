@@ -15321,10 +15321,11 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (showIndex) {
       // 大きなコーナーインデックス(オーナー指定: 卓上の視認性優先)
       var isTen = rank === 10;
-      var fs = isTen ? 40 : 60;
+      var fs = isTen ? 42 : 64;
+      // 書体は参考アプリ(極太のグロテスク)に合わせる: Arial Black 系 + weight 900
       var idx =
         '<g class="bac-idx">' +
-        '<text x="29" y="55" text-anchor="middle" font-family="-apple-system,Inter,Helvetica,sans-serif" font-weight="800" font-size="' + fs + '"' + (isTen ? ' letter-spacing="-3"' : "") + ' fill="' + ink + '">' + bacRankLabel(rank) + "</text>" +
+        '<text x="29" y="56" text-anchor="middle" font-family="\'Arial Black\',\'Avenir-Black\',\'Helvetica Neue\',-apple-system,sans-serif" font-weight="900" font-size="' + fs + '"' + (isTen ? ' letter-spacing="-4"' : "") + ' fill="' + ink + '">' + bacRankLabel(rank) + "</text>" +
         pip(29, 84, 40, false) +
         "</g>";
       body += idx + '<g transform="rotate(180 125 175)">' + idx + "</g>";
@@ -15341,11 +15342,11 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     var suitIdx = (rank * 7 + 1) % 4;
     var red = suitIdx === 1 || suitIdx === 2;
     var ink = red ? "#c0342b" : "#131313";
-    var fs = rank === 10 ? 26 : 34;
+    var fs = rank === 10 ? 30 : 40;
     return '<span class="bac-mini ' + outcome + '"><svg viewBox="0 0 60 84">' +
       '<rect x="0" y="0" width="60" height="84" rx="7" fill="#f6f4ec"/>' +
       '<rect x="1" y="1" width="58" height="82" rx="6" fill="none" stroke="#d8d2c2"/>' +
-      '<text x="30" y="42" text-anchor="middle" font-family="-apple-system,Inter,sans-serif" font-weight="800" font-size="' + fs + '" fill="' + ink + '">' + bacRankLabel(rank) + "</text>" +
+      '<text x="30" y="45" text-anchor="middle" font-family="\'Arial Black\',\'Avenir-Black\',\'Helvetica Neue\',-apple-system,sans-serif" font-weight="900" font-size="' + fs + '"' + (rank === 10 ? ' letter-spacing="-3"' : "") + ' fill="' + ink + '">' + bacRankLabel(rank) + "</text>" +
       '<path d="' + BAC_SPATH[suitIdx] + '" fill="' + ink + '" transform="translate(30 62) scale(1.05) translate(-12 -12)"/>' +
       "</svg></span>";
   }
