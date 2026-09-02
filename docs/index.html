@@ -1177,7 +1177,7 @@
   .bac-btn.ghost{flex:0 0 88px;background:#212a34;color:#e8edf2;border:1px solid #2e3844;font-size:12px;font-weight:600}
   .bac-btn.main{background:#d9b45f;color:#201704}
   .bac-btn:disabled{opacity:.3;cursor:default}
-  .bac-stage{position:fixed;inset:0;z-index:340;display:none;flex-direction:column;
+  .bac-stage{position:fixed;inset:0;z-index:340;display:none;flex-direction:column;overflow-y:auto;
     background:radial-gradient(70% 55% at 50% 42%, rgba(20,26,34,.62), rgba(0,0,0,.93) 70%);touch-action:none}
   .bac-stage.on{display:flex}
   .bac-stagetop{padding:16px 14px 0;text-align:center;flex:0 0 auto}
@@ -1197,7 +1197,10 @@
   .bac-glegend i.q{background:rgba(90,157,224,.85)}
   .bac-glegend i.l{background:rgba(224,90,90,.85)}
   .bac-g10.impossible{opacity:.08}
-  .bac-stagemid{flex:1 1 auto;display:flex;align-items:center;justify-content:center;position:relative}
+  .bac-stagemid{flex:1 1 auto;display:flex;align-items:center;justify-content:center;position:relative;min-height:0;padding:6px 0}
+  /* 低い画面ではカードを縮めて、下の 横絞り/縦絞り/スキップ を必ず見せる */
+  @media (max-height:860px){ .bac-bigcard{width:min(48vw,190px)} .bac-cands{margin-top:30px} }
+  @media (max-height:720px){ .bac-bigcard{width:min(40vw,158px)} .bac-sqstate .bac-sqside b{font-size:19px} }
   .bac-bigwrap{position:relative}
   .bac-bigwrap.rot{animation:bacRot .38s cubic-bezier(.2,.9,.3,1.1)}
   @keyframes bacRot{0%{transform:rotate(0)}40%{transform:rotate(-7deg) scale(1.02)}100%{transform:rotate(0)}}
@@ -15727,8 +15730,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   <div class="bac-stagetop">
     <div class="bac-need" id="bac-need"></div>
     <div class="bac-sqstate" id="bac-sqstate"></div>
-    <div class="bac-grid10" id="bac-grid10"></div>
-    <div class="bac-glegend">あなた目線: <i class="w"></i>出れば勝ち　<i class="q"></i>引き分け(返金)　<i class="l"></i>負け</div>
     <div class="bac-oddsbar" id="bac-odds"></div>
   </div>
   <div class="bac-stagemid">
@@ -15749,7 +15750,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       <button class="bac-skip" id="bac-skip">スキップ</button>
     </div>
     <div class="bac-autobar"><div class="bac-track"><span class="bac-fill" id="bac-fill"></span></div>
-    <p>自動オープンまで <b id="bac-autosec">20</b> 秒 ／ 長押しでもオープン</p></div>
+    <p>自動オープンまで <b id="bac-autosec">20</b> 秒</p></div>
   </div>
 </div>
 <div class="bac-toast" id="bac-toast"><div class="h" id="bac-th"></div><div class="w" id="bac-tw"></div><div class="s" id="bac-ts"></div><div class="b" id="bac-tb"></div></div>`;
@@ -16185,7 +16186,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   /** 絞りの段階。1=前半(真ん中まで)。一度指を離す(持ち替える)と 2=後半が解禁 */
   var bacSqStage = 1;
   var bacLastPt = 0, bacLastT = 0, bacLocked = false, bacLastSig = "";
-  var bacPressTimer = null, bacAutoTimer = null, bacAutoStep = null, bacSqDone = null;
+  var bacAutoTimer = null, bacAutoStep = null, bacSqDone = null;
   var bacSqHand = null, bacSqSlot = null;
 
   function bacSqueezeRun(hand, slot) {
@@ -16209,23 +16210,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         '<div class="bac-sqside p' + (slot.s === "p" ? " sq" : "") + '"><span>PLAYER</span><b>' + pVis + (slot.s === "p" ? "<i>+?</i>" : "") + "</b><small>" + hand.p.length + "枚</small></div>" +
         '<div class="bac-sqvs">vs</div>' +
         '<div class="bac-sqside b' + (slot.s === "b" ? " sq" : "") + '"><span>BANKER</span><b>' + bVis + (slot.s === "b" ? "<i>+?</i>" : "") + "</b><small>" + hand.b.length + "枚</small></div>";
-      // 0-9 グリッド(この1枚が何なら勝ち/負け/引き分けか)
-      var g = document.getElementById("bac-grid10");
-      g.innerHTML = "";
-      for (var v = 0; v <= 9; v++) {
-        var d = document.createElement("div");
-        d.className = "bac-g10"; d.textContent = v; d.dataset.v = v;
-        var res = bacConsistent(hand, slot, v);
-        if (res === null) d.classList.add("impossible");
-        else {
-          var net = -(bacBets.p + bacBets.b + bacBets.tie);
-          if (res === "P") net += bacBets.p * 2;
-          if (res === "B") net += bacBets.b * 1.95;
-          if (res === "T") net += bacBets.tie * 9 + bacBets.p + bacBets.b;
-          d.classList.add(net > 0.001 ? "win" : net < -0.001 ? "lose" : "tie");
-        }
-        g.appendChild(d);
-      }
       // 候補(A〜K)
       var c = document.getElementById("bac-cands");
       c.innerHTML = "";
@@ -16340,14 +16324,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       var ok = rr === 11 ? (alive[11] || alive[12] || alive[13]) : alive[rr];
       d.classList.toggle("dead", !ok);
     });
-    var vals = {};
-    for (var k in alive) vals[bacValue(+k)] = true;
-    document.querySelectorAll("#bac-grid10 .bac-g10").forEach((d) => {
-      var possible = !!vals[+d.dataset.v];
-      d.classList.toggle("dead", !possible);
-      // まだあり得る数字のうち「出れば勝ち」を金枠で強調
-      d.classList.toggle("hot", possible && d.classList.contains("win"));
-    });
     bacUpdateOdds(alive);
   }
 
@@ -16362,8 +16338,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       bacStartPt = bacDir === "h" ? e.clientX : -e.clientY;
       bacLastPt = bacStartPt; bacLastT = Date.now();
       bacStartRaw = bacRaw;
-      // 長押し=そのままオープン(急がない人向け)
-      bacPressTimer = setTimeout(() => { if (bacDragging && Math.abs(bacRaw - bacStartRaw) < 0.03) bacAutoSqueeze(true); }, 460);
+      // 長押しオープンは廃止(第136弾)。ゆっくり丁寧に絞る操作を邪魔しない。
+      // 開けたいときはスキップボタンか自動オープンで
     });
     big.addEventListener("pointermove", (e) => {
       if (!bacDragging || bacLocked) return;
@@ -16374,7 +16350,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       var dt = Math.max(1, now - bacLastT);
       bacFriction(Math.abs(pt - bacLastPt) / dt, bacRev);
       bacLastPt = pt; bacLastT = now;
-      if (Math.abs(pt - bacStartPt) > 6) clearTimeout(bacPressTimer);
       // 重い紙: 指の移動の約半分しかめくれない(慎重に大きく動かす必要がある)
       var next = bacStartRaw + (pt - bacStartPt) / Math.max(40, size) * 0.55;
       // 前半は真ん中まで。そこから先は一度持ち替え(指を離す)ないと開かない
@@ -16384,7 +16359,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     });
     var end = () => {
       if (!bacDragging) return;
-      bacDragging = false; clearTimeout(bacPressTimer); bacFrictionOff();
+      bacDragging = false; bacFrictionOff();
       if (bacLocked) return;
       // 真ん中まで来て指を離した=持ち替え完了。後半が解禁される
       if (bacSqStage === 1 && bacRaw >= 0.4) {
@@ -16412,7 +16387,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
 
   function bacAutoSqueeze(fast) {
     if (bacLocked || !bacSqDone) return;
-    clearTimeout(bacPressTimer); bacDragging = false;
+    bacDragging = false;
     clearTimeout(bacAutoStep);
     var from = bacRaw, t0 = Date.now(), dur = fast ? 420 : 1400;
     var step = () => {
@@ -16429,7 +16404,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   function bacFinishSqueeze() {
     if (bacLocked) return;
     bacLocked = true; bacDragging = false;
-    clearTimeout(bacAutoStep); clearTimeout(bacPressTimer); clearInterval(bacAutoTimer);
+    clearTimeout(bacAutoStep); clearInterval(bacAutoTimer);
     bacApplyRaw(1);
     bacFrictionOff(); clearTimeout(bacHbTimer);
     bacBuzz([14, 40, 26]);
