@@ -694,24 +694,19 @@ export class Lobby {
                 const code = msg.code.toUpperCase().replace(/[\s-]/g, '');
                 const chips = INVITE_CODES[code];
                 if (chips) {
-                    // 使用済みチェックは購入レシート台帳で永続化(サーバー再起動しても2重取得できない)。
-                    // 第138弾: 1コード2回まで。1回目は従来キーのままなので、過去に使ったコードも
-                    // 自動的に「あと1回」使える(2回目は :2 サフィックスの別レシート)
-                    const k1 = `code:${code}:${s.userId}`;
-                    const k2 = `code:${code}:${s.userId}:2`;
-                    const receiptKey = !this.store.hasReceipt(k1) ? k1 : !this.store.hasReceipt(k2) ? k2 : null;
-                    if (!receiptKey) {
-                        return this.err(sessionId, 'ILLEGAL_ACTION', 'このコードは使用済みです(1コード2回まで)');
+                    // 使用済みチェックは購入レシート台帳で永続化(サーバー再起動しても2重取得できない)
+                    const receiptKey = `code:${code}:${s.userId}`;
+                    if (this.store.hasReceipt(receiptKey)) {
+                        return this.err(sessionId, 'ILLEGAL_ACTION', 'このコードは使用済みです');
                     }
-                    const secondUse = receiptKey === k2;
                     let used = this.redeemedCodes.get(s.userId);
                     if (!used) {
                         used = new Set();
                         this.redeemedCodes.set(s.userId, used);
                     }
-                    if (used.has(receiptKey))
-                        return this.err(sessionId, 'ILLEGAL_ACTION', 'このコードは使用済みです(1コード2回まで)');
-                    used.add(receiptKey);
+                    if (used.has(code))
+                        return this.err(sessionId, 'ILLEGAL_ACTION', 'このコードは使用済みです');
+                    used.add(code);
                     this.store.savePurchase({
                         userId: s.userId,
                         sku: 'invite_code',
@@ -723,7 +718,7 @@ export class Lobby {
                     this.sendBalance(s.userId);
                     this.transport.send(sessionId, {
                         t: 'reward',
-                        title: secondUse ? '招待コードを適用しました！(2回目・これで打ち止め)' : '招待コードを適用しました！(あと1回使えます)',
+                        title: '招待コードを適用しました！',
                         chips,
                         gold: 0,
                     });
