@@ -7719,8 +7719,78 @@ var PokerOffline = (() => {
     // 2000兆
     COSMOS4000T: 4e15,
     // 4000兆
-    OMEGA9000T: 9e15
+    OMEGA9000T: 9e15,
     // 9000兆(1回で付与できる最大)
+    // --- 第137弾で大幅増量(どれも1ユーザー1回まで) ---
+    // 小口
+    NIGHT1M: 1e6,
+    // 100万
+    CHERRY5M: 5e6,
+    // 500万
+    ACE20M: 2e7,
+    // 2000万
+    ROYAL50M: 5e7,
+    // 5000万
+    JACKPOT200M: 2e8,
+    // 2億
+    NEON300M: 3e8,
+    // 3億
+    // 遊び札(数字にちなむ)
+    KOI123: 123e6,
+    // 1.23億
+    SLOT555: 555e6,
+    // 5.55億
+    SAKURA777: 777e6,
+    // 7.77億
+    BACCARA888: 888e6,
+    // 8.88億
+    FUJI3776: 3776e6,
+    // 37.76億
+    // 中堅
+    STORM2B: 2e9,
+    // 20億
+    TIGER3B: 3e9,
+    // 30億
+    PEARL20B: 2e10,
+    // 200億
+    EMERALD30B: 3e10,
+    // 300億
+    RUBY200B: 2e11,
+    // 2000億
+    SAPPHIRE300B: 3e11,
+    // 3000億
+    ONYX800B: 8e11,
+    // 8000億
+    // 大物
+    KRAKEN2T: 2e12,
+    // 2兆
+    GRIFFIN3T: 3e12,
+    // 3兆
+    HYDRA20T: 2e13,
+    // 20兆
+    PEGASUS30T: 3e13,
+    // 30兆
+    VALKYRIE200T: 2e14,
+    // 200兆
+    MIDAS300T: 3e14,
+    // 300兆
+    EXCALIBUR800T: 8e14,
+    // 800兆
+    // 神域(1回の付与は9000兆が上限。超える額は足さないこと)
+    ATLAS1500T: 15e14,
+    // 1500兆
+    CHRONOS3000T: 3e15,
+    // 3000兆
+    GAIA5000T: 5e15,
+    // 5000兆
+    HELIOS6000T: 6e15,
+    // 6000兆
+    POSEIDON7000T: 7e15,
+    // 7000兆
+    HADES8000T: 8e15,
+    // 8000兆
+    RA8500T: 85e14
+    // 8500兆
   };
   var CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   function randomTableCode() {
@@ -16218,7 +16288,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         var dc = document.createElement("div"); dc.className = "bac-cd"; dc.dataset.r = rr; dc.textContent = bacRankLabel(rr); c.appendChild(dc);
       }
       var h = document.getElementById("bac-hint");
-      h.textContent = (bacDir === "h" ? "→ 大きくなぞって絞る" : "↑ 大きくなぞって絞る") + "(真ん中で一度持ち替え)";
+      h.textContent = (bacDir === "h" ? "→ ゆっくりなぞって絞る" : "↑ ゆっくりなぞって絞る") + "(真ん中で止まる。奥までスライドで全開放)";
       h.style.display = "";
       document.getElementById("bac-stage").classList.add("on");
       bacApplyRaw(0);
@@ -16350,10 +16420,21 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       var dt = Math.max(1, now - bacLastT);
       bacFriction(Math.abs(pt - bacLastPt) / dt, bacRev);
       bacLastPt = pt; bacLastT = now;
-      // 重い紙: 指の移動の約半分しかめくれない(慎重に大きく動かす必要がある)
-      var next = bacStartRaw + (pt - bacStartPt) / Math.max(40, size) * 0.55;
-      // 前半は真ん中まで。そこから先は一度持ち替え(指を離す)ないと開かない
-      if (bacSqStage === 1) next = Math.min(next, 0.52);
+      // 重い紙: 指の移動の45%しかめくれない(ゆっくり細かく絞れる・第137弾)
+      var stroke = pt - bacStartPt;
+      var next = bacStartRaw + stroke / Math.max(40, size) * 0.45;
+      if (bacSqStage === 1) {
+        // 縦横どちらも「真ん中」で一度止まる。カードの奥まで(幅の9割)
+        // グッとスライドしたときだけ後半が解禁される
+        if (stroke >= Math.max(40, size) * 0.9) {
+          bacSqStage = 2;
+          var h3 = document.getElementById("bac-hint");
+          if (h3) { h3.textContent = "奥まで絞った…！ここからが勝負"; h3.style.display = ""; }
+          bacBuzz([8, 30, 12]);
+        } else {
+          next = Math.min(next, 0.52);
+        }
+      }
       bacApplyRaw(next);
       if (bacRaw >= 0.985) bacFinishSqueeze();
     });
@@ -16361,16 +16442,6 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       if (!bacDragging) return;
       bacDragging = false; bacFrictionOff();
       if (bacLocked) return;
-      // 真ん中まで来て指を離した=持ち替え完了。後半が解禁される
-      if (bacSqStage === 1 && bacRaw >= 0.4) {
-        bacSqStage = 2;
-        var h2 = document.getElementById("bac-hint");
-        if (h2) {
-          h2.textContent = "持ち替えた…！ここからが勝負(縦横も切替できる)";
-          h2.style.display = "";
-        }
-        bacBuzz([8, 30, 12]);
-      }
       // 紙の弾性: 離すと少し戻る
       var from = bacRaw, target = bacRaw * 0.92, t0 = Date.now();
       var step = () => {
