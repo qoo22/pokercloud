@@ -8391,17 +8391,20 @@ var PokerOffline = (() => {
           const code = msg.code.toUpperCase().replace(/[\s-]/g, "");
           const chips = INVITE_CODES[code];
           if (chips) {
-            const receiptKey = `code:${code}:${s.userId}`;
-            if (this.store.hasReceipt(receiptKey)) {
-              return this.err(sessionId, "ILLEGAL_ACTION", "\u3053\u306E\u30B3\u30FC\u30C9\u306F\u4F7F\u7528\u6E08\u307F\u3067\u3059");
+            const k1 = `code:${code}:${s.userId}`;
+            const k2 = `code:${code}:${s.userId}:2`;
+            const receiptKey = !this.store.hasReceipt(k1) ? k1 : !this.store.hasReceipt(k2) ? k2 : null;
+            if (!receiptKey) {
+              return this.err(sessionId, "ILLEGAL_ACTION", "\u3053\u306E\u30B3\u30FC\u30C9\u306F\u4F7F\u7528\u6E08\u307F\u3067\u3059(1\u30B3\u30FC\u30C92\u56DE\u307E\u3067)");
             }
+            const secondUse = receiptKey === k2;
             let used = this.redeemedCodes.get(s.userId);
             if (!used) {
               used = /* @__PURE__ */ new Set();
               this.redeemedCodes.set(s.userId, used);
             }
-            if (used.has(code)) return this.err(sessionId, "ILLEGAL_ACTION", "\u3053\u306E\u30B3\u30FC\u30C9\u306F\u4F7F\u7528\u6E08\u307F\u3067\u3059");
-            used.add(code);
+            if (used.has(receiptKey)) return this.err(sessionId, "ILLEGAL_ACTION", "\u3053\u306E\u30B3\u30FC\u30C9\u306F\u4F7F\u7528\u6E08\u307F\u3067\u3059(1\u30B3\u30FC\u30C92\u56DE\u307E\u3067)");
+            used.add(receiptKey);
             this.store.savePurchase({
               userId: s.userId,
               sku: "invite_code",
@@ -8413,7 +8416,7 @@ var PokerOffline = (() => {
             this.sendBalance(s.userId);
             this.transport.send(sessionId, {
               t: "reward",
-              title: "\u62DB\u5F85\u30B3\u30FC\u30C9\u3092\u9069\u7528\u3057\u307E\u3057\u305F\uFF01",
+              title: secondUse ? "\u62DB\u5F85\u30B3\u30FC\u30C9\u3092\u9069\u7528\u3057\u307E\u3057\u305F\uFF01(2\u56DE\u76EE\u30FB\u3053\u308C\u3067\u6253\u3061\u6B62\u3081)" : "\u62DB\u5F85\u30B3\u30FC\u30C9\u3092\u9069\u7528\u3057\u307E\u3057\u305F\uFF01(\u3042\u30681\u56DE\u4F7F\u3048\u307E\u3059)",
               chips,
               gold: 0
             });
