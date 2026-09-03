@@ -1214,6 +1214,8 @@
     background:linear-gradient(90deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.18) 32%,rgba(255,255,255,.42) 62%,rgba(23,58,40,.9) 100%)}
   .bac-curl.v{left:0;right:0;height:20px;
     background:linear-gradient(0deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.18) 32%,rgba(255,255,255,.42) 62%,rgba(23,58,40,.9) 100%)}
+  .bac-curl.d{width:20px;height:150%;transform:translate(-50%,-50%) rotate(45deg);
+    background:linear-gradient(90deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.18) 32%,rgba(255,255,255,.42) 62%,rgba(23,58,40,.9) 100%)}
   .bac-hint{position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);color:#d9b45f;font-size:11px;
     letter-spacing:1px;white-space:nowrap;animation:bacPulse 1.6s ease-in-out infinite;pointer-events:none}
   @keyframes bacPulse{0%,100%{opacity:.35}50%{opacity:1}}
@@ -15682,7 +15684,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   var bacRoad = [];               // 'P'|'B'|'T' の履歴(セッション内)
   /** スポットに積んだチップ(色インデックスの列)。表示専用 */
   var bacStack = { p: [], b: [], tie: [] };
-  var bacDir = "h";               // 絞り方向 'h'=横 'v'=縦
+  var bacDir = "h";               // 絞り方向 'h'=横 'v'=縦 'd'=斜め(角)
   var bacDealTimer = null;
   var BAC_MIN_STAKE = 1000; // 上限なし(第121弾)。天井は残高だけ
 
@@ -15835,16 +15837,18 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   /** めくれ量 rev のとき、rank のカードで見えている情報の署名 */
   function bacSig(rank, rev, dir) {
     if (rank >= 11) {
-      // 絵札は内枠の縁(横絞り: x=46/250、縦絞り: y=300/350)が見えた瞬間に
-      // 「絵札だ」と分かる(画面の見た目と完全に同じ条件で候補を割る)
-      var vis = dir === "h" ? rev >= 0.184 : rev >= 0.143;
+      // 絵札は内枠の縁が見えた瞬間に「絵札だ」と分かる(画面の見た目と完全に同じ条件)。
+      // 横: x=46/250 / 縦: y=300/350 / 斜め: 内枠の左下角(0.184, 0.857) → (0.184+0.143)/2
+      var vis = dir === "h" ? rev >= 0.184 : dir === "v" ? rev >= 0.143 : rev >= 0.1635;
       return vis ? "COURT" : "";
     }
     var cells = BAC_CELLS[rank];
     var out = [];
     for (var i = 0; i < cells.length; i++) {
       var c = cells[i][0], rw = cells[i][1];
-      var vis = dir === "h" ? (BAC_COLS[c] <= rev) : (BAC_ROWS[rw] >= 1 - rev);
+      var vis = dir === "h" ? (BAC_COLS[c] <= rev)
+        : dir === "v" ? (BAC_ROWS[rw] >= 1 - rev)
+        : ((BAC_COLS[c] + 1 - BAC_ROWS[rw]) / 2 <= rev);
       if (vis) out.push(c + "-" + rw);
     }
     return out.sort().join(",");
@@ -16031,6 +16035,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     <div class="bac-dirrow">
       <button class="bac-dir on" data-d="h">横絞り</button>
       <button class="bac-dir" data-d="v">縦絞り</button>
+      <button class="bac-dir" data-d="d">斜め絞り</button>
       <button class="bac-skip" id="bac-skip">スキップ</button>
     </div>
     <div class="bac-autobar"><div class="bac-track"><span class="bac-fill" id="bac-fill"></span></div>
@@ -16258,7 +16263,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         if (bw) { bw.classList.remove("rot"); void bw.offsetWidth; bw.classList.add("rot"); }
         bacApplyRaw(bacRaw); // 方向を変えても同じめくれ量から続き(回転しながら絞れる)
         var h = document.getElementById("bac-hint");
-        if (h) h.textContent = bacDir === "h" ? "→ 右へなぞって絞る" : "↑ 上へなぞって絞る";
+        if (h) h.textContent = bacDir === "h" ? "→ 右へなぞって絞る" : bacDir === "v" ? "↑ 上へなぞって絞る" : "↗ 角から斜めになぞって絞る";
       };
     });
     document.getElementById("bac-skip").onclick = () => bacAutoSqueeze(true);
@@ -16502,7 +16507,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         var dc = document.createElement("div"); dc.className = "bac-cd"; dc.dataset.r = rr; dc.textContent = bacRankLabel(rr); c.appendChild(dc);
       }
       var h = document.getElementById("bac-hint");
-      h.textContent = (bacDir === "h" ? "→ ゆっくりなぞって絞る" : "↑ ゆっくりなぞって絞る") + "(真ん中で止まる。奥までスライドで全開放)";
+      h.textContent = (bacDir === "h" ? "→ ゆっくりなぞって絞る" : bacDir === "v" ? "↑ ゆっくりなぞって絞る" : "↗ 角からゆっくりなぞって絞る") + "(真ん中で止まる。奥までスライドで全開放)";
       h.style.display = "";
       document.getElementById("bac-stage").classList.add("on");
       bacApplyRaw(0);
@@ -16528,11 +16533,27 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     if (bacDir === "h") {
       cover.style.clipPath = "inset(0 0 0 " + pct + "%)";
       curl.className = "bac-curl h";
-      curl.style.left = "calc(" + pct + "% - 10px)"; curl.style.bottom = "";
-    } else {
+      curl.style.left = "calc(" + pct + "% - 10px)"; curl.style.bottom = ""; curl.style.top = "";
+    } else if (bacDir === "v") {
       cover.style.clipPath = "inset(0 0 " + pct + "% 0)";
       curl.className = "bac-curl v";
-      curl.style.bottom = "calc(" + pct + "% - 10px)"; curl.style.left = "";
+      curl.style.bottom = "calc(" + pct + "% - 10px)"; curl.style.left = ""; curl.style.top = "";
+    } else {
+      // 斜め: 左下の角から「x + (1-y) <= 2*rev」の三角形が開いていく。
+      // カバー(裏面)は残り領域をポリゴンで切る。t<=1 は角の三角、t>1 は右上の三角だけ残る
+      var t = bacRev * 2;
+      var poly;
+      if (t <= 1) {
+        poly = "polygon(0% 0%, 100% 0%, 100% 100%, " + (t * 100).toFixed(2) + "% 100%, 0% " + ((1 - t) * 100).toFixed(2) + "%)";
+      } else {
+        poly = "polygon(" + ((t - 1) * 100).toFixed(2) + "% 0%, 100% 0%, 100% " + ((2 - t) * 100).toFixed(2) + "%)";
+      }
+      cover.style.clipPath = poly;
+      curl.className = "bac-curl d";
+      // めくれ縁は開き線の中点(どちらの場合も (t/2, 1-t/2))
+      curl.style.left = (t / 2 * 100).toFixed(2) + "%";
+      curl.style.top = ((1 - t / 2) * 100).toFixed(2) + "%";
+      curl.style.bottom = "";
     }
     curl.style.opacity = bacRev > 0.004 && bacRev < 0.998 ? 1 : 0;
     if (bacRev > 0.02) { var h = document.getElementById("bac-hint"); if (h) h.style.display = "none"; }
@@ -16619,7 +16640,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       bacAudioInit();
       try { big.setPointerCapture(e.pointerId); } catch (e2) {}
       bacDragging = true;
-      bacStartPt = bacDir === "h" ? e.clientX : -e.clientY;
+      bacStartPt = bacDir === "h" ? e.clientX : bacDir === "v" ? -e.clientY : (e.clientX - e.clientY) * 0.7071;
       bacLastPt = bacStartPt; bacLastT = Date.now();
       bacStartRaw = bacRaw;
       // 長押しオープンは廃止(第136弾)。ゆっくり丁寧に絞る操作を邪魔しない。
@@ -16628,8 +16649,8 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     big.addEventListener("pointermove", (e) => {
       if (!bacDragging || bacLocked) return;
       var rc = big.getBoundingClientRect();
-      var size = bacDir === "h" ? rc.width : rc.height;
-      var pt = bacDir === "h" ? e.clientX : -e.clientY;
+      var size = bacDir === "h" ? rc.width : bacDir === "v" ? rc.height : Math.hypot(rc.width, rc.height);
+      var pt = bacDir === "h" ? e.clientX : bacDir === "v" ? -e.clientY : (e.clientX - e.clientY) * 0.7071;
       var now = Date.now();
       var dt = Math.max(1, now - bacLastT);
       bacFriction(Math.abs(pt - bacLastPt) / dt, bacRev);
