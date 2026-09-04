@@ -1228,7 +1228,7 @@
     background:linear-gradient(90deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.18) 32%,rgba(255,255,255,.42) 62%,rgba(23,58,40,.9) 100%)}
   .bac-curl.v{left:0;right:0;height:20px;
     background:linear-gradient(0deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.18) 32%,rgba(255,255,255,.42) 62%,rgba(23,58,40,.9) 100%)}
-  .bac-curl.d{width:20px;height:150%;transform:translate(-50%,-50%) rotate(45deg);
+  .bac-curl.d{width:20px;height:150%;transform:translate(-50%,-50%) rotate(-45deg);
     background:linear-gradient(90deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.18) 32%,rgba(255,255,255,.42) 62%,rgba(23,58,40,.9) 100%)}
   .bac-hint{position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);color:#d9b45f;font-size:11px;
     letter-spacing:1px;white-space:nowrap;animation:bacPulse 1.6s ease-in-out infinite;pointer-events:none}
@@ -1957,7 +1957,13 @@
     background:linear-gradient(180deg,#ffd76a,#c9992e); color:#241503; font-size:10px; font-weight:700;
     padding:1px 7px; border-radius:8px; white-space:nowrap; z-index:4; }
   .sl-lockwild { position:absolute; inset:0; z-index:3; display:grid; grid-template-rows:repeat(3,1fr);
-    gap:2px; pointer-events:none; }
+    gap:2px; pointer-events:none; background:rgba(13,7,17,.97); border-radius:6px; }
+  .sl-lockwild::after { content:"WILD"; position:absolute; left:50%; bottom:4px; transform:translateX(-50%);
+    font-size:9px; font-weight:900; letter-spacing:.14em;
+    font-family:'Copperplate','Trajan Pro',Georgia,'Times New Roman',serif;
+    color:#ffe9a8; padding:1px 7px; border-radius:6px;
+    background:linear-gradient(180deg,#4a2472,#2a1046);
+    box-shadow:0 1px 3px rgba(0,0,0,.65),inset 0 0 0 1px rgba(255,220,140,.75); }
   .sl-lockwild img { width:100%; height:100%; object-fit:contain; display:block;
     filter:drop-shadow(0 0 8px rgba(255,215,106,.8)); }
   /* 新規に固定されたときだけ、1.12倍→戻る(資料の 0〜550ms のシーケンス) */
