@@ -1240,9 +1240,13 @@
   .bac-stagebot{flex:0 0 auto;padding:10px 14px calc(16px + env(safe-area-inset-bottom));text-align:center;
     position:relative;z-index:6;background:linear-gradient(180deg,transparent,rgba(4,7,11,.88) 34%)}
   .bac-dirrow{display:flex;gap:8px;justify-content:center;margin-bottom:10px;flex-wrap:wrap}
-  .bac-dir{padding:8px 14px;border-radius:20px;font-size:11.5px;font-weight:700;cursor:pointer;
-    border:1px solid #2e3844;background:transparent;color:#e8edf2}
-  .bac-dir.on{background:rgba(217,180,95,.18);border-color:#d9b45f;color:#d9b45f}
+  .bac-dir{padding:10px 16px;border-radius:20px;font-size:12.5px;font-weight:800;cursor:pointer;
+    letter-spacing:.04em;border:1.5px solid rgba(217,180,95,.55);
+    background:rgba(217,180,95,.07);color:#ffe9a8;
+    box-shadow:0 0 8px rgba(217,180,95,.18)}
+  .bac-dir.on{background:linear-gradient(180deg,rgba(217,180,95,.34),rgba(217,180,95,.16));
+    border-color:#d9b45f;color:#ffe9a8;
+    box-shadow:0 0 12px rgba(217,180,95,.55), inset 0 1px 0 rgba(255,255,255,.18)}
   .bac-skip{padding:8px 18px;border-radius:20px;font-size:11.5px;font-weight:600;cursor:pointer;
     border:1px solid rgba(255,255,255,.3);background:transparent;color:#e8edf2}
   .bac-autobar{max-width:260px;margin:0 auto}
@@ -15764,7 +15768,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   var bacRoad = [];               // 'P'|'B'|'T' の履歴(セッション内)
   /** スポットに積んだチップ(色インデックスの列)。表示専用 */
   var bacStack = { p: [], b: [], tie: [] };
-  var bacDir = "h";               // 絞り方向 'h'=横 'v'=縦 'd'=斜め(角)
+  var bacDir = "d";               // 絞り方向 'd'=斜め(角) 'h'=横 'v'=縦。既定は斜め(オーナーの絞り順)
   var bacDealTimer = null;
   var BAC_MIN_STAKE = 1000; // 上限なし(第121弾)。天井は残高だけ
 
@@ -16113,9 +16117,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
   </div>
   <div class="bac-stagebot">
     <div class="bac-dirrow">
-      <button class="bac-dir on" data-d="h">横絞り</button>
+      <button class="bac-dir on" data-d="d">斜め絞り</button>
+      <button class="bac-dir" data-d="h">横絞り</button>
       <button class="bac-dir" data-d="v">縦絞り</button>
-      <button class="bac-dir" data-d="d">斜め絞り</button>
       <button class="bac-skip" id="bac-skip">スキップ</button>
     </div>
     <div class="bac-autobar"><div class="bac-track"><span class="bac-fill" id="bac-fill"></span></div>
