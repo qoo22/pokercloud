@@ -6,7 +6,7 @@
  * 実際のバグの大半はソケットではなくこの層に出るので、ここを高速にテストできることが重要。
  */
 import { MemoryStore } from './store.js';
-import { Economy, CHIP_PACKS, GOLD_PACKS, PASS_PREMIUM_SKU, PASS_TIERS } from './economy.js';
+import { Economy, CHIP_PACKS, GOLD_PACKS, PASS_PREMIUM_SKU, PASS_TIERS, SAFE_POST } from './economy.js';
 import { Room, realScheduler } from './room.js';
 import { Tournament } from './tournament.js';
 import { PROTOCOL_VERSION, parseClientMessage, } from './protocol.js';
@@ -41,12 +41,13 @@ const INVITE_CODES = {
     PHOENIX500T: 500_000_000_000_000, // 500兆
     INFINITY1000T: 1_000_000_000_000_000, // 1000兆
     // --- 神域(第81弾で追加) ---
-    // 注意: store.post は Number.isSafeInteger を要求するため、**1回の付与は 9000兆が実質上限**
+    // 注意: store.post 1回の記帳は Number.isSafeInteger(2^53≈9007兆)まで。第147弾からは
+    // 付与を SAFE_POST で分割記帳するので、コード額自体は 9000兆を超えてよい(京コインも可)
     // (2^53 ≒ 9007兆)。これを超える額のコードを足すと適用時にエラーになる。
     // 残高の合計が壁を超えるのは実測で問題なし(残高と監査が同じ計算経路のため)。
     ZEUS2000T: 2_000_000_000_000_000, // 2000兆
     COSMOS4000T: 4_000_000_000_000_000, // 4000兆
-    OMEGA9000T: 9_000_000_000_000_000, // 9000兆(1回で付与できる最大)
+    OMEGA9000T: 9_000_000_000_000_000, // 9000兆
     // --- 第137弾で大幅増量(どれも1ユーザー1回まで) ---
     // 小口
     NIGHT1M: 1_000_000, // 100万
@@ -77,7 +78,7 @@ const INVITE_CODES = {
     VALKYRIE200T: 200_000_000_000_000, // 200兆
     MIDAS300T: 300_000_000_000_000, // 300兆
     EXCALIBUR800T: 800_000_000_000_000, // 800兆
-    // 神域(1回の付与は9000兆が上限。超える額は足さないこと)
+    // 神域
     ATLAS1500T: 1_500_000_000_000_000, // 1500兆
     CHRONOS3000T: 3_000_000_000_000_000, // 3000兆
     GAIA5000T: 5_000_000_000_000_000, // 5000兆
@@ -124,7 +125,18 @@ const INVITE_CODES = {
     HERMES7800T: 7_800_000_000_000_000, // 7800兆
     HERA8200T: 8_200_000_000_000_000, // 8200兆
     NYX8800T: 8_800_000_000_000_000, // 8800兆
-    ETERNAL9000T: 9_000_000_000_000_000, // 9000兆(上限いっぱい)
+    ETERNAL9000T: 9_000_000_000_000_000, // 9000兆
+    // --- 第147弾: 京帯(分割記帳で付与) ---
+    ZIPANGU1KYO: 10_000_000_000_000_000, // 1京
+    ATLANTIS2KYO: 20_000_000_000_000_000, // 2京
+    ELDORADO3KYO: 30_000_000_000_000_000, // 3京
+    AVALON4KYO: 40_000_000_000_000_000, // 4京
+    OLYMPUS5KYO: 50_000_000_000_000_000, // 5京
+    VALHALLA6KYO: 60_000_000_000_000_000, // 6京
+    SHANGRILA7KYO: 70_000_000_000_000_000, // 7京
+    YGGDRASIL8KYO: 80_000_000_000_000_000, // 8京
+    RAGNAROK9KYO: 90_000_000_000_000_000, // 9京
+    GODEMPEROR10KYO: 100_000_000_000_000_000, // 10京
     // --- 第139弾: 5000兆以上の高額帯を大量増量(すべて9000兆の上限内) ---
     // 幻獣(5000兆帯)
     LEVIATHAN5050T: 5_050_000_000_000_000, // 5050兆
@@ -786,7 +798,13 @@ export class Lobby {
                         granted: JSON.stringify({ chips, code }),
                         receipt: receiptKey,
                     });
-                    this.store.post(s.userId, 'chips', chips, 'adjustment', `code:${code}`);
+                    // 台帳1回の記帳は Number.isSafeInteger(≈9007兆) までなので、
+                    // 大きな付与はバカラの大口ベットと同じく SAFE_POST で分割記帳する(第147弾)
+                    for (let left = chips; left > 0;) {
+                        const c = Math.min(left, SAFE_POST);
+                        this.store.post(s.userId, 'chips', c, 'adjustment', `code:${code}`);
+                        left -= c;
+                    }
                     this.sendBalance(s.userId);
                     this.transport.send(sessionId, {
                         t: 'reward',

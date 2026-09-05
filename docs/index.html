@@ -7739,7 +7739,8 @@ var PokerOffline = (() => {
     INFINITY1000T: 1e15,
     // 1000兆
     // --- 神域(第81弾で追加) ---
-    // 注意: store.post は Number.isSafeInteger を要求するため、**1回の付与は 9000兆が実質上限**
+    // 注意: store.post 1回の記帳は Number.isSafeInteger(2^53≈9007兆)まで。第147弾からは
+    // 付与を SAFE_POST で分割記帳するので、コード額自体は 9000兆を超えてよい(京コインも可)
     // (2^53 ≒ 9007兆)。これを超える額のコードを足すと適用時にエラーになる。
     // 残高の合計が壁を超えるのは実測で問題なし(残高と監査が同じ計算経路のため)。
     ZEUS2000T: 2e15,
@@ -7747,7 +7748,7 @@ var PokerOffline = (() => {
     COSMOS4000T: 4e15,
     // 4000兆
     OMEGA9000T: 9e15,
-    // 9000兆(1回で付与できる最大)
+    // 9000兆
     // --- 第137弾で大幅増量(どれも1ユーザー1回まで) ---
     // 小口
     NIGHT1M: 1e6,
@@ -7803,7 +7804,7 @@ var PokerOffline = (() => {
     // 300兆
     EXCALIBUR800T: 8e14,
     // 800兆
-    // 神域(1回の付与は9000兆が上限。超える額は足さないこと)
+    // 神域
     ATLAS1500T: 15e14,
     // 1500兆
     CHRONOS3000T: 3e15,
@@ -7891,7 +7892,28 @@ var PokerOffline = (() => {
     NYX8800T: 88e14,
     // 8800兆
     ETERNAL9000T: 9e15,
-    // 9000兆(上限いっぱい)
+    // 9000兆
+    // --- 第147弾: 京帯(分割記帳で付与) ---
+    ZIPANGU1KYO: 1e16,
+    // 1京
+    ATLANTIS2KYO: 2e16,
+    // 2京
+    ELDORADO3KYO: 3e16,
+    // 3京
+    AVALON4KYO: 4e16,
+    // 4京
+    OLYMPUS5KYO: 5e16,
+    // 5京
+    VALHALLA6KYO: 6e16,
+    // 6京
+    SHANGRILA7KYO: 7e16,
+    // 7京
+    YGGDRASIL8KYO: 8e16,
+    // 8京
+    RAGNAROK9KYO: 9e16,
+    // 9京
+    GODEMPEROR10KYO: 1e17,
+    // 10京
     // --- 第139弾: 5000兆以上の高額帯を大量増量(すべて9000兆の上限内) ---
     // 幻獣(5000兆帯)
     LEVIATHAN5050T: 505e13,
@@ -8574,7 +8596,11 @@ var PokerOffline = (() => {
               granted: JSON.stringify({ chips, code }),
               receipt: receiptKey
             });
-            this.store.post(s.userId, "chips", chips, "adjustment", `code:${code}`);
+            for (let left = chips; left > 0; ) {
+              const c = Math.min(left, SAFE_POST);
+              this.store.post(s.userId, "chips", c, "adjustment", `code:${code}`);
+              left -= c;
+            }
             this.sendBalance(s.userId);
             this.transport.send(sessionId, {
               t: "reward",
