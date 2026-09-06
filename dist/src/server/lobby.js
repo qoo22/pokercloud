@@ -281,9 +281,25 @@ export class Lobby {
         this.economy = new Economy(this.store, () => this.clock.now());
         const io = { send: (sid, msg) => this.transport.send(sid, msg) };
         const bank = {
-            withdraw: (userId, amount, ref) => this.store.post(userId, 'chips', -amount, 'table_buyin', ref) !== null,
+            // 秘密卓のバイインは 50京まであり、台帳1回の記帳(2^53≈9007兆)を超える。
+            // バカラの大口ベットやGMコードと同じく SAFE_POST で分割記帳する(第150弾)
+            withdraw: (userId, amount, ref) => {
+                if (this.store.balance(userId, 'chips') < amount)
+                    return false;
+                for (let left = amount; left > 0;) {
+                    const c = Math.min(left, SAFE_POST);
+                    if (this.store.post(userId, 'chips', -c, 'table_buyin', ref) === null)
+                        return false;
+                    left -= c;
+                }
+                return true;
+            },
             deposit: (userId, amount, ref) => {
-                this.store.post(userId, 'chips', amount, 'table_cashout', ref);
+                for (let left = amount; left > 0;) {
+                    const c = Math.min(left, SAFE_POST);
+                    this.store.post(userId, 'chips', c, 'table_cashout', ref);
+                    left -= c;
+                }
             },
             balanceOf: (userId) => this.store.balance(userId, 'chips'),
             // 卓の上にあるチップを台帳に記録しておく。サーバーが落ちても次の起動で払い戻せる
@@ -611,6 +627,32 @@ export class Lobby {
         // プライベート卓はロビー一覧から除外（コードを知っている人だけが入れる）
         return [...this.rooms.entries()].filter(([id]) => !this.privateIds.has(id)).map(([, r]) => r);
     }
+    /**
+     * 秘密卓(第150弾)を見られるか。指定額のチップを持っている人にだけ存在を明かす。
+     * 一度到達したら下回っても見え続ける(到達記録を台帳の実績として残す)
+     */
+    canSeeTable(userId, room) {
+        const need = room.secretUnlockAt;
+        if (need <= 0)
+            return true;
+        if (this.store.hasReceipt(`unlock:${room.tableId}:${userId}`))
+            return true;
+        if (this.store.balance(userId, 'chips') < need)
+            return false;
+        // 初到達を記録しておく(一度見えた卓は残高が減っても消えない)
+        this.store.savePurchase({
+            userId,
+            sku: 'table_unlock',
+            priceJpy: 0,
+            granted: JSON.stringify({ tableId: room.tableId, need }),
+            receipt: `unlock:${room.tableId}:${userId}`,
+        });
+        return true;
+    }
+    /** その人のロビーに出す卓(秘密卓は解禁済みの人にだけ) */
+    listRoomsFor(userId) {
+        return this.listRooms().filter((r) => this.canSeeTable(userId, r));
+    }
     listTournaments() {
         return [...this.tournaments.values()];
     }
@@ -676,11 +718,14 @@ export class Lobby {
             case 'lobby.list':
                 return this.transport.send(sessionId, {
                     t: 'lobby.tables',
-                    tables: this.listRooms().map((r) => r.lobbyInfo()),
+                    tables: this.listRoomsFor(s.userId).map((r) => r.lobbyInfo()),
                 });
             case 'table.watch': {
                 const room = this.getRoom(msg.tableId);
                 if (!room)
+                    return this.err(sessionId, 'NO_SUCH_TABLE', 'そのテーブルはありません');
+                // 秘密卓は解禁前だと「そもそも無い」ことにする(存在を悟らせない)
+                if (!this.canSeeTable(s.userId, room))
                     return this.err(sessionId, 'NO_SUCH_TABLE', 'そのテーブルはありません');
                 s.tables.add(msg.tableId);
                 room.join(sessionId, s.userId, s.name);
@@ -694,8 +739,13 @@ export class Lobby {
                 room.leave(sessionId);
                 return;
             }
-            case 'table.sit':
+            case 'table.sit': {
+                // 秘密卓は解禁前だと着席もできない(watch を素通りした経路への二重の守り)
+                const sitRoom = this.getRoom(msg.tableId);
+                if (sitRoom && !this.canSeeTable(s.userId, sitRoom))
+                    return this.err(sessionId, 'NO_SUCH_TABLE', 'そのテーブルはありません');
                 return this.withRoom(sessionId, msg.tableId, (room) => room.sit(sessionId, msg.seat, msg.buyIn));
+            }
             case 'table.stand':
                 return this.withRoom(sessionId, msg.tableId, (room) => {
                     const r = room.stand(sessionId);

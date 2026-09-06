@@ -78,6 +78,7 @@ export class Room {
             blindsProvider: undefined,
             minBuyInBB: 20,
             maxBuyInBB: 100,
+            secretUnlockAt: 0,
             rakePercent: 0.04,
             rakeCapBB: 4,
             actionTimeoutMs: ACTION_MS,
@@ -100,6 +101,13 @@ export class Room {
     /** 現在のブラインド（トーナメントではレベルに応じて変わる） */
     get currentBlinds() {
         return { ...this.blinds };
+    }
+    /** 秘密卓の解禁額(0なら公開卓) */
+    get secretUnlockAt() {
+        return this.cfg.secretUnlockAt ?? 0;
+    }
+    get tableId() {
+        return this.cfg.tableId;
     }
     get minBuyIn() {
         return this.cfg.minBuyInBB * this.cfg.bigBlind;

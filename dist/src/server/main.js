@@ -67,6 +67,28 @@ const tables = [
     { tableId: 'bil-6', name: 'ビリオネア', smallBlind: 25_000_000_000, bigBlind: 50_000_000_000, maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5 },
     { tableId: 'titan-6', name: 'タイタン', smallBlind: 250_000_000_000, bigBlind: 500_000_000_000, maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5 },
     { tableId: 'gods-9', name: '神々の卓', smallBlind: 1_250_000_000_000, bigBlind: 2_500_000_000_000, maxSeats: 9, rakePercent: 0.05, rakeCapBB: 5 },
+    // --- 秘密卓(第150弾) ---
+    // secretUnlockAt のチップを持って初めて**存在が見える**。持っていない人には
+    // ロビー一覧にも出ないし、卓IDを当てても着席・観戦できない(サーバーで弾く)。
+    // バイインは 20BB〜100BB なので 極 は 10京〜50京
+    {
+        tableId: 'abyss-6', name: '深淵の卓',
+        smallBlind: 25_000_000_000_000, bigBlind: 50_000_000_000_000, // 50兆
+        maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5,
+        secretUnlockAt: 1_000_000_000_000_000, // 1000兆
+    },
+    {
+        tableId: 'cosmos-6', name: '天上の卓',
+        smallBlind: 250_000_000_000_000, bigBlind: 500_000_000_000_000, // 500兆
+        maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5,
+        secretUnlockAt: 10_000_000_000_000_000, // 1京
+    },
+    {
+        tableId: 'zenith-6', name: '極 -きわみ-',
+        smallBlind: 2_500_000_000_000_000, bigBlind: 5_000_000_000_000_000, // 5000兆
+        maxSeats: 6, rakePercent: 0.05, rakeCapBB: 5,
+        secretUnlockAt: 100_000_000_000_000_000, // 10京(最小バイインと同じ)
+    },
 ];
 const tournaments = [
     {

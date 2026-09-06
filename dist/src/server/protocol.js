@@ -36,6 +36,17 @@ export function parseClientMessage(raw) {
         const v = m[k];
         return typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
     };
+    /**
+     * 金額用(第150弾)。秘密卓のバイインは 50京 まであり 2^53 を超えるので
+     * isSafeInteger では弾かれてしまう。整数であること・上限(100京)だけを見る。
+     * この規模では double の刻みが 1 を超えるが、表せる値は必ず整数なので
+     * Number.isInteger が正しい判定になる
+     */
+    const MONEY_MAX = 1e18;
+    const money = (k) => {
+        const v = m[k];
+        return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MONEY_MAX ? v : null;
+    };
     switch (t) {
         case 'hello': {
             const v = m.v;
@@ -82,7 +93,7 @@ export function parseClientMessage(raw) {
         }
         case 'table.sit': {
             const tableId = str('tableId');
-            const buyIn = posInt('buyIn');
+            const buyIn = money('buyIn');
             if (!tableId)
                 return { ok: false, reason: 'tableId がありません' };
             if (buyIn === null || buyIn === 0)
@@ -109,7 +120,7 @@ export function parseClientMessage(raw) {
         }
         case 'table.rebuy': {
             const tableId = str('tableId');
-            const amount = posInt('amount');
+            const amount = money('amount');
             if (!tableId)
                 return { ok: false, reason: 'tableId がありません' };
             if (amount === null || amount === 0)
@@ -129,8 +140,11 @@ export function parseClientMessage(raw) {
                 action !== 'raise') {
                 return { ok: false, reason: 'action が不正です' };
             }
+            // ベット額も秘密卓では 2^53 を超えうるので money と同じ判定にする(第150弾)
             const toRaw = m.toAmount;
-            const toAmount = typeof toRaw === 'number' && Number.isSafeInteger(toRaw) && toRaw >= 0 ? toRaw : undefined;
+            const toAmount = typeof toRaw === 'number' && Number.isInteger(toRaw) && toRaw >= 0 && toRaw <= MONEY_MAX
+                ? toRaw
+                : undefined;
             return { ok: true, msg: { t: 'hand.act', tableId, handId, action, toAmount } };
         }
         case 'fair.seed': {

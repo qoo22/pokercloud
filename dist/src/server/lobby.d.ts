@@ -116,6 +116,13 @@ export declare class Lobby {
     private onHandResult;
     getRoom(tableId: string): Room | undefined;
     listRooms(): Room[];
+    /**
+     * 秘密卓(第150弾)を見られるか。指定額のチップを持っている人にだけ存在を明かす。
+     * 一度到達したら下回っても見え続ける(到達記録を台帳の実績として残す)
+     */
+    canSeeTable(userId: string, room: Room): boolean;
+    /** その人のロビーに出す卓(秘密卓は解禁済みの人にだけ) */
+    listRoomsFor(userId: string): Room[];
     listTournaments(): Tournament[];
     getTournament(id: string): Tournament | undefined;
     onConnect(sessionId: string): void;

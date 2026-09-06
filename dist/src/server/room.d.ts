@@ -32,6 +32,11 @@ export interface TableConfig {
     /** バイイン下限・上限（BB 単位）。仕様書のとおり 20〜100BB */
     minBuyInBB?: number;
     maxBuyInBB?: number;
+    /**
+     * 秘密卓(第150弾)。この額のチップを持って初めて**存在が見える**卓。
+     * 0/未指定なら誰にでも見える。判定はサーバーだけが持つ(クライアントの隠しではない)
+     */
+    secretUnlockAt?: number;
     rakePercent?: number;
     rakeCapBB?: number;
     /** 1 アクションあたりの持ち時間。既定は全卓共通の ACTION_MS(60秒) */
@@ -146,6 +151,9 @@ export declare class Room {
         bigBlind: number;
         ante: number;
     };
+    /** 秘密卓の解禁額(0なら公開卓) */
+    get secretUnlockAt(): number;
+    get tableId(): string;
     get minBuyIn(): number;
     get maxBuyIn(): number;
     /** ニックネーム・装着ブレスレットの更新（コスメ。着席中なら即反映して配信） */
