@@ -18,6 +18,19 @@ const DEFAULTS = {
     maxMessagesPerSecond: 20,
     authSecret: '',
 };
+/**
+ * 1回の入出金で扱える上限(第150弾)。台帳1行は 2^53≈9007兆までなので
+ * SAFE_POST で分割して記帳する。回数が現実的な範囲に収まるよう 1000京 を上限にし、
+ * 桁違いの値で回り続けないようループにもガードを置く
+ */
+const MONEY_MAX_POST = 1e19;
+/**
+ * ボットの持ち金(第151弾)。人間と同じ 50,000 だと高額卓の最低バイインに
+ * 届かず、ハイローラー以上の卓に**永久に誰も座らない**。極(最大50京)まで
+ * 座れるだけ持たせる。ボットが負ければその分は人間の取り分になる
+ */
+const BOT_BANKROLL = 2e18; // 200京
+const MAX_POST_CHUNKS = Math.ceil(MONEY_MAX_POST / SAFE_POST) + 2;
 /** 招待コード：入力するとチップがもらえる（1ユーザー1回まで） */
 const INVITE_CODES = {
     // --- 入門(マイクロ〜ハイ卓向け) ---
@@ -284,9 +297,13 @@ export class Lobby {
             // 秘密卓のバイインは 50京まであり、台帳1回の記帳(2^53≈9007兆)を超える。
             // バカラの大口ベットやGMコードと同じく SAFE_POST で分割記帳する(第150弾)
             withdraw: (userId, amount, ref) => {
+                if (!Number.isFinite(amount) || amount < 0 || amount > MONEY_MAX_POST)
+                    return false;
                 if (this.store.balance(userId, 'chips') < amount)
                     return false;
-                for (let left = amount; left > 0;) {
+                for (let left = amount, guard = 0; left > 0; guard++) {
+                    if (guard > MAX_POST_CHUNKS)
+                        return false; // 桁違いの値で回り続けない
                     const c = Math.min(left, SAFE_POST);
                     if (this.store.post(userId, 'chips', -c, 'table_buyin', ref) === null)
                         return false;
@@ -295,7 +312,11 @@ export class Lobby {
                 return true;
             },
             deposit: (userId, amount, ref) => {
-                for (let left = amount; left > 0;) {
+                if (!Number.isFinite(amount) || amount <= 0)
+                    return;
+                for (let left = Math.min(amount, MONEY_MAX_POST), guard = 0; left > 0; guard++) {
+                    if (guard > MAX_POST_CHUNKS)
+                        break;
                     const c = Math.min(left, SAFE_POST);
                     this.store.post(userId, 'chips', c, 'table_cashout', ref);
                     left -= c;
@@ -635,6 +656,9 @@ export class Lobby {
         const need = room.secretUnlockAt;
         if (need <= 0)
             return true;
+        // ボットは使い捨てのユーザーなので到達記録は残さない(台帳が膨れるだけ)
+        if (userId.startsWith('bot_'))
+            return this.store.balance(userId, 'chips') >= need;
         if (this.store.hasReceipt(`unlock:${room.tableId}:${userId}`))
             return true;
         if (this.store.balance(userId, 'chips') < need)
@@ -1211,7 +1235,15 @@ export class Lobby {
         const isNew = this.store.getUser(userId) === null;
         this.store.upsertUser(userId, name);
         if (isNew) {
-            this.store.post(userId, 'chips', this.cfg.signupBonus, 'signup_bonus');
+            // ボットは高額卓にも座れるだけ持たせる(空卓を作らないため)
+            const bonus = userId.startsWith('bot_') ? BOT_BANKROLL : this.cfg.signupBonus;
+            for (let left = bonus, guard = 0; left > 0; guard++) {
+                if (guard > MAX_POST_CHUNKS)
+                    break;
+                const c = Math.min(left, SAFE_POST);
+                this.store.post(userId, 'chips', c, 'signup_bonus');
+                left -= c;
+            }
             this.store.post(userId, 'gold', this.cfg.signupGold, 'signup_bonus');
         }
         const token = this.makeResumeToken(userId);

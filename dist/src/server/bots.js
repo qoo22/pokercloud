@@ -13,6 +13,14 @@
 import { parseCard } from '../cards.js';
 import { evaluateBest, HandCategory } from '../evaluator.js';
 import { gtoPreflop, gtoPostflop, positionLabel, VILLAIN_PRE, loadTunedParams, loadBlueprint } from './botgto.js';
+/**
+ * ボットが座れる卓の上限(第151弾)。
+ * 以前は 90兆 で頭打ちだったため、ハイローラー(最低2億)より上の卓…とくに
+ * 秘密卓(最低1000兆〜10京)には**永久に誰も座らなかった**。
+ * サーバー側でボットには 200京 持たせているので、極(最大50京)まで座れる
+ */
+const BOT_MAX_BUYIN = 5e17; // 50京(極の最大バイイン)
+const BOT_MAX_TOUR_BUYIN = 90_000_000_000_000; // 大会は従来どおり
 const NAMES = [
     'マグロ半額', 'yuki_0217', 'ぽんず。', 'DarkFlame猫', 'noodle_master', 'Sio*Ramen',
     'kk_88', 'ひよこ隊長', 'Zephyr', 'たまねぎ王子', 'runa_luna', 'ガチ勢のフリ',
@@ -155,7 +163,7 @@ class Bot {
                 const cands = m.tournaments.filter((t) => {
                     if (t.state !== 'registering')
                         return false;
-                    if (t.buyIn + (t.fee ?? 0) > 90_000_000_000_000)
+                    if (t.buyIn + (t.fee ?? 0) > BOT_MAX_TOUR_BUYIN)
                         return false;
                     // 定期大会(tt-)は9人(=1卓ぶん)まで埋める
                     if (String(t.tournamentId).startsWith('tt-'))
@@ -205,7 +213,7 @@ class Bot {
             }
         }
         if (m.t === 'lobby.tables' && !this.tableId && this.mode === 'cash') {
-            const cands = m.tables.filter((t) => t.seatedCount < t.maxSeats && t.minBuyIn <= 90_000_000_000_000);
+            const cands = m.tables.filter((t) => t.seatedCount < t.maxSeats && t.minBuyIn <= BOT_MAX_BUYIN);
             if (!cands.length) {
                 this.leaveSoon();
                 return;
@@ -219,7 +227,7 @@ class Bot {
                 this.after(200 + rnd() * 600, () => {
                     this.send({ t: 'table.watch', tableId: this.tableId });
                     this.after(250 + rnd() * 500, () => {
-                        const maxAff = Math.min(pref.maxBuyIn ?? pref.minBuyIn * 5, 100_000_000_000_000);
+                        const maxAff = Math.min(pref.maxBuyIn ?? pref.minBuyIn * 5, BOT_MAX_BUYIN);
                         const buyIn = Math.round(pref.minBuyIn + rnd() * Math.max(0, maxAff - pref.minBuyIn));
                         this.send({ t: 'table.sit', tableId: this.tableId, buyIn });
                     });
@@ -244,7 +252,7 @@ class Bot {
             this.after(250 + rnd() * 900, () => {
                 this.send({ t: 'table.watch', tableId: this.tableId });
                 this.after(300 + rnd() * 800, () => {
-                    const maxAffordable = Math.min(t.maxBuyIn ?? t.minBuyIn * 5, 100_000_000_000_000);
+                    const maxAffordable = Math.min(t.maxBuyIn ?? t.minBuyIn * 5, BOT_MAX_BUYIN);
                     const buyIn = Math.round(t.minBuyIn + rnd() * Math.max(0, maxAffordable - t.minBuyIn));
                     this.send({ t: 'table.sit', tableId: this.tableId, buyIn });
                 });
@@ -756,7 +764,7 @@ export function startBots(url) {
                 for (const t of m.tables) {
                     if (t.seatedCount < 1 || t.seatedCount >= t.maxSeats)
                         continue;
-                    if (t.minBuyIn > 90_000_000_000_000)
+                    if (t.minBuyIn > BOT_MAX_BUYIN)
                         continue;
                     const hasBot = [...alive].some((b) => b.tableId2 === t.tableId);
                     if (hasBot)

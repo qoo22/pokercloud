@@ -42,7 +42,12 @@ export function parseClientMessage(raw) {
      * この規模では double の刻みが 1 を超えるが、表せる値は必ず整数なので
      * Number.isInteger が正しい判定になる
      */
-    const MONEY_MAX = 1e18;
+    // 上限の役目は「NaN・負・桁違いのゴミを弾く」ことだけ。本当の上限は
+    // エンジンの合法手判定(スタック以下)と台帳の残高が担保する。
+    // 極卓は最大ポットが300京なので、それを勝った人のオールインが通る必要がある
+    // (1e18=100京だと弾かれてオールインできなくなる)。分割記帳の回数が
+    // 現実的な範囲に収まる 1000京 を上限にする
+    const MONEY_MAX = 1e19;
     const money = (k) => {
         const v = m[k];
         return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MONEY_MAX ? v : null;
