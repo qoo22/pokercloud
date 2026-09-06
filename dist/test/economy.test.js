@@ -2,8 +2,8 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryStore, SqliteStore } from '../src/server/store.js';
 import { Economy, CHIP_PACKS, GOLD_PACKS, VIP_TIERS, PASS_TIERS, PASS_PREMIUM_SKU, DAILY_MISSIONS, tierOf, nextTier, dailyBonusBase, DAILY_KNEE, DAILY_RATE, DAILY_BASE_CAP, DAILY_FLOOR, slotMultiplier, } from '../src/server/economy.js';
-import { SLOT_CHIP_MIN_BET, chipBetLadder } from '../src/server/economy.js';
-import { PAY_SYMBOLS, spin as spinReels, MAX_WIN_X, FREE_MODES, PAYLINES, LINES } from '../src/server/slot.js';
+import { SLOT_CHIP_MIN_BET, SLOT_CHIP_MAX_BET, chipBetLadder, SAFE_POST } from '../src/server/economy.js';
+import { PAY_SYMBOLS, spin as spinReels, MAX_WIN_X, PAYLINES, LINES, SLOT_CFG as ENGINE_CFG } from '../src/server/slot.js';
 import { AD_DAILY_LIMIT, AD_REWARD_FLOOR, AD_REWARD_CAP, SLOT_CHIP_DAILY_SPINS } from '../src/server/economy.js';
 // 既定の「今」は、シーズンの最終週に当たらない日を選んである。
 // 最終週は経験値が 1.25 倍になる（キャッチアップ）ので、そこを踏むと期待値がズレる。
@@ -381,6 +381,26 @@ describe('VIP ヘルパー', () => {
     });
 });
 describe('永続化（SQLite）', () => {
+    test('残高が2^53を超えても読める（本番で hello が沈黙した事故の再発防止）', async () => {
+        // node:sqlite は 2^53 を超える INTEGER 列を読むと RangeError を投げる。
+        // 分割記帳(第84弾)で「書く」ことはできるのに、getUser が「読む」だけで例外になり、
+        // 残高9007兆超のアカウントは hello の処理が黙って死んでいた(2026-08-25 本番で発生)。
+        // MemoryStore では再現しないため、必ず SqliteStore で検査する
+        const s = await SqliteStore.open(':memory:');
+        s.createUser('u1', 'クジラ');
+        for (let i = 0; i < 3; i++)
+            s.post('u1', 'chips', 9_000_000_000_000_000, 'adjustment');
+        const bal = 27_000_000_000_000_000;
+        assert.equal(s.getUser('u1').chips, bal, 'getUser が読めない/値が違う');
+        assert.equal(s.balance('u1', 'chips'), bal, 'balance が読めない/値が違う');
+        assert.equal(s.history('u1').length, 3, 'history が読めない'); // balance_after も 2^53 超
+        assert.equal(s.audit().ok, true, '台帳の整合が取れない');
+        assert.equal(s.totalBalance('chips'), bal, '合計が読めない/値が違う');
+        assert.ok(s.listUsers(10).some((u) => u.chips === bal), 'listUsers が読めない');
+        // さらに積んでも(=post の残高読みも)例外にならない
+        assert.notEqual(s.post('u1', 'chips', 1_000, 'adjustment'), null);
+        s.close();
+    });
     test('保存した内容が読み戻せる', async () => {
         const s = await SqliteStore.open(':memory:');
         s.createUser('u1', 'Alice');
@@ -553,10 +573,10 @@ describe('スロット', () => {
         const r = e.spinSlot('u1', 100_000, alwaysFirst);
         assert.equal(r.ok, true, r.error);
         assert.equal(s.balance('u1', 'chips'), before - 100_000 + (r.won ?? 0), 'チップの収支が合わない');
-        // 全マス同じ絵柄になる極端な乱数なので、上限(MAX WIN)まで伸びる
-        assert.equal(r.kind, 'max');
-        assert.ok(r.won > 0, '揃っているのに払い出しが無い');
-        assert.ok(r.won >= 0, 'チップの払い出しが負');
+        // 全マスがWILDになる極端な乱数。第79弾で連鎖を廃止したので上限までは伸びないが、
+        // 25ライン全部が成立するので「メガ」級(BETの100倍以上)にはなる
+        assert.equal(r.kind, 'mega', `想定より小さい: ${r.kind}`);
+        assert.ok(r.won > 100_000 * 100, '25ライン全部そろっているのに払い出しが小さい');
         assert.equal(s.audit().ok, true, '台帳が壊れた');
     });
     // --- 第58弾: 243ways + タンブル + フリーゲーム ---------------------------
@@ -611,30 +631,39 @@ describe('スロット', () => {
             }
         }
     });
-    test('タンブルは連鎖するほど倍率が上がる', () => {
-        // 連鎖が2回以上あるスピンを探して、倍率が単調非減少であることを見る
-        for (let seed = 1; seed < 400; seed++) {
-            const r = spinReels(seeded(seed), { mode: 'many' });
-            if (r.base.length < 2)
+    test('フリーゲームの倍率はWILD配当だけ（持続倍率が復活していないこと・第94弾）', () => {
+        // オーナー指定: 掛かるのは突入時に抽選する WILD配当(×2〜×5)の1本だけで、
+        // WILDを含む当選ラインに1回。持続倍率(当たるたび+7)は廃止した。
+        // これにより1ラインの支払いは「ライン配当 × wildMult」で頭打ちになる。
+        let checkedWild = 0, checkedPlain = 0;
+        for (let seed = 1; seed < 20000 && (checkedWild < 5 || checkedPlain < 5); seed++) {
+            const r = spinReels(seeded(seed), { mode: 'few' });
+            if (!r.free)
                 continue;
-            for (let i = 1; i < r.base.length; i++) {
-                assert.ok(r.base[i].mult >= r.base[i - 1].mult, '連鎖で倍率が下がっている');
+            const wm = r.free.wildMult;
+            assert.ok(wm >= 2 && wm <= 5, `WILD配当が×2〜×5でない: ${wm}`);
+            assert.equal(r.free.finalMult, 1, '持続倍率が残っている(finalMult)');
+            for (const sp of r.free.spins) {
+                assert.equal(sp.multAfter, 1, '持続倍率が残っている(multAfter)');
+                for (const st of sp.steps) {
+                    assert.equal(st.mult, 1, `全体に掛かる倍率が1でない(seed ${seed}): ${st.mult}`);
+                    // 各ラインの支払いは「素の配当 × (WILDを含むなら wildMult)」を超えない
+                    let sum = 0;
+                    for (const w of st.wins) {
+                        const m = w.wildMult ?? 1;
+                        assert.ok(m === 1 || m === wm, `ライン倍率が抽選値と違う: ${m} (期待 1 か ${wm})`);
+                        sum += w.pay * m;
+                        if (m === wm)
+                            checkedWild++;
+                        else
+                            checkedPlain++;
+                    }
+                    assert.ok(Math.abs(st.payX - sum) < 1e-9, `スピンの支払いがライン合計と合わない(seed ${seed}): ${st.payX} ≠ ${sum}`);
+                }
             }
-            return;
         }
-        assert.fail('連鎖するスピンが見つからない（重みが壊れている可能性）');
-    });
-    test('フリーゲームの倍率はスピンをまたいで積み上がる（永続マルチプライヤー）', () => {
-        const r = spinReels(seeded(675), { mode: 'many' });
-        assert.equal(r.freeEntered, true, 'この種ではフリーゲームに入るはず');
-        const free = r.free;
-        assert.ok(free.spins.length >= 10, `回転数が少なすぎる: ${free.spins.length}`);
-        let prev = 0;
-        for (const sp of free.spins) {
-            assert.ok(sp.multAfter >= prev, 'フリーゲーム中に倍率が下がった（持ち越せていない）');
-            prev = sp.multAfter;
-        }
-        assert.ok(free.finalMult > FREE_MODES[0].startMult, '倍率が最後まで伸びていない');
+        assert.ok(checkedWild >= 5, `WILDライン適用の検体が足りない(${checkedWild})`);
+        assert.ok(checkedPlain >= 5, `WILD無しラインの検体が足りない(${checkedPlain})`);
     });
     test('当たりが無いスピンでも盤面が返る（ハズレでリールが止まらない事故の防止）', () => {
         let checked = 0;
@@ -647,11 +676,20 @@ describe('スロット', () => {
         }
         assert.ok(checked > 0, 'ハズレのスピンが1つも見つからない（前提が崩れた）');
     });
-    test('配当は上限(MAX WIN)を超えない', () => {
-        for (let seed = 1; seed < 300; seed++) {
-            const r = spinReels(seeded(seed), { mode: 'many' });
-            assert.ok(r.totalPayX <= MAX_WIN_X, `上限を超えた: ${r.totalPayX}`);
+    test('配当は頭打ちされない（合計がそのまま支払われる）', () => {
+        // 第80弾で MAX WIN の上限を撤廃(オーナー判断)。5000x は称号のしきい値としてだけ残る。
+        // 第94弾で持続倍率を廃止したため 5000x 超は滅多に出ない。
+        // 「切り詰めていない」ことは合計の一致で確かめ、観測の前提は大当たり(100x超)に緩める
+        let big = 0;
+        for (let seed = 1; seed < 4000; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'few' });
+            const sum = r.basePayX + (r.respin?.payX ?? 0) + (r.free?.payX ?? 0);
+            assert.ok(Math.abs(r.totalPayX - sum) < 1e-9, `合計が切り詰められている(seed ${seed}): ${r.totalPayX} != ${sum}`);
+            assert.equal(r.maxWin, sum >= MAX_WIN_X, '称号フラグのしきい値が違う');
+            if (sum > 100)
+                big++;
         }
+        assert.ok(big > 0, '100xを超える例が観測できない(前提が崩れた)');
     });
     test('アンティベットはフリーゲームに入りやすくなる', () => {
         const count = (ante) => {
@@ -665,9 +703,258 @@ describe('スロット', () => {
         const plain = count(false), ante = count(true);
         assert.ok(ante > plain, `アンティで突入率が上がっていない: ${plain} → ${ante}`);
     });
-    // --- 第59弾: チップ建て -------------------------------------------------
-    // チップ→チップは閉じたループなので、払い出し倍率を掛けると RTP が 100% を超えて
-    // 無限にチップを増やせる。ここは経済の生命線なのでテストで固定する。
+    // --- 第69弾/第76弾: スタックドWILD + リスピン(全リール対応) -----------------
+    test('リスピンは一番左のリールが3連WILDのときだけ発生する', () => {
+        let leftStack = 0, otherOnly = 0;
+        for (let seed = 1; seed < 8000; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'few' });
+            const hasLeft = r.stackedReels.indexOf(0) >= 0;
+            if (hasLeft) {
+                leftStack++;
+                assert.ok(r.respin, `リール1が3連WILDなのにリスピンが無い(seed ${seed})`);
+                assert.deepEqual(r.respin.lockedReels, [0], 'リール1以外までロックしている');
+                assert.deepEqual(r.respin.grid0[0], ['wild', 'wild', 'wild'], 'リスピンでリール1が固定されていない');
+                for (const col of r.respin.grid0)
+                    for (const c of col) {
+                        assert.notEqual(c, 'scatter', 'リスピンでスキャッターが抽選されている');
+                    }
+            }
+            else {
+                assert.equal(r.respin, undefined, `リール1が3連WILDでないのにリスピンがある(seed ${seed})`);
+                if (r.stackedReels.length)
+                    otherOnly++;
+            }
+        }
+        assert.ok(leftStack > 0, 'リール1の3連WILDが一度も出ない');
+        assert.ok(otherOnly > 0, '他リールだけの3連WILDが観測できない(前提が崩れた)');
+    });
+    test('スタックドWILDは全リールで起こりうる(理論上オールワイルドが成立する)', () => {
+        // 5リールすべてが対象になっているか。実際に5本そろうのは (1/64)^5 なので、
+        // 「どのリールでもフル停止が観測できる」ことをもって全リール対応を確かめる
+        const seen = new Set();
+        for (let seed = 1; seed < 60000 && seen.size < 5; seed++) {
+            for (const reel of spinReels(seeded(seed), { mode: 'few' }).stackedReels)
+                seen.add(reel);
+        }
+        assert.equal(seen.size, 5, `フル停止が観測できないリールがある: ${[...seen].sort().join(',')}`);
+    });
+    test('フリーゲーム中はWILDがコマ単位でホールドされ、増えることはあっても減らない', () => {
+        let found = 0;
+        for (let seed = 1; seed < 20000 && found < 5; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'many' });
+            if (!r.free || r.free.spins.length < 2)
+                continue;
+            found++;
+            let prev = new Set();
+            for (const sp of r.free.spins) {
+                const now = new Set(sp.heldCells.map(([x, y]) => `${x},${y}`));
+                // ホールドは解除されない(フリーゲームが終わるまで残る)
+                for (const k of prev)
+                    assert.ok(now.has(k), `ホールドが外れた(seed ${seed}, ${k})`);
+                // ホールドされているマスは必ずWILDとして盤面に乗っている
+                for (const [x, y] of sp.heldCells) {
+                    assert.equal(sp.grid0[x][y], 'wild', `ホールドなのにWILDでない(seed ${seed})`);
+                }
+                // fresh は「今回新しく増えたぶん」
+                for (const [x, y] of sp.freshCells) {
+                    assert.ok(!prev.has(`${x},${y}`), 'freshなのに前から持っていた');
+                    assert.ok(now.has(`${x},${y}`), 'freshなのにホールドに入っていない');
+                }
+                prev = now;
+            }
+        }
+        assert.ok(found > 0, 'フリーゲームが見つからない');
+    });
+    test('上乗せは総回数に正しく積まれ、残り回数と食い違わない', () => {
+        const startBy = ENGINE_CFG.freeSpinsByScatter;
+        // 上乗せは「フリー中にスキャッター3個以上」なので実運用では極めて稀(フリー1回あたり数%)。
+        // **規則が正しいか**を見たいので、検体が集まるようスキャッターの重みだけ上げる
+        const orig = ENGINE_CFG.scatterWeight;
+        ENGINE_CFG.scatterWeight = 40;
+        try {
+            let checked = 0;
+            for (let seed = 1; seed < 20000 && checked < 5; seed++) {
+                const r = spinReels(seeded(seed), { mode: 'many' });
+                if (!r.free)
+                    continue;
+                const added = r.free.spins.reduce((a, sp) => a + sp.addedSpins, 0);
+                if (!added)
+                    continue;
+                checked++;
+                // 突入回数 + 上乗せ = 総回数 になっていること
+                const base = startBy[Math.min(r.scatters, 5)];
+                assert.equal(r.free.spinsTotal, base + added, `総回数が合わない(seed ${seed})`);
+                // 残り回数が1ずつ減り、上乗せのぶんだけ増えること(画面の「残りn回」がこれを出す)
+                let left = base;
+                for (const sp of r.free.spins) {
+                    left = left - 1 + sp.addedSpins;
+                    assert.equal(sp.spinsLeft, left, `残り回数が合わない(seed ${seed})`);
+                    assert.equal(sp.retrigger, sp.addedSpins > 0, '上乗せの有無とフラグが食い違う');
+                }
+                assert.equal(left, 0, `最後に残り0回で終わっていない(seed ${seed})`);
+            }
+            assert.ok(checked > 0, '上乗せが一度も起きない');
+        }
+        finally {
+            ENGINE_CFG.scatterWeight = orig;
+        }
+    });
+    test('連鎖は発生しない(1スピンにつき判定は1回だけ)', () => {
+        for (let seed = 1; seed < 3000; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'few' });
+            assert.ok(r.base.length <= 1, `通常時に連鎖している(seed ${seed}, ${r.base.length}段)`);
+            if (r.respin)
+                assert.ok(r.respin.steps.length <= 1, `リスピンで連鎖している(seed ${seed})`);
+            for (const sp of r.free?.spins ?? []) {
+                assert.ok(sp.steps.length <= 1, `フリー中に連鎖している(seed ${seed})`);
+            }
+        }
+    });
+    test('WILD倍率は突入時に1回だけ抽選され、フリーゲーム中ずっと同じ値になる', () => {
+        let checked = 0;
+        for (let seed = 1; seed < 20000 && checked < 8; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'few' });
+            if (!r.free)
+                continue;
+            const fixed = r.free.wildMult;
+            assert.ok(fixed >= 2 && fixed <= 5, `WILD倍率が範囲外: ${fixed}`);
+            let seen = 0;
+            for (const sp of r.free.spins) {
+                for (const st of sp.steps) {
+                    for (const w of st.wins) {
+                        if (w.wildMult == null)
+                            continue;
+                        seen++;
+                        assert.equal(w.wildMult, fixed, `フリー中にWILD倍率が変わった(seed ${seed})`);
+                    }
+                }
+            }
+            if (seen > 0)
+                checked++;
+        }
+        assert.ok(checked > 0, 'WILD倍率が付く当選が一度も見つからない');
+    });
+    test('WILD倍率はWILDを含む当選ラインにだけ・1ラインにつき1回だけ付く', () => {
+        let withWild = 0, withoutWild = 0;
+        for (let seed = 1; seed < 8000; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'few' });
+            for (const st of [...r.base, ...(r.respin?.steps ?? [])]) {
+                for (const w of st.wins)
+                    assert.equal(w.wildMult, undefined, `通常時にWILD倍率が付いている(seed ${seed})`);
+            }
+            for (const sp of r.free?.spins ?? []) {
+                for (const st of sp.steps) {
+                    for (const w of st.wins) {
+                        const line = PAYLINES[w.line];
+                        let hasWild = false;
+                        for (let i = 0; i < w.count; i++)
+                            if (st.grid[i][line[i]] === 'wild')
+                                hasWild = true;
+                        if (hasWild) {
+                            withWild++;
+                            assert.ok(w.wildMult, `WILDを含むのに倍率が付いていない(seed ${seed}, line ${w.line})`);
+                            assert.ok(w.wildMult <= 5, `WILDの枚数分だけ倍率が増えている: ${w.wildMult}`);
+                        }
+                        else {
+                            withoutWild++;
+                            assert.equal(w.wildMult, undefined, `WILDが無いのに倍率が付いている(seed ${seed}, line ${w.line})`);
+                        }
+                    }
+                }
+            }
+        }
+        assert.ok(withWild > 0 && withoutWild > 0, `検体が偏っている: wild=${withWild} plain=${withoutWild}`);
+    });
+    // --- 第72弾: 盤面に無い絵柄での当選を見分けられるようにする ---------------
+    test('WILDだけで成立した当選には allWild が立つ(盤面にその絵柄が無いため)', () => {
+        let all = 0, natural = 0;
+        for (let seed = 1; seed < 4000; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'few' });
+            for (const st of [...r.base, ...(r.respin?.steps ?? [])]) {
+                for (const w of st.wins) {
+                    const line = PAYLINES[w.line];
+                    // 当選区間に「その絵柄そのもの」があるか
+                    let has = false;
+                    for (let i = 0; i < w.count; i++)
+                        if (st.grid[i][line[i]] === w.key)
+                            has = true;
+                    if (w.allWild) {
+                        all++;
+                        assert.equal(has, false, `allWild なのに絵柄が盤面にある(seed ${seed}, ${w.key})`);
+                        // 全部WILDで成立しているはず
+                        for (let i = 0; i < w.count; i++) {
+                            assert.equal(st.grid[i][line[i]], 'wild', `allWild なのにWILD以外がある(seed ${seed})`);
+                        }
+                    }
+                    else {
+                        natural++;
+                        assert.equal(has, true, `allWild が立っていないのに絵柄が盤面に無い(seed ${seed}, ${w.key})`);
+                    }
+                }
+            }
+        }
+        assert.ok(all > 0, 'WILDだけの当選が一度も出ない(前提が崩れた)');
+        assert.ok(natural > all * 10, `WILDだけの当選が多すぎる: ${all}/${all + natural}`);
+    });
+    test('WILD倍率は突入時に1回だけ抽選され、フリーゲーム中ずっと同じ値になる', () => {
+        let checked = 0;
+        for (let seed = 1; seed < 20000 && checked < 8; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'few' });
+            if (!r.free)
+                continue;
+            const fixed = r.free.wildMult;
+            assert.ok(fixed >= 2 && fixed <= 5, `WILD倍率が範囲外: ${fixed}`);
+            let seen = 0;
+            for (const sp of r.free.spins) {
+                for (const st of sp.steps) {
+                    for (const w of st.wins) {
+                        if (w.wildMult == null)
+                            continue;
+                        seen++;
+                        // スピンごとに引き直していたら、ここで別の値が出る
+                        assert.equal(w.wildMult, fixed, `フリー中にWILD倍率が変わった(seed ${seed})`);
+                    }
+                }
+            }
+            if (seen > 0)
+                checked++;
+        }
+        assert.ok(checked > 0, 'WILD倍率が付く当選が一度も見つからない');
+    });
+    test('WILD倍率はWILDを含む当選ラインにだけ・1ラインにつき1回だけ付く', () => {
+        let withWild = 0, withoutWild = 0;
+        for (let seed = 1; seed < 8000; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'few' });
+            // 通常時(ベース+リスピン)には付かない
+            for (const st of [...r.base, ...(r.respin?.steps ?? [])]) {
+                for (const w of st.wins)
+                    assert.equal(w.wildMult, undefined, `通常時にWILD倍率が付いている(seed ${seed})`);
+            }
+            for (const sp of r.free?.spins ?? []) {
+                for (const st of sp.steps) {
+                    for (const w of st.wins) {
+                        const line = PAYLINES[w.line];
+                        // 当選区間にWILDがあるか
+                        let hasWild = false;
+                        for (let i = 0; i < w.count; i++)
+                            if (st.grid[i][line[i]] === 'wild')
+                                hasWild = true;
+                        if (hasWild) {
+                            withWild++;
+                            assert.ok(w.wildMult, `WILDを含むのに倍率が付いていない(seed ${seed}, line ${w.line})`);
+                            // 「1ラインにつき1回」= 掛かる倍率は倍率表の1つぶんで、WILDの枚数で増えない
+                            assert.ok(w.wildMult <= 5, `WILDの枚数分だけ倍率が増えている: ${w.wildMult}`);
+                        }
+                        else {
+                            withoutWild++;
+                            assert.equal(w.wildMult, undefined, `WILDが無いのに倍率が付いている(seed ${seed}, line ${w.line})`);
+                        }
+                    }
+                }
+            }
+        }
+        assert.ok(withWild > 0 && withoutWild > 0, `検体が偏っている: wild=${withWild} plain=${withoutWild}`);
+    });
     test('チップで回せる（チップが引かれ、チップで払い出される）', () => {
         const { s, e } = setup();
         s.post('u1', 'chips', 10_000_000, 'adjustment');
@@ -692,17 +979,76 @@ describe('スロット', () => {
         assert.equal(rb.multiplier, 1, 'チップ建てで倍率が 1 でない');
         assert.equal(ra.won, rb.won, 'VIPランクでチップ建ての払い出しが変わっている（増殖の入口）');
     });
-    test('チップ建ては長い目で見ると減る（シンクとして機能する）', () => {
-        // 1回の試行では分散が大きすぎて偶然プラスになるので、期待値そのものを見る。
-        // 抽選エンジンを固定シードで多数回まわし、賭け金1に対する平均払い出しが 1 未満であることを確認する。
-        const rnd = (() => { let x = 20260822 >>> 0; return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; })();
-        let sum = 0;
-        const N = 30_000;
-        for (let i = 0; i < N; i++)
-            sum += spinReels(rnd, { mode: 'many' }).totalPayX;
-        const rtp = sum / N;
-        assert.ok(rtp < 1, `チップ建てのRTPが 100% 以上（増殖する）: ${(rtp * 100).toFixed(1)}%`);
-        assert.ok(rtp > 0.85, `RTPが低すぎる（シンクが厳しすぎる）: ${(rtp * 100).toFixed(1)}%`);
+    test('フリーゲームは必ず終わる（再トリガーに上限は無いが暴走止めに触れない）', () => {
+        // 第80弾でRTPの帯チェックは廃止した。RTPが100%を大きく超えるのは**オーナー判断で許容**
+        // (現金化なし・1日の回転数上限が発行量の歯止め)。ここで守るべきは「1回が必ず終わる」こと。
+        // 第89弾で再トリガーの上限は撤廃したので、確かめるのは
+        // 「暴走止め(freeSpinsGuard)に張り付いていないこと」＝抽選が収束していること
+        let worst = 0;
+        for (let seed = 1; seed < 3000; seed++) {
+            const r = spinReels(seeded(seed), { mode: 'few' });
+            if (!r.free)
+                continue;
+            worst = Math.max(worst, r.free.spins.length);
+            assert.ok(r.free.spins.length < ENGINE_CFG.freeSpinsGuard, `フリーゲームが暴走止めまで回った(seed ${seed}, ${r.free.spins.length}回)`);
+            assert.equal(r.free.spins.length, Math.min(r.free.spinsTotal, ENGINE_CFG.freeSpinsGuard), `消化した回数と総回数が食い違う(seed ${seed})`);
+        }
+        // 期待上乗せが小さいので、実際には暴走止めのはるか手前で終わる
+        assert.ok(worst < ENGINE_CFG.freeSpinsGuard / 2, `再トリガーが収束していない(最長 ${worst} 回)`);
+    });
+    test('突入回数と上乗せ回数がスキャッターの個数どおり', () => {
+        // 3個=8 / 4個=12 / 5個=16、上乗せは 3個=+4 / 4個=+8 / 5個=+12(オーナー指定)
+        // assert.deepEqual は `asserts actual is T` なので、**同じ変数に使うと型が絞り込まれて**
+        // そのあとの数値インデックスが通らなくなる。検査はコピーに対して行う
+        assert.deepEqual({ ...ENGINE_CFG.freeSpinsByScatter }, { 3: 8, 4: 12, 5: 16 });
+        assert.deepEqual({ ...ENGINE_CFG.freeRetriggerByScatter }, { 3: 4, 4: 8, 5: 12 });
+        const startBy = ENGINE_CFG.freeSpinsByScatter;
+        const addBy = ENGINE_CFG.freeRetriggerByScatter;
+        // 4個/5個の突入と上乗せは実運用では稀なので、規則を見るために重みだけ上げる
+        const orig = ENGINE_CFG.scatterWeight;
+        ENGINE_CFG.scatterWeight = 40;
+        try {
+            let checkedStart = 0, checkedAdd = 0;
+            for (let seed = 1; seed < 6000 && (checkedStart < 20 || checkedAdd < 5); seed++) {
+                const r = spinReels(seeded(seed), { mode: 'few' });
+                if (!r.free)
+                    continue;
+                // 突入時の回数は「上乗せを引く前の総回数」＝ 最初のステップの残り+1
+                const first = r.free.spins[0];
+                const startSpins = first.spinsLeft + 1 - first.addedSpins;
+                assert.equal(startSpins, startBy[Math.min(r.scatters, 5)], `突入回数が違う(seed ${seed}, スキャッター ${r.scatters}個 → ${startSpins}回)`);
+                checkedStart++;
+                for (const sp of r.free.spins) {
+                    if (!sp.addedSpins) {
+                        assert.ok(sp.scatters < 3, '3個以上なのに上乗せが無い');
+                        continue;
+                    }
+                    assert.equal(sp.addedSpins, addBy[Math.min(sp.scatters, 5)], `上乗せ回数が違う(スキャッター ${sp.scatters}個 → +${sp.addedSpins})`);
+                    checkedAdd++;
+                }
+            }
+            assert.ok(checkedStart >= 20, `検体が足りない(突入 ${checkedStart} 件)`);
+            assert.ok(checkedAdd >= 5, `上乗せの検体が足りない(${checkedAdd} 件)`);
+        }
+        finally {
+            ENGINE_CFG.scatterWeight = orig;
+        }
+    });
+    test('スキャッターは1リールに1個までしか出ない', () => {
+        for (let seed = 1; seed < 4000; seed++) {
+            const r = spinReels(seeded(seed));
+            for (let reel = 0; reel < r.grid0.length; reel++) {
+                const n = r.grid0[reel].filter((k) => k === 'scatter').length;
+                assert.ok(n <= 1, `リール${reel + 1}にスキャッターが${n}個(seed ${seed})`);
+            }
+            // フリーゲーム中の盤面も同じ規則
+            for (const sp of r.free?.spins ?? []) {
+                for (let reel = 0; reel < sp.grid0.length; reel++) {
+                    const n = sp.grid0[reel].filter((k) => k === 'scatter').length;
+                    assert.ok(n <= 1, `フリー中のリール${reel + 1}にスキャッターが${n}個(seed ${seed})`);
+                }
+            }
+        }
     });
     test('チップ建ての賭け金は下限を下回れない', () => {
         const { s, e } = setup();
@@ -711,10 +1057,15 @@ describe('スロット', () => {
         assert.equal(r.ok, false, '下限未満で回せてしまう');
         assert.equal(s.balance('u1', 'chips'), 10_000_000, '失敗したのに残高が動いた');
     });
-    test('賭け金の選択肢は所持チップに合わせて刻みが変わる', () => {
+    test('賭け金の選択肢は所持チップに合わせて上限が開き、下限は常に残る', () => {
+        // 第106弾(オーナー指定): 所持が増えても**最低ベット(1,000)は必ず選べる**。
+        // 5万しか持っていなくても 1,000 で回せるし、大金持ちでも少額で遊べる
         const small = chipBetLadder(2_000_000);
         const big = chipBetLadder(1_300_000_000_000_000);
-        assert.ok(big[0] > small[0], '残高が増えても刻みが上がらない');
+        assert.equal(small[0], SLOT_CHIP_MIN_BET, '少額所持で下限から選べない');
+        assert.equal(big[0], SLOT_CHIP_MIN_BET, '高額所持で下限が消えている');
+        assert.ok(big[big.length - 1] > small[small.length - 1], '残高が増えても上限が開かない');
+        assert.deepEqual(chipBetLadder(50_000), [1000, 2000, 5000, 10000, 20000, 50000], '5万所持のはしごが想定と違う');
         for (const list of [small, big]) {
             assert.ok(list.length > 0, '選択肢が空');
             assert.ok(list.length <= 12, `選択肢が多すぎる: ${list.length}`);
@@ -766,14 +1117,16 @@ describe('スロット', () => {
             assert.equal(r.bet, good, '賭け金が丸められている');
         }
     });
-    test('1 日の回数上限を超えて回せない', () => {
+    test('回数制限は無効化されている（旧上限を超えて回せる）', () => {
+        // 第84弾: オーナー指示で1日の回数制限を撤廃(実際に回すとチップが減る体感のため)。
+        // 旧上限(300回)を超えても回せることを、上限+5回で確かめる
         const { s, e } = setup();
         s.post('u1', 'chips', 10_000_000_000, 'adjustment');
-        for (let i = 0; i < SLOT_CHIP_DAILY_SPINS; i++) {
-            assert.equal(e.spinSlot('u1', SLOT_CHIP_MIN_BET).ok, true, `${i + 1} 回目が失敗`);
+        for (let i = 0; i < SLOT_CHIP_DAILY_SPINS + 5; i++) {
+            const r = e.spinSlot('u1', SLOT_CHIP_MIN_BET);
+            assert.equal(r.ok, true, `${i + 1} 回目が失敗: ${r.error}`);
         }
-        const over = e.spinSlot('u1', SLOT_CHIP_MIN_BET);
-        assert.equal(over.ok, false, '上限を超えて回せてしまう');
+        assert.equal(s.audit().ok, true, '台帳が壊れた');
     });
     test('倍率は VIP ランクと連続ログインで上がる（要件の中核）', () => {
         const base = slotMultiplier(0, 0);
@@ -791,36 +1144,63 @@ describe('スロット', () => {
         const { s, e } = slotSetup();
         const v = e.slotState('u1');
         assert.ok(v.chipBets.length > 0, '賭け金の候補が空');
-        assert.equal(v.chipSpinsLeft, SLOT_CHIP_DAILY_SPINS, '残り回数が出ていない');
+        // 第84弾: 無制限。表示を壊さない巨大値が入っていること
+        assert.ok(v.chipSpinsLeft >= SLOT_CHIP_DAILY_SPINS, '残り回数が小さすぎる(制限が残っている疑い)');
         assert.equal(v.lines, 25, 'ライン数が出ていない');
         assert.ok(v.chips > 0, 'チップ残高が出ていない');
     });
-    test('長期の払い出しが設計値に収まる（チップの過剰発行を防ぐ）', () => {
-        // チップ建ては閉じたループなので、長期では必ず減る(RTP<100%)。
-        // 分散が大きいので抽選エンジンの期待値そのものを見る。
-        const rnd = (() => { let x = 20260822 >>> 0; return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; })();
-        let sum = 0;
-        const N = 30_000;
-        for (let i = 0; i < N; i++)
-            sum += spinReels(rnd, { mode: 'many' }).totalPayX;
-        const rtp = sum / N;
-        assert.ok(rtp < 1, `RTPが100%以上（増殖する）: ${(rtp * 100).toFixed(1)}%`);
-        assert.ok(rtp > 0.85, `RTPが低すぎる: ${(rtp * 100).toFixed(1)}%`);
+    test('台帳の1回上限(2^53)を超える大当たりでも支払いが失敗しない（分割記帳）', () => {
+        // 500Bベット×24万倍のような支払いは1回のpostでは例外になる。分割して全額届くこと
+        const { s, e } = slotSetup();
+        // 残高を9000兆×2に育てる(1回のpost上限があるので2回に分ける)
+        s.post('u1', 'chips', SAFE_POST, 'adjustment');
+        s.post('u1', 'chips', SAFE_POST, 'adjustment');
+        const before = s.balance('u1', 'chips');
+        // alwaysFirst は全マスWILDになる極端な乱数 → 25ライン全部が成立して数百倍になる。
+        // 賭け金は上限(50兆)いっぱいで回す。数百倍が乗れば台帳の1回上限(9000兆)を軽く超える
+        const bet = SLOT_CHIP_MAX_BET;
+        const r = e.spinSlot('u1', bet, alwaysFirst);
+        assert.equal(r.ok, true, r.error);
+        assert.ok(r.won > SAFE_POST, `検体として不足: 支払い ${r.won} が1回上限より小さい`);
+        assert.equal(s.balance('u1', 'chips'), before - bet + r.won, '分割記帳で金額がずれた');
+        assert.equal(s.audit().ok, true, '台帳が壊れた');
+    });
+    test('賭け金は50兆で頭打ちになる（例外でスピンが壊れない）', () => {
+        // 第88弾(オーナー指定): 50兆より上は所持の桁が増えるだけで体験が変わらないため刻まない。
+        // 台帳の1回上限(2^53)より十分小さいので、賭け金の控除が例外になることも無い。
+        const { s, e } = slotSetup();
+        s.post('u1', 'chips', SAFE_POST, 'adjustment');
+        s.post('u1', 'chips', SAFE_POST, 'adjustment');
+        // 上限ちょうどは通る
+        assert.equal(e.spinSlot('u1', SLOT_CHIP_MAX_BET, alwaysFirst).ok, true, '上限ちょうどが弾かれた');
+        // 上限を超える賭け金は、例外ではなく「エラーの返事」で断られる
+        const before = s.balance('u1', 'chips');
+        const r = e.spinSlot('u1', SLOT_CHIP_MAX_BET + 1, alwaysFirst);
+        assert.equal(r.ok, false, '上限超えの賭け金が通ってしまった');
+        assert.equal(s.balance('u1', 'chips'), before, '拒否されたのに残高が動いた');
+        // 選択肢のはしごも上限を超える段を出さない(所持がいくらあっても)
+        const ladder = chipBetLadder(s.balance('u1', 'chips'));
+        for (const v of ladder)
+            assert.ok(v <= SLOT_CHIP_MAX_BET, `はしごに上限超えの段がある: ${v}`);
+        assert.equal(ladder[ladder.length - 1], SLOT_CHIP_MAX_BET, '最大の段が50兆になっていない');
+    });
+    test('発行量の歯止めは「1日の回転数上限」である（高RTPでも台帳は壊れない）', () => {
+        // RTP>100% を許容したので、経済の歯止めは SLOT_CHIP_DAILY_SPINS だけになる。
+        // 大当たりを含む多数スピンでも台帳の整合が保たれることを確認する
+        const { s, e } = slotSetup();
+        s.post('u1', 'chips', 100_000_000, 'adjustment');
+        const rnd = (() => { let x = 424242 >>> 0; return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; })();
+        for (let i = 0; i < 60; i++) {
+            const r = e.spinSlot('u1', 10_000, rnd);
+            assert.equal(r.ok, true, r.error);
+        }
+        assert.equal(s.audit().ok, true, '台帳が壊れた');
     });
 });
 // ---------------------------------------------------------------------------
-// 広告(第66弾の土台)
-//
-// 報酬額は必ずサーバーが決める。クライアントに金額を持たせると要求し放題になる。
-// 回数上限と上限額を守らせるのがここの役目。
-// ---------------------------------------------------------------------------
+// 広告(第66弾の土台): クライアントは「見終わった」と伝えるだけで、報酬額はサーバーが決める
 describe('広告', () => {
-    const adSetup = () => {
-        const s = new MemoryStore();
-        const e = new Economy(s, () => Date.parse('2026-08-22T09:00:00Z'));
-        s.createUser('u1', 'A');
-        return { s, e };
-    };
+    const adSetup = () => setup();
     test('見るたびにチップがもらえ、1日の上限で止まる', () => {
         const { s, e } = adSetup();
         s.post('u1', 'chips', 1_000_000, 'adjustment');

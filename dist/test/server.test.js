@@ -599,4 +599,100 @@ describe('台帳', () => {
         assert.throws(() => l.post('u1', 'chips', 1.5, 'adjustment'), /整数ではありません/);
     });
 });
+// ---------------------------------------------------------------------------
+// 第150弾: 秘密卓(貯めた人にだけ存在が見える高額卓)
+// ---------------------------------------------------------------------------
+describe('秘密卓', () => {
+    const SECRET = {
+        ...TABLE,
+        tableId: 'secret-1',
+        name: '秘密の卓',
+        smallBlind: 2_500_000_000_000_000,
+        bigBlind: 5_000_000_000_000_000, // 5000兆 → バイインは 10京〜50京
+        secretUnlockAt: 100_000_000_000_000_000, // 10京
+    };
+    const harness = () => new Harness({ tables: [TABLE, SECRET], signupBonus: 100000 });
+    const tablesSeenBy = (c) => {
+        for (let i = c.received.length - 1; i >= 0; i--) {
+            const m = c.received[i];
+            if (m.t === 'lobby.tables')
+                return m.tables ?? [];
+        }
+        return null;
+    };
+    test('バイイン上限が 50京 になる', () => {
+        assert.equal(SECRET.maxBuyInBB * SECRET.bigBlind, 500_000_000_000_000_000);
+    });
+    test('50京のバイインはプロトコル検証を通る(2^53超でも整数なら可)', () => {
+        assert.equal(parseClientMessage({ t: 'table.sit', tableId: 'a', buyIn: 500_000_000_000_000_000 }).ok, true, '50京のバイインが弾かれている');
+        // 桁違いのゴミはやはり弾く(上限は1000京)
+        for (const v of [2e19, 1e30, NaN, Infinity, -1, 1.5]) {
+            assert.equal(parseClientMessage({ t: 'table.sit', tableId: 'a', buyIn: v }).ok, false, `${String(v)} が通った`);
+        }
+    });
+    test('最大ポット(300京)を勝った人でもオールインできる', () => {
+        // 極卓の最大ポットは 6人 × 50京 = 300京。それを勝つとスタックが 3e18 になる。
+        // ここが弾かれるとその人は二度とオールインできなくなる(第150弾の落とし穴)
+        const r = parseClientMessage({
+            t: 'hand.act', tableId: 'a', handId: 'h', action: 'raise', toAmount: 3e18,
+        });
+        assert.equal(r.ok, true, '300京のオールインが弾かれている');
+        assert.equal(r.ok && r.msg.t === 'hand.act' ? r.msg.toAmount : null, 3e18, '額が落ちている');
+    });
+    test('残高が足りない人のロビーには存在すら出ない', () => {
+        const h = harness();
+        const a = h.login('a');
+        a.send({ t: 'lobby.list' });
+        const tables = tablesSeenBy(a);
+        assert.ok(tables, 'lobby.tables が来ていない');
+        assert.equal(tables.some((t) => t.tableId === 'secret-1'), false, '解禁前なのに秘密卓が見えている');
+        assert.equal(tables.some((t) => t.tableId === 'test-1'), true, '通常卓まで消えている');
+    });
+    test('卓IDを知っていても解禁前は観戦できない', () => {
+        const h = harness();
+        const a = h.login('a');
+        a.send({ t: 'table.watch', tableId: 'secret-1' });
+        const err = a.lastError();
+        assert.ok(err, '解禁前の観戦がエラーになっていない');
+        assert.equal(err.code, 'NO_SUCH_TABLE', '存在を悟らせない応答になっていない');
+    });
+    test('CPU(ボット)は秘密卓が見えて、実際に着席できる', () => {
+        // 卓を足しただけではボットは来ない。持ち金(BOT_BANKROLL)と
+        // ボット側の着席上限(BOT_MAX_BUYIN)の両方が要る(第151弾)
+        const h = harness();
+        const b = h.login('CPU', 'bot_test01');
+        // 秘密卓が見えている
+        b.send({ t: 'lobby.list' });
+        const seen = (tablesSeenBy(b) ?? []).find((t) => t.tableId === 'secret-1');
+        assert.ok(seen, 'ボットに秘密卓が見えていない(持ち金が足りない)');
+        assert.equal(seen.minBuyIn, 100_000_000_000_000_000, '最低バイインが10京でない');
+        assert.equal(seen.maxBuyIn, 500_000_000_000_000_000, '最大バイインが50京でない');
+        // 実際に座れる
+        b.send({ t: 'table.watch', tableId: 'secret-1' });
+        b.send({ t: 'table.sit', tableId: 'secret-1', seat: 0, buyIn: seen.maxBuyIn });
+        assert.equal(b.lastError(), null, `着席に失敗した: ${JSON.stringify(b.lastError())}`);
+        const st = b.state();
+        assert.ok(st, 'テーブル状態が来ていない');
+        const seat0 = st.seats.find((x) => x && x.seat === 0);
+        assert.ok(seat0 && seat0.userId, 'ボットが座っていない');
+        assert.equal(seat0.stack, 500_000_000_000_000_000, '50京のスタックで座れていない');
+        // 座ったぶんは残高から引かれている(分割記帳が効いている)
+        assert.equal(h.lobby.store.balance('bot_test01', 'chips'), 2e18 - 500_000_000_000_000_000, '分割記帳の引き落としが合わない');
+    });
+    test('必要額を貯めると見えるようになり、減っても見え続ける', () => {
+        const h = harness();
+        const a = h.login('a');
+        // 10京ぶん積む(台帳1回の記帳上限があるので分割)
+        for (let i = 0; i < 12; i++) {
+            h.lobby.store.post(a.userId, 'chips', 9_000_000_000_000_000, 'adjustment', `test:${i}`);
+        }
+        a.send({ t: 'lobby.list' });
+        assert.equal((tablesSeenBy(a) ?? []).some((t) => t.tableId === 'secret-1'), true, '貯めたのに見えない');
+        // 使い切っても一度見えた卓は消えない
+        h.lobby.store.post(a.userId, 'chips', -9_000_000_000_000_000, 'adjustment', 'test:spend');
+        a.clear();
+        a.send({ t: 'lobby.list' });
+        assert.equal((tablesSeenBy(a) ?? []).some((t) => t.tableId === 'secret-1'), true, '減ったら消えてしまった');
+    });
+});
 //# sourceMappingURL=server.test.js.map
