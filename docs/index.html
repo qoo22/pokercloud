@@ -7775,7 +7775,7 @@ var PokerOffline = (() => {
     authSecret: ""
   };
   var MONEY_MAX_POST = 1e19;
-  var BOT_BANKROLL = 2e18;
+  var isBot = (userId) => userId.startsWith("bot_");
   var MAX_POST_CHUNKS = Math.ceil(MONEY_MAX_POST / SAFE_POST) + 2;
   var INVITE_CODES = {
     // --- 入門(マイクロ〜ハイ卓向け) ---
@@ -8232,6 +8232,7 @@ var PokerOffline = (() => {
         // 秘密卓のバイインは 50京まであり、台帳1回の記帳(2^53≈9007兆)を超える。
         // バカラの大口ベットやGMコードと同じく SAFE_POST で分割記帳する(第150弾)
         withdraw: (userId, amount, ref) => {
+          if (isBot(userId)) return true;
           if (!Number.isFinite(amount) || amount < 0 || amount > MONEY_MAX_POST) return false;
           if (this.store.balance(userId, "chips") < amount) return false;
           for (let left = amount, guard = 0; left > 0; guard++) {
@@ -8243,6 +8244,7 @@ var PokerOffline = (() => {
           return true;
         },
         deposit: (userId, amount, ref) => {
+          if (isBot(userId)) return;
           if (!Number.isFinite(amount) || amount <= 0) return;
           for (let left = Math.min(amount, MONEY_MAX_POST), guard = 0; left > 0; guard++) {
             if (guard > MAX_POST_CHUNKS) break;
@@ -8558,7 +8560,7 @@ var PokerOffline = (() => {
     canSeeTable(userId, room) {
       const need = room.secretUnlockAt;
       if (need <= 0) return true;
-      if (userId.startsWith("bot_")) return this.store.balance(userId, "chips") >= need;
+      if (isBot(userId)) return true;
       if (this.store.hasReceipt(`unlock:${room.tableId}:${userId}`)) return true;
       if (this.store.balance(userId, "chips") < need) return false;
       this.store.savePurchase({
@@ -9096,14 +9098,8 @@ var PokerOffline = (() => {
       }
       const isNew = this.store.getUser(userId) === null;
       this.store.upsertUser(userId, name);
-      if (isNew) {
-        const bonus = userId.startsWith("bot_") ? BOT_BANKROLL : this.cfg.signupBonus;
-        for (let left = bonus, guard = 0; left > 0; guard++) {
-          if (guard > MAX_POST_CHUNKS) break;
-          const c = Math.min(left, SAFE_POST);
-          this.store.post(userId, "chips", c, "signup_bonus");
-          left -= c;
-        }
+      if (isNew && !isBot(userId)) {
+        this.store.post(userId, "chips", this.cfg.signupBonus, "signup_bonus");
         this.store.post(userId, "gold", this.cfg.signupGold, "signup_bonus");
       }
       const token = this.makeResumeToken(userId);

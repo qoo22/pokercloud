@@ -657,8 +657,9 @@ describe('秘密卓', () => {
         assert.equal(err.code, 'NO_SUCH_TABLE', '存在を悟らせない応答になっていない');
     });
     test('CPU(ボット)は秘密卓が見えて、実際に着席できる', () => {
-        // 卓を足しただけではボットは来ない。持ち金(BOT_BANKROLL)と
-        // ボット側の着席上限(BOT_MAX_BUYIN)の両方が要る(第151弾)
+        // ボットは台帳を持たない「ハウスのNPC」(第152弾)。
+        // 200京を配る方式だと1人223行の台帳が積まれ、3〜6分で入れ替わるボットが
+        // DBを膨らませて切断の原因になっていた。入出金を素通しして行を増やさない
         const h = harness();
         const b = h.login('CPU', 'bot_test01');
         // 秘密卓が見えている
@@ -676,8 +677,13 @@ describe('秘密卓', () => {
         const seat0 = st.seats.find((x) => x && x.seat === 0);
         assert.ok(seat0 && seat0.userId, 'ボットが座っていない');
         assert.equal(seat0.stack, 500_000_000_000_000_000, '50京のスタックで座れていない');
-        // 座ったぶんは残高から引かれている(分割記帳が効いている)
-        assert.equal(h.lobby.store.balance('bot_test01', 'chips'), 2e18 - 500_000_000_000_000_000, '分割記帳の引き落としが合わない');
+        // 台帳には1行も積まれない(これが切断の原因だった)
+        assert.equal(h.lobby.store.balance('bot_test01', 'chips'), 0, 'ボットが残高を持ってしまっている');
+        assert.equal(h.lobby.store.history('bot_test01', 50).length, 0, 'ボットで台帳が増えている(3〜6分で入れ替わるのでDBが膨らむ)');
+        // 人間は従来どおり初回ボーナスを受け取る
+        const human = h.login('人間', 'u_human01');
+        assert.equal(h.lobby.store.balance('u_human01', 'chips'), 100000, '人間のボーナスが消えている');
+        assert.ok(human.userId);
     });
     test('必要額を貯めると見えるようになり、減っても見え続ける', () => {
         const h = harness();

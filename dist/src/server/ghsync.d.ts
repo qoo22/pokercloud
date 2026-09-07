@@ -24,5 +24,6 @@ export declare function bandwidthToday(): {
 export declare function restoreFromGitHub(dbPath: string): Promise<void>;
 /** スナップショットを取って GitHub へプッシュ。結果を文字列で返す(ログ/管理エンドポイント用) */
 export declare function pushToGitHub(store: Store, dbPath: string): Promise<string>;
+export declare function startAutoPrune(store: Store): void;
 /** 定期バックアップ + データ掃除 + 終了時の駆け込みプッシュ(タイマーは常に1本) */
 export declare function startAutoBackup(store: Store, dbPath: string): void;

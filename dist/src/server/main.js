@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { Gateway } from './gateway.js';
 import { SqliteStore, MemoryStore } from './store.js';
-import { restoreFromGitHub, startAutoBackup, pushToGitHub, bandwidthToday } from './ghsync.js';
+import { restoreFromGitHub, startAutoBackup, startAutoPrune, pushToGitHub, bandwidthToday } from './ghsync.js';
 const here = dirname(fileURLToPath(import.meta.url));
 // クライアント HTML の置き場。
 // 既定はローカル開発向けで dist/src/server → outputs 直下。
@@ -229,6 +229,7 @@ const gateway = new Gateway({
 });
 const actual = await gateway.listen();
 startAutoBackup(store, dbPath);
+startAutoPrune(store); // バックアップの設定に関係なくDBの掃除は回す(第152弾)
 console.log(`ポーカーサーバーを起動しました`);
 console.log(`  クライアント : http://localhost:${actual}/poker-client.html`);
 console.log(`  WebSocket    : ws://localhost:${actual}`);

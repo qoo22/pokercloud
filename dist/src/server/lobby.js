@@ -25,11 +25,16 @@ const DEFAULTS = {
  */
 const MONEY_MAX_POST = 1e19;
 /**
- * ボットの持ち金(第151弾)。人間と同じ 50,000 だと高額卓の最低バイインに
- * 届かず、ハイローラー以上の卓に**永久に誰も座らない**。極(最大50京)まで
- * 座れるだけ持たせる。ボットが負ければその分は人間の取り分になる
+ * ボット判定(第152弾)。
+ *
+ * ボットは台帳を持たない「ハウスのNPC」として扱う。
+ * 第151弾では高額卓に座らせるために 200京 を配ったが、台帳1行の上限(2^53)の
+ * せいで**1人あたり223行**になり、3〜6分で入れ替わるボットが毎時9.5万行を
+ * 積み上げてDBとバックアップを膨らませていた(切断の原因)。
+ * 持たせる代わりに入出金を素通しすれば、行は1行も増えず卓にも座れる。
+ * 経済的な意味は同じ(ボットの持ち金はもともと蛇口から出ていた)
  */
-const BOT_BANKROLL = 2e18; // 200京
+const isBot = (userId) => userId.startsWith('bot_');
 const MAX_POST_CHUNKS = Math.ceil(MONEY_MAX_POST / SAFE_POST) + 2;
 /** 招待コード：入力するとチップがもらえる（1ユーザー1回まで） */
 const INVITE_CODES = {
@@ -297,6 +302,8 @@ export class Lobby {
             // 秘密卓のバイインは 50京まであり、台帳1回の記帳(2^53≈9007兆)を超える。
             // バカラの大口ベットやGMコードと同じく SAFE_POST で分割記帳する(第150弾)
             withdraw: (userId, amount, ref) => {
+                if (isBot(userId))
+                    return true; // ハウスのNPC。台帳は通さない
                 if (!Number.isFinite(amount) || amount < 0 || amount > MONEY_MAX_POST)
                     return false;
                 if (this.store.balance(userId, 'chips') < amount)
@@ -312,6 +319,8 @@ export class Lobby {
                 return true;
             },
             deposit: (userId, amount, ref) => {
+                if (isBot(userId))
+                    return; // ハウスのNPC。台帳は通さない
                 if (!Number.isFinite(amount) || amount <= 0)
                     return;
                 for (let left = Math.min(amount, MONEY_MAX_POST), guard = 0; left > 0; guard++) {
@@ -656,9 +665,9 @@ export class Lobby {
         const need = room.secretUnlockAt;
         if (need <= 0)
             return true;
-        // ボットは使い捨てのユーザーなので到達記録は残さない(台帳が膨れるだけ)
-        if (userId.startsWith('bot_'))
-            return this.store.balance(userId, 'chips') >= need;
+        // ボットは残高を持たない(ハウスのNPC)。卓を埋めるため常に見える
+        if (isBot(userId))
+            return true;
         if (this.store.hasReceipt(`unlock:${room.tableId}:${userId}`))
             return true;
         if (this.store.balance(userId, 'chips') < need)
@@ -1234,16 +1243,9 @@ export class Lobby {
         }
         const isNew = this.store.getUser(userId) === null;
         this.store.upsertUser(userId, name);
-        if (isNew) {
-            // ボットは高額卓にも座れるだけ持たせる(空卓を作らないため)
-            const bonus = userId.startsWith('bot_') ? BOT_BANKROLL : this.cfg.signupBonus;
-            for (let left = bonus, guard = 0; left > 0; guard++) {
-                if (guard > MAX_POST_CHUNKS)
-                    break;
-                const c = Math.min(left, SAFE_POST);
-                this.store.post(userId, 'chips', c, 'signup_bonus');
-                left -= c;
-            }
+        // ボットには配らない(台帳を通さずに卓へ座る)。人間だけが初回ボーナスを受け取る
+        if (isNew && !isBot(userId)) {
+            this.store.post(userId, 'chips', this.cfg.signupBonus, 'signup_bonus');
             this.store.post(userId, 'gold', this.cfg.signupGold, 'signup_bonus');
         }
         const token = this.makeResumeToken(userId);

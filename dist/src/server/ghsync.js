@@ -194,6 +194,28 @@ export async function pushToGitHub(store, dbPath) {
     }
 }
 let autoBackupArmed = false;
+/**
+ * データ掃除(第152弾)。以前は startAutoBackup の中にあり、GitHubバックアップを
+ * 設定していない環境では**一度も走らなかった**。バックアップの有無に関係なく
+ * 掃除だけは回す(2時間見ていないボットのデータとハンド履歴を捨ててDBを小さく保つ)
+ */
+let pruneArmed = false;
+export function startAutoPrune(store) {
+    if (pruneArmed || !store.pruneBots)
+        return;
+    pruneArmed = true;
+    const t = setInterval(() => {
+        try {
+            const removed = store.pruneBots?.(2 * 3600_000) ?? 0;
+            if (removed > 0)
+                console.log(`データ掃除: ${removed}行削除`);
+        }
+        catch (e) {
+            console.warn('データ掃除に失敗:', e.message);
+        }
+    }, 15 * 60_000);
+    t.unref?.();
+}
 /** 定期バックアップ + データ掃除 + 終了時の駆け込みプッシュ(タイマーは常に1本) */
 export function startAutoBackup(store, dbPath) {
     const c = cfg();
