@@ -287,7 +287,14 @@ export class Lobby {
     tourSeq = 0;
     tourPruneAt = new Map();
     sessions = new Map();
+    /**
+     * 再接続トークンの**キャッシュ**(第152弾その2)。hello のたびに1件増えるのに
+     * 消していなかったため、3〜6分で入れ替わるボットだけで毎日1万件積み上がっていた
+     * (常駐プロセスのメモリリーク)。トークンは署名付きで verifyResumeToken() だけでも
+     * 復帰できるので、ここは上限付きの先入れ先出しキャッシュで構わない
+     */
     resumeTokens = new Map();
+    static RESUME_CACHE_MAX = 3000;
     cfg;
     constructor(cfg, transport, clock = realScheduler) {
         this.transport = transport;
@@ -653,6 +660,18 @@ export class Lobby {
         }
         return undefined;
     }
+    /** 再接続トークンを覚える。ボットは復帰しないので覚えず、古い分から捨てる */
+    rememberResumeToken(token, userId, name) {
+        if (userId.startsWith('bot_'))
+            return;
+        this.resumeTokens.set(token, { userId, name });
+        while (this.resumeTokens.size > Lobby.RESUME_CACHE_MAX) {
+            const oldest = this.resumeTokens.keys().next();
+            if (oldest.done)
+                break;
+            this.resumeTokens.delete(oldest.value);
+        }
+    }
     listRooms() {
         // プライベート卓はロビー一覧から除外（コードを知っている人だけが入れる）
         return [...this.rooms.entries()].filter(([id]) => !this.privateIds.has(id)).map(([, r]) => r);
@@ -1007,7 +1026,7 @@ export class Lobby {
                 const u = this.store.getUser(userId);
                 const name = u?.name ?? `Player-${userId.slice(-4)}`;
                 const token = this.makeResumeToken(userId);
-                this.resumeTokens.set(token, { userId, name });
+                this.rememberResumeToken(token, userId, name);
                 s.userId = userId;
                 s.name = name;
                 s.resumeToken = token;
@@ -1099,7 +1118,7 @@ export class Lobby {
                     s.name = name;
                     this.store.upsertUser(s.userId, name);
                     if (s.resumeToken)
-                        this.resumeTokens.set(s.resumeToken, { userId: s.userId, name });
+                        this.rememberResumeToken(s.resumeToken, s.userId, name);
                 }
                 for (const room of this.rooms.values())
                     room.setStyle(s.userId, name, bracelet);
@@ -1249,7 +1268,7 @@ export class Lobby {
             this.store.post(userId, 'gold', this.cfg.signupGold, 'signup_bonus');
         }
         const token = this.makeResumeToken(userId);
-        this.resumeTokens.set(token, { userId, name });
+        this.rememberResumeToken(token, userId, name);
         s.userId = userId;
         s.name = name;
         s.resumeToken = token;

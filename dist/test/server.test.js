@@ -701,4 +701,37 @@ describe('秘密卓', () => {
         assert.equal((tablesSeenBy(a) ?? []).some((t) => t.tableId === 'secret-1'), true, '減ったら消えてしまった');
     });
 });
+// ---------------------------------------------------------------------------
+// 第152弾: 常駐プロセスのメモリリーク(切断の原因)
+// ---------------------------------------------------------------------------
+describe('入退室を繰り返してもメモリが増え続けない', () => {
+    test('再接続トークンのキャッシュに上限がある', () => {
+        const h = new Harness({ tables: [TABLE], signupBonus: 100000 });
+        // 人間が何度もログインしてもキャッシュは上限で頭打ちになる
+        for (let i = 0; i < 3200; i++)
+            h.login('P' + i, 'u_leak' + i);
+        const cache = h.lobby.resumeTokens;
+        assert.ok(cache.size <= 3000, `キャッシュが上限を超えている: ${cache.size}`);
+    });
+    test('ボットは再接続しないのでキャッシュに載せない', () => {
+        const h = new Harness({ tables: [TABLE], signupBonus: 100000 });
+        for (let i = 0; i < 500; i++)
+            h.login('CPU' + i, 'bot_leak' + i);
+        const cache = h.lobby.resumeTokens;
+        assert.equal(cache.size, 0, `ボットでキャッシュが増えている: ${cache.size}`);
+    });
+    test('卓を去った人のコスメ設定は残さない', () => {
+        const h = new Harness({ tables: [TABLE], signupBonus: 100000 });
+        const room = h.lobby.getRoom('test-1');
+        assert.ok(room);
+        const cos = room.cosmetics;
+        for (let i = 0; i < 200; i++) {
+            const c = h.login('P' + i, 'u_cos' + i);
+            c.send({ t: 'table.watch', tableId: 'test-1' });
+            c.send({ t: 'user.style', bracelet: 'b1' });
+            c.send({ t: 'table.leave', tableId: 'test-1' });
+        }
+        assert.equal(cos.size, 0, `去った人のコスメが残っている: ${cos.size}`);
+    });
+});
 //# sourceMappingURL=server.test.js.map

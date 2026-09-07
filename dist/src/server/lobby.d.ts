@@ -48,7 +48,14 @@ export declare class Lobby {
     private tourSeq;
     private tourPruneAt;
     private sessions;
+    /**
+     * 再接続トークンの**キャッシュ**(第152弾その2)。hello のたびに1件増えるのに
+     * 消していなかったため、3〜6分で入れ替わるボットだけで毎日1万件積み上がっていた
+     * (常駐プロセスのメモリリーク)。トークンは署名付きで verifyResumeToken() だけでも
+     * 復帰できるので、ここは上限付きの先入れ先出しキャッシュで構わない
+     */
     private resumeTokens;
+    private static readonly RESUME_CACHE_MAX;
     private cfg;
     constructor(cfg: LobbyConfig, transport: Transport, clock?: Scheduler);
     private bank;
@@ -115,6 +122,8 @@ export declare class Lobby {
     /** ハンド結果を受けて、永続化・ミッション・パス経験値を進める */
     private onHandResult;
     getRoom(tableId: string): Room | undefined;
+    /** 再接続トークンを覚える。ボットは復帰しないので覚えず、古い分から捨てる */
+    private rememberResumeToken;
     listRooms(): Room[];
     /**
      * 秘密卓(第150弾)を見られるか。指定額のチップを持っている人にだけ存在を明かす。

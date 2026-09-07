@@ -158,6 +158,10 @@ export class Room {
         const stillHere = [...this.members.values()].some((x) => x.userId === m.userId);
         if (stillHere)
             return;
+        // 卓に残らない人のコスメ設定は捨てる(第152弾その2)。
+        // 消していなかったため、出入りするだけでユーザーぶん増え続けていた
+        if (!this.seatOfUser(m.userId))
+            this.cosmetics.delete(m.userId);
         const seat = this.seatOfUser(m.userId);
         if (!seat)
             return;

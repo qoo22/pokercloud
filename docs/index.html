@@ -5922,6 +5922,7 @@ var PokerOffline = (() => {
       this.members.delete(sessionId);
       const stillHere = [...this.members.values()].some((x) => x.userId === m.userId);
       if (stillHere) return;
+      if (!this.seatOfUser(m.userId)) this.cosmetics.delete(m.userId);
       const seat = this.seatOfUser(m.userId);
       if (!seat) return;
       seat.disconnectedAt = this.clock.now();
@@ -8218,6 +8219,12 @@ var PokerOffline = (() => {
       __publicField(this, "tourSeq", 0);
       __publicField(this, "tourPruneAt", /* @__PURE__ */ new Map());
       __publicField(this, "sessions", /* @__PURE__ */ new Map());
+      /**
+       * 再接続トークンの**キャッシュ**(第152弾その2)。hello のたびに1件増えるのに
+       * 消していなかったため、3〜6分で入れ替わるボットだけで毎日1万件積み上がっていた
+       * (常駐プロセスのメモリリーク)。トークンは署名付きで verifyResumeToken() だけでも
+       * 復帰できるので、ここは上限付きの先入れ先出しキャッシュで構わない
+       */
       __publicField(this, "resumeTokens", /* @__PURE__ */ new Map());
       __publicField(this, "cfg");
       __publicField(this, "bank");
@@ -8550,6 +8557,16 @@ var PokerOffline = (() => {
       }
       return void 0;
     }
+    /** 再接続トークンを覚える。ボットは復帰しないので覚えず、古い分から捨てる */
+    rememberResumeToken(token, userId, name) {
+      if (userId.startsWith("bot_")) return;
+      this.resumeTokens.set(token, { userId, name });
+      while (this.resumeTokens.size > _Lobby.RESUME_CACHE_MAX) {
+        const oldest = this.resumeTokens.keys().next();
+        if (oldest.done) break;
+        this.resumeTokens.delete(oldest.value);
+      }
+    }
     listRooms() {
       return [...this.rooms.entries()].filter(([id]) => !this.privateIds.has(id)).map(([, r]) => r);
     }
@@ -8867,7 +8884,7 @@ var PokerOffline = (() => {
           const u = this.store.getUser(userId);
           const name = u?.name ?? `Player-${userId.slice(-4)}`;
           const token = this.makeResumeToken(userId);
-          this.resumeTokens.set(token, { userId, name });
+          this.rememberResumeToken(token, userId, name);
           s.userId = userId;
           s.name = name;
           s.resumeToken = token;
@@ -8962,7 +8979,7 @@ var PokerOffline = (() => {
           if (name) {
             s.name = name;
             this.store.upsertUser(s.userId, name);
-            if (s.resumeToken) this.resumeTokens.set(s.resumeToken, { userId: s.userId, name });
+            if (s.resumeToken) this.rememberResumeToken(s.resumeToken, s.userId, name);
           }
           for (const room of this.rooms.values()) room.setStyle(s.userId, name, bracelet);
           for (const t of this.tournaments.values()) t.setStyle(s.userId, name, bracelet);
@@ -9103,7 +9120,7 @@ var PokerOffline = (() => {
         this.store.post(userId, "gold", this.cfg.signupGold, "signup_bonus");
       }
       const token = this.makeResumeToken(userId);
-      this.resumeTokens.set(token, { userId, name });
+      this.rememberResumeToken(token, userId, name);
       s.userId = userId;
       s.name = name;
       s.resumeToken = token;
@@ -9154,6 +9171,7 @@ var PokerOffline = (() => {
       return this.sessions.size;
     }
   };
+  __publicField(_Lobby, "RESUME_CACHE_MAX", 3e3);
   // --- 引き継ぎコード -------------------------------------------------------
   //
   // このアプリはログイン(メール/パスワード)を作らないゲスト方式なので、
