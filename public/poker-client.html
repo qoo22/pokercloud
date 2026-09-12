@@ -2923,12 +2923,13 @@
     <button class="fab" id="fab-info" title="公正性（Provably Fair）" aria-label="公正性">🛡️</button>
     <button class="fab" id="fab-log" title="ログ" aria-label="ログ">📜</button>
     <button class="fab" id="fab-seat" title="席の操作" aria-label="席の操作">🪑</button>
+    <button class="fab" id="fab-felt" title="卓の生地" aria-label="卓の生地">🎨</button>
     <button class="fab" id="fab-lobby" title="ロビーへ" aria-label="ロビーへ">🚪</button>
   </div>
   <div id="side-backdrop"></div>
   <div class="side" id="side">
     <button class="chip" id="side-close">✕ 閉じる</button>
-    <details class="panel" id="felt-panel">
+    <details class="panel" id="felt-panel" open>
       <summary>\u5353\u306E\u751F\u5730\uFF08\u30D5\u30A7\u30EB\u30C8\uFF09</summary>
       <div class="felt-row" id="felt-pick"></div>
       <p class="felt-note">\u898B\u305F\u76EE\u3060\u3051\u306E\u8A2D\u5B9A\u3067\u3059\u3002\u300C\u81EA\u52D5\u300D\u306F\u5353\u306E\u683C\u306B\u5408\u308F\u305B\u3066\u5909\u308F\u308A\u307E\u3059</p>
@@ -4339,6 +4340,7 @@
     });
     feltApply();
   }
+  try { window.__feltBuild = feltBuild; } catch (e) {}
 
   function renderLobby() {
     $("tables").innerHTML = tables.map(
@@ -10151,6 +10153,11 @@
   document.getElementById('fab-info').onclick = function(){ openSide('fair-panel'); };
   document.getElementById('fab-log').onclick = function(){ openSide('log-panel'); };
   document.getElementById('fab-seat').onclick = function(){ openSide('seat-panel'); };
+  document.getElementById('fab-felt').onclick = function(){
+    // 卓に入る前に押された場合にも見本が出るよう、開く直前に組み立てる
+    try { window.__feltBuild && window.__feltBuild(); } catch (e) {}
+    openSide('felt-panel');
+  };
   document.getElementById('fab-lobby').onclick = function(){ closeSide(); document.getElementById('btn-lobby').click(); };
   // ===== 全画面表示 =====
   function __isStandalone(){
