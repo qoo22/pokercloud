@@ -1151,6 +1151,11 @@
   body.syms-classic #slot .sl-cell.wd::after{display:none}
   body.syms-classic .sl-lockwild::after{display:none}
   body.syms-classic #slot .sl-cell.wd{box-shadow:none}
+  /* フリーゲーム中はWILDの紫枠とリボンを出さない(第159弾)。
+     金の固定枠(.held)と重なって、絵柄の上に謎の紫が乗ったように見えていた */
+  body.fs-play #slot .sl-cell.wd::after{display:none}
+  body.fs-play #slot .sl-cell.wd{box-shadow:none}
+  body.fs-play .sl-lockwild::after{display:none}
   /* リール窓の下: 現在のスキンの全役名(第134弾)。スキンを替えると名前も入れ替わる */
   .sl-symlegend{display:flex;flex-wrap:wrap;gap:4px 8px;justify-content:center;margin:7px 4px 2px}
   .sl-symlegend span{display:inline-flex;align-items:center;gap:3px;font-size:9.5px;color:#cfc2a0;
@@ -6565,7 +6570,10 @@
   var slotHeldCells = new Set();
   var slotFreshCells = new Set();
   // オートスピン(第77弾)。left>0 のあいだ自動で回す
+  // left は残り回数。Infinity なら「止めるまで回し続ける」(第159弾)
   var slotAuto = { left: 0, stopOnFree: true, stopOnBig: false, stopping: false };
+  /** 残り回数の表示。無限は ∞ と出す(Infinity と出ると意味が分からない) */
+  const slotAutoLeftText = () => (slotAuto.left === Infinity ? "\u221E" : String(slotAuto.left));
   /** 1回まわす処理。renderSlot のたびに最新の賭け金を閉じ込めて差し替わる */
   var slotDoSpin = null;
   /**
@@ -7972,7 +7980,7 @@
         <button class="spin-btn king ${slotAutoRunning() ? "autorun" : (have < cost ? "short" : "idle")}${slotSpinning && !slotAutoRunning() ? " busy" : ""}" id="slot-spin"
           ${slotAutoRunning() || canSpin ? "" : "disabled"}>
           ${slotAutoRunning()
-            ? "<b>AUTO " + slotAuto.left + "</b><span>" + (slotAuto.stopping ? "\u3053\u306E1\u56DE\u3067\u505C\u6B62" : "\u30BF\u30C3\u30D7\u3067\u505C\u6B62") + "</span>"
+            ? "<b>AUTO " + slotAutoLeftText() + "</b><span>" + (slotAuto.stopping ? "\u3053\u306E1\u56DE\u3067\u505C\u6B62" : "\u30BF\u30C3\u30D7\u3067\u505C\u6B62") + "</span>"
             : slotSpinning ? "<b>\u56DE\u8EE2\u4E2D\u2026</b>"
             : have < cost ? "<b>" + (isChips ? "\u30C1\u30C3\u30D7\u4E0D\u8DB3" : "\u30B4\u30FC\u30EB\u30C9\u4E0D\u8DB3") + "</b>"
             : "<b>\u30B9\u30D4\u30F3</b><span>\u6D88\u8CBB " + coin + " " + fmt(cost) + "</span>"}
@@ -9007,7 +9015,7 @@
     b.classList.toggle("autorun", slotAutoRunning());
     if (slotAutoRunning()) {
       b.disabled = false;   // 停止操作を受けるため押せるままにする
-      b.innerHTML = "<b>AUTO " + slotAuto.left + "</b><span>"
+      b.innerHTML = "<b>AUTO " + slotAutoLeftText() + "</b><span>"
         + (slotAuto.stopping ? "\u3053\u306E1\u56DE\u3067\u505C\u6B62" : "\u30BF\u30C3\u30D7\u3067\u505C\u6B62") + "</span>";
     }
   }
@@ -9021,7 +9029,8 @@
     el.innerHTML = '<div class="am-card">'
       + '<h3>\u30AA\u30FC\u30C8\u30B9\u30D4\u30F3</h3>'
       + '<div class="am-counts" id="am-counts">'
-      + [10, 25, 50, 100].map((n) => '<button data-n="' + n + '"' + (n === count ? ' class="on"' : "") + '>' + n + "</button>").join("")
+      + [10, 25, 50, 100, Infinity].map((n) => '<button data-n="' + n + '"' + (n === count ? ' class="on"' : "")
+          + '>' + (n === Infinity ? "\u221E" : n) + "</button>").join("")
       + '</div>'
       + '<div class="am-opts">'
       + '<label><input type="checkbox" id="am-free" ' + (slotAuto.stopOnFree ? "checked" : "") + '>'
@@ -9031,7 +9040,7 @@
       + '</div>'
       + '<div class="am-btns"><button id="am-cancel">\u3084\u3081\u308B</button>'
       + '<button class="primary" id="am-go">\u958B\u59CB</button></div>'
-      + '<p class="am-note">\u30C1\u30C3\u30D7\u4E0D\u8DB3\u3084\u901A\u4FE1\u65AD\u3067\u3082\u81EA\u52D5\u3067\u6B62\u307E\u308A\u307E\u3059\u3002'
+      + '<p class="am-note">\u221E \u306F\u30D5\u30EA\u30FC\u30B2\u30FC\u30E0\u3092\u6328\u3093\u3067\u3082\u6B62\u307E\u3089\u305A\u3001\u505C\u6B62\u3092\u62BC\u3059\u307E\u3067\u56DE\u3057\u7D9A\u3051\u307E\u3059\u3002\u30C1\u30C3\u30D7\u4E0D\u8DB3\u3084\u901A\u4FE1\u65AD\u3067\u3082\u81EA\u52D5\u3067\u6B62\u307E\u308A\u307E\u3059\u3002'
       + '\u505C\u6B62\u3092\u62BC\u3057\u305F\u5834\u5408\u306F\u3001\u3044\u307E\u306E1\u56DE\u3092\u6700\u5F8C\u307E\u3067\u51E6\u7406\u3057\u3066\u304B\u3089\u6B62\u307E\u308A\u307E\u3059\u3002</p>'
       + '</div>';
     document.body.appendChild(el);
@@ -9039,13 +9048,17 @@
       b.onclick = () => {
         count = Number(b.dataset.n);
         each2(el, "[data-n]", (x) => x.classList.toggle("on", Number(x.dataset.n) === count));
+        // 無限を選んだら「フリーで停止」は外す(止まったら無限の意味がない)
+        const fb = el.querySelector("#am-free");
+        if (fb && count === Infinity) { fb.checked = false; fb.disabled = true; }
+        else if (fb) fb.disabled = false;
       };
     });
     const close = () => el.remove();
     el.querySelector("#am-cancel").onclick = close;
     el.onclick = (e) => { if (e.target === el) close(); };
     el.querySelector("#am-go").onclick = () => {
-      slotAuto.stopOnFree = el.querySelector("#am-free").checked;
+      slotAuto.stopOnFree = count !== Infinity && el.querySelector("#am-free").checked;
       slotAuto.stopOnBig = el.querySelector("#am-big").checked;
       slotAuto.left = count;
       slotAuto.stopping = false;
@@ -9104,7 +9117,7 @@
       slotAutoStop("\u56DE\u305B\u306A\u304F\u306A\u308A\u307E\u3057\u305F");
       return;
     }
-    slotAuto.left--;
+    if (slotAuto.left !== Infinity) slotAuto.left--;
     slotSetAutoLabel();
     // btn.click() は「AUTO中は停止」に解釈されるので、スピン処理を直接呼ぶ
     if (slotDoSpin) slotDoSpin();
