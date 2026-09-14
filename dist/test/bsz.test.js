@@ -263,4 +263,69 @@ describe('WINNING TUNNEL: 抽選の健全性', () => {
         assert.ok(rate > 70 && rate < 140, `フリー突入が帯を外れた: 1/${rate.toFixed(0)}`);
     });
 });
+describe('WINNING TUNNEL: ジョーカー戻り(リバース)', () => {
+    test('演出は結果を変えない(hit と freeEntered は必ず一致する)', () => {
+        const rnd = seeded(1234);
+        let hit = 0, gase = 0;
+        for (let i = 0; i < 120000; i++) {
+            const o = bszSpin(rnd);
+            if (!o.reverse)
+                continue;
+            if (o.reverse.hit) {
+                assert.equal(o.freeEntered, true, '当たり演出なのにフリーに入っていない');
+                assert.equal(o.grid0[4], 'joker', '当たり演出なのに中央がジョーカーでない');
+                hit++;
+            }
+            else {
+                assert.equal(o.freeEntered, false, 'ガセ演出なのにフリーに入っている');
+                assert.notEqual(o.grid0[4], 'joker', 'ガセ演出なのに中央がジョーカー');
+                gase++;
+            }
+        }
+        assert.ok(hit > 0 && gase > 0, `当たり${hit} / ガセ${gase}`);
+    });
+    test('逆回転はボーナス確定ではない(ガセの方が多い)', () => {
+        const rnd = seeded(4321);
+        const N = 150000;
+        let rev = 0, revHit = 0;
+        for (let i = 0; i < N; i++) {
+            const o = bszSpin(rnd);
+            if (!o.reverse)
+                continue;
+            rev++;
+            if (o.reverse.hit)
+                revHit++;
+        }
+        const p = revHit / rev;
+        // 逆回転した時点で当たりが確定してしまうと、焦らしが成立しない
+        assert.ok(p > 0.15 && p < 0.6, `逆回転の当たり率が極端: ${(p * 100).toFixed(0)}%`);
+        assert.ok(rev / N > 0.005, '逆回転がほとんど出ない');
+    });
+    test('フリーの一部は戻り演出を使わず直で止まる', () => {
+        const rnd = seeded(777);
+        let free = 0, direct = 0;
+        for (let i = 0; i < 120000; i++) {
+            const o = bszSpin(rnd);
+            if (!o.freeEntered)
+                continue;
+            free++;
+            if (!o.reverse)
+                direct++;
+        }
+        assert.ok(free > 0);
+        const r = direct / free;
+        assert.ok(r > 0.2 && r < 0.8, `直停止の割合が極端: ${(r * 100).toFixed(0)}%`);
+    });
+    test('戻り演出を足してもRTPは帯のまま', () => {
+        const N = 60000;
+        let pay = 0;
+        for (let s = 0; s < 3; s++) {
+            const rnd = seeded(9100 + s * 131);
+            for (let i = 0; i < N / 3; i++)
+                pay += bszSpin(rnd).totalPayX;
+        }
+        const rtp = pay / N;
+        assert.ok(rtp > 0.9 && rtp < 1.1, `RTPが帯を外れた: ${(rtp * 100).toFixed(1)}%`);
+    });
+});
 //# sourceMappingURL=bsz.test.js.map

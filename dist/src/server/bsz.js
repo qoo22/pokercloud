@@ -64,6 +64,27 @@ export const BSZ_ANY_PAY = {
     bar: { 3: 1, 4: 3, 5: 15, 6: 60, 7: 240, 8: 1200, 9: 6000 },
     any7: { 3: 1, 4: 4, 5: 20, 6: 80, 7: 320, 8: 2000, 9: 8000 },
 };
+/**
+ * 「ジョーカー戻り(リバース)」の出し方(第162弾)。
+ *
+ * 中央リールだけを逆回転させてジョーカーを中央へ引き戻す演出。
+ * **これはボーナス確定演出ではない**。戻ってきても中央を外す「戻りガセ」があり、
+ * 逆回転が始まった時点では当たりかガセか分からない、というのが肝。
+ *
+ * 大事なのは**結果を先に決めてから、それに合う演出を選ぶ**こと。
+ * 演出が抽選をやり直すわけではないので、戻り方で確率は1ミリも変わらない。
+ *   ・中央がジョーカー(=フリー) … reverseHit の割合で「戻って当たり」を見せる
+ *     (残りは最初から中央に止まる「直停止」)
+ *   ・中央がジョーカーでない     … gaseRate の割合で「戻ったのに外す」を見せる
+ * この2つの比が P(当たり|逆回転) を決める。全部当たりにすると
+ * 逆回転した瞬間に結果が割れてしまうので、ガセを多めに混ぜている
+ */
+export const BSZ_REVERSE = {
+    /** フリーのうち、戻り演出で見せる割合(残りは直停止) */
+    hitRate: 0.55,
+    /** ハズレのうち、戻りガセを見せる割合 */
+    gaseRate: 0.0103,
+};
 /** トンネルの倍率と重み */
 export const BSZ_TUNNEL = [
     { x: 1, w: 46 }, { x: 2, w: 32 }, { x: 3, w: 16 }, { x: 5, w: 6 },
@@ -168,9 +189,13 @@ export function bszSpin(rnd = Math.random) {
         }
         sum *= tunnel; // 突入時の配当にも倍率がかかる
     }
+    // 結果が決まったあとで、中央リールの見せ方だけを選ぶ
+    const reverse = freeEntered
+        ? (rnd() < BSZ_REVERSE.hitRate ? { hit: true } : null)
+        : (rnd() < BSZ_REVERSE.gaseRate ? { hit: false } : null);
     const capped = Math.min(sum, BSZ_MAX_WIN_X);
     return {
-        grid0, base, freeEntered, tunnel, free,
+        grid0, base, freeEntered, tunnel, free, reverse,
         totalPayX: capped,
         maxWin: sum > BSZ_MAX_WIN_X,
         canDouble: capped > 0 && capped <= BSZ_DOUBLE_CAP_X,

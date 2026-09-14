@@ -35,6 +35,27 @@ export declare const BSZ_LINES: number[][];
 export declare const BSZ_LINE_PAY: Record<string, number>;
 /** ANY配当。画面内の個数(3〜9個)で決まる。列=個数 */
 export declare const BSZ_ANY_PAY: Record<string, Record<number, number>>;
+/**
+ * 「ジョーカー戻り(リバース)」の出し方(第162弾)。
+ *
+ * 中央リールだけを逆回転させてジョーカーを中央へ引き戻す演出。
+ * **これはボーナス確定演出ではない**。戻ってきても中央を外す「戻りガセ」があり、
+ * 逆回転が始まった時点では当たりかガセか分からない、というのが肝。
+ *
+ * 大事なのは**結果を先に決めてから、それに合う演出を選ぶ**こと。
+ * 演出が抽選をやり直すわけではないので、戻り方で確率は1ミリも変わらない。
+ *   ・中央がジョーカー(=フリー) … reverseHit の割合で「戻って当たり」を見せる
+ *     (残りは最初から中央に止まる「直停止」)
+ *   ・中央がジョーカーでない     … gaseRate の割合で「戻ったのに外す」を見せる
+ * この2つの比が P(当たり|逆回転) を決める。全部当たりにすると
+ * 逆回転した瞬間に結果が割れてしまうので、ガセを多めに混ぜている
+ */
+export declare const BSZ_REVERSE: {
+    /** フリーのうち、戻り演出で見せる割合(残りは直停止) */
+    hitRate: number;
+    /** ハズレのうち、戻りガセを見せる割合 */
+    gaseRate: number;
+};
 /** トンネルの倍率と重み */
 export declare const BSZ_TUNNEL: Array<{
     x: number;
@@ -75,6 +96,12 @@ export interface BszStep {
     anys: BszAnyHit[];
     payX: number;
 }
+/** 中央リールの見せ方。null なら普通に止まるだけ */
+export type BszReverse = null
+/** 一度外して、逆回転で中央へ引き戻す。hit=true ならフリー確定、false ならガセ */
+ | {
+    hit: boolean;
+};
 export interface BszOutcome {
     /** 最初の盤面(当たりが無くても必ず入れる) */
     grid0: BszGrid;
@@ -91,6 +118,11 @@ export interface BszOutcome {
     maxWin: boolean;
     /** ダブルダウンに進めるか(獲得があり、上限以内) */
     canDouble: boolean;
+    /**
+     * 中央リールの見せ方(第162弾)。**結果はもう決まっていて、これは見せ方だけ**。
+     * hit=true は必ず freeEntered=true、hit=false は必ず freeEntered=false になる
+     */
+    reverse: BszReverse;
 }
 /**
  * 1スピン。
