@@ -141,6 +141,7 @@ export class Gateway {
      * エフェメラルFSのクラウドで「再デプロイ前にDLして、デプロイ後に書き戻す」ための穴。
      * 鍵は resumeToken の署名鍵(POKER_SECRET)を流用する。
      *   バックアップ: GET  /admin/backup?key=<POKER_SECRET>   → poker.db がダウンロードされる
+     *   健康診断    : GET  /admin/health?key=<POKER_SECRET>   (データが残っているか)
      *   復元        : POST /admin/restore?key=<POKER_SECRET>  (bodyにpoker.dbそのまま)
      *                 → 書き戻してプロセスを終了(ホスティング側が自動再起動して読み込む)
      */
@@ -150,6 +151,22 @@ export class Gateway {
         const db = this.opts.dbPath;
         if (!db || secret.length < 16 || key !== secret) {
             res.writeHead(403).end('forbidden');
+            return;
+        }
+        if (path === '/admin/health' && req.method === 'GET') {
+            // データが残っているかを一目で確かめる窓口(第167弾)。
+            // デプロイのあとにここを見れば、消えているかどうかがすぐ分かる
+            const st = this.opts.persistence;
+            const body = JSON.stringify({
+                ok: st ? st.persisted || (!st.hosted && st.boots === 1) : false,
+                boots: st?.boots ?? 0,
+                persisted: st?.persisted ?? false,
+                configured: st?.configured ?? false,
+                hosted: st?.hosted ?? false,
+                dbPath: st?.dbPath ?? db,
+                summary: st?.summary ?? '不明',
+            }, null, 2);
+            res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' }).end(body);
             return;
         }
         if (path === '/admin/backup' && req.method === 'GET') {
@@ -189,6 +206,24 @@ export class Gateway {
             return;
         }
         if (path === '/admin/restore' && req.method === 'POST') {
+            // 安全装置(第167弾)。
+            //
+            // 保存先が消える環境で書き戻しても、直後の再起動でまるごと捨てられる。
+            // 2026-09-14 はそれに気づかないまま復元を実行し、100京を二度失ったうえ
+            // 末尾の process.exit がホスティングの異常終了アラートまで鳴らした。
+            // だから「残ると確かめられない限り、書き戻さずに断る」。
+            const st = this.opts.persistence;
+            const force = new URL(req.url ?? '/', 'http://x').searchParams.get('force') === '1';
+            if (st && st.hosted && !st.persisted && !st.configured && !force) {
+                res.writeHead(409, { 'content-type': 'text/plain; charset=utf-8' }).end('復元を中止しました: 保存先が永続化されていません。\n' +
+                    `  ${st.summary}\n` +
+                    `  DBの置き場: ${st.dbPath}\n` +
+                    'このまま書き戻しても、次の再起動で消えます。\n' +
+                    '先に永続ディスク(POKER_DB)か GitHub バックアップを設定してください。\n' +
+                    '設定済みで、それでも実行したい場合は ?force=1 を付けてください。\n');
+                req.resume();
+                return;
+            }
             const chunks = [];
             let size = 0;
             req.on('data', (c) => {

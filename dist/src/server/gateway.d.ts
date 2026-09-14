@@ -16,6 +16,8 @@ import { type Scheduler } from './room.js';
 export interface GatewayOptions extends LobbyConfig {
     /** 台帳DBのパス。指定すると /admin/backup /admin/restore が有効になる */
     dbPath?: string;
+    /** データが実際に残っているかの実測結果(第167弾)。復元の安全装置に使う */
+    persistence?: import('./persistence.js').PersistenceStatus;
     /** GitHubへの手動バックアップ実行(/admin/ghpush)。ghsync 参照 */
     ghPush?: () => Promise<string>;
     /** 当日の外部送信量(/admin/bandwidth)。ghsync.bandwidthToday 参照 */
@@ -54,6 +56,7 @@ export declare class Gateway {
      * エフェメラルFSのクラウドで「再デプロイ前にDLして、デプロイ後に書き戻す」ための穴。
      * 鍵は resumeToken の署名鍵(POKER_SECRET)を流用する。
      *   バックアップ: GET  /admin/backup?key=<POKER_SECRET>   → poker.db がダウンロードされる
+     *   健康診断    : GET  /admin/health?key=<POKER_SECRET>   (データが残っているか)
      *   復元        : POST /admin/restore?key=<POKER_SECRET>  (bodyにpoker.dbそのまま)
      *                 → 書き戻してプロセスを終了(ホスティング側が自動再起動して読み込む)
      */

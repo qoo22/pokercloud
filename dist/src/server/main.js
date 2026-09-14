@@ -14,6 +14,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { Gateway } from './gateway.js';
 import { SqliteStore, MemoryStore } from './store.js';
 import { restoreFromGitHub, startAutoBackup, startAutoPrune, pushToGitHub, bandwidthToday } from './ghsync.js';
+import { checkPersistence, reportPersistence } from './persistence.js';
 const here = dirname(fileURLToPath(import.meta.url));
 // クライアント HTML の置き場。
 // 既定はローカル開発向けで dist/src/server → outputs 直下。
@@ -232,32 +233,17 @@ catch (e) {
     store = new MemoryStore();
 }
 /**
- * データが残らない設定のまま動いていないかを起動時に確かめる(第166弾)。
+ * データが本当に残っているかを起動のたびに確かめる(第166→167弾)。
  *
- * Render のファイルシステムは**デプロイのたびに作り直される**。永続ディスクにも
- * GitHubバックアップにも繋いでいないと、push するたびに全員の残高が消える。
- * 実際にそれで 100京以上を失ったので、二度と黙って起きないよう警告を出す
+ * 設定の見た目だけでは足りなかった。POKER_DB があってもマウント先が違えば消える。
+ * だから checkPersistence は**前回の起動の印が残っているか**を実測する。
+ * 何度再起動しても印が増えないなら、それが消えている動かぬ証拠になる。
  */
-function warnIfDataIsVolatile() {
-    const onDisk = !!process.env.POKER_DB; // 永続ディスクを指しているか
-    const ghBackup = !!(process.env.POKER_GH_TOKEN && process.env.POKER_GH_REPO);
-    const onRender = !!process.env.RENDER || !!process.env.RENDER_SERVICE_ID;
-    if (onDisk || ghBackup || !onRender)
-        return;
-    const line = '='.repeat(64);
-    console.error(`\n${line}`);
-    console.error('!! 危険: データが保存されない設定で動いています');
-    console.error('   このまま再デプロイすると、残高・アカウントがすべて消えます。');
-    console.error('   次のどちらかを設定してください:');
-    console.error('   (A) Render の Persistent Disk を付け、POKER_DB をその中のパスにする');
-    console.error('       例: ディスクを /var/data にマウントし POKER_DB=/var/data/poker.db');
-    console.error('   (B) POKER_GH_TOKEN と POKER_GH_REPO を設定して GitHub へ自動保存する');
-    console.error(`${line}\n`);
-}
-warnIfDataIsVolatile();
+const persistence = checkPersistence(store, dbPath);
+reportPersistence(persistence);
 const port = Number(process.env.PORT ?? 8787);
 const gateway = new Gateway({
-    tables, tournaments, port, staticRoot, store, authSecret, dbPath,
+    tables, tournaments, port, staticRoot, store, authSecret, dbPath, persistence,
     ghPush: () => pushToGitHub(store, dbPath),
     bandwidthToday,
 });
