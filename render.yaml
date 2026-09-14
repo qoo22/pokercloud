@@ -1,10 +1,26 @@
 # Render 用の設定。GitHub リポジトリをそのまま指定すれば、ここに書いた内容で自動構築されます。
-# 無料プラン（plan: free）。一定時間アクセスが無いと自動休止し、次アクセスで数十秒かけて復帰します。
+#
+# !! データの保存について(第166弾・重要) !!
+#   Render のファイルシステムは**デプロイのたびに作り直される**。
+#   下の disk(永続ディスク)か、POKER_GH_TOKEN/POKER_GH_REPO による GitHub 保存の
+#   どちらかを必ず用意すること。どちらも無いと、push するたびに残高が全部消える。
+#   実際にそれで 100京以上を失った。
+#
+# plan について:
+#   ここは長らく free のままだったが、実際の運用は有料プラン。
+#   **永続ディスクは有料プランでのみ使える**ので、ダッシュボードの実際のプランに
+#   合わせて書き換えてから適用すること(この行は課金に関わる)。
 services:
   - type: web
     name: poker-friends
     runtime: node
-    plan: free
+    # ダッシュボードの実際のプランに合わせる(starter / standard など)
+    plan: starter
+    # 残高・アカウントを置く永続ディスク。デプロイしても中身は消えない
+    disk:
+      name: poker-data
+      mountPath: /var/data
+      sizeGB: 1
     # dist は同梱済み（ローカルで npm run build 済み）なので、実行に必要な ws だけ入れる
     buildCommand: npm install --omit=dev
     startCommand: node dist/src/server/main.js
@@ -19,3 +35,7 @@ services:
       # 保持されるため、ログイン状態（＝ユーザーの同一性）がリセットされない
       - key: POKER_SECRET
         generateValue: true
+      # データベースの置き場。**必ず永続ディスクの中を指す**こと。
+      # ここを指定し忘れるとリポジトリ直下に作られ、デプロイのたびに消える
+      - key: POKER_DB
+        value: /var/data/poker.db

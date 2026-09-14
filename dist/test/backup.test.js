@@ -11,7 +11,8 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SqliteStore } from '../src/server/store.js';
 let seq = 0;
 const tmpPath = (tag) => join(tmpdir(), `poker-backup-test-${process.pid}-${++seq}-${tag}.db`);
@@ -108,6 +109,41 @@ describe('バックアップ帯域削減', () => {
         s.close();
         if (existsSync(out))
             rmSync(out, { force: true });
+    });
+});
+// ---------------------------------------------------------------------------
+// 第166弾: データが消えない設定になっているか
+//
+// Render のファイルシステムはデプロイのたびに作り直される。永続ディスクにも
+// GitHubバックアップにも繋がずに運用してしまい、100京以上の残高を失った。
+// 同じ設定漏れが二度と通らないよう、配布物の設定を検査で固定する。
+// ---------------------------------------------------------------------------
+describe('本番のデータ保存設定', () => {
+    const yml = (() => {
+        const here = dirname(fileURLToPath(import.meta.url));
+        for (const rel of ['../../render.yaml', '../../../render.yaml', '../render.yaml']) {
+            const p = resolve(here, rel);
+            if (existsSync(p))
+                return readFileSync(p, 'utf8');
+        }
+        return null;
+    })();
+    test('render.yaml に永続ディスクがある', () => {
+        if (!yml)
+            return; // 配布物が手元に無い環境ではスキップ
+        assert.match(yml, /disk:\s*\n\s*name:/, '永続ディスクの指定が無い(デプロイで残高が消える)');
+        assert.match(yml, /mountPath:\s*\/var\/data/, 'マウント先が /var/data でない');
+    });
+    test('DBの置き場が永続ディスクの中を指している', () => {
+        if (!yml)
+            return;
+        assert.match(yml, /key:\s*POKER_DB/, 'POKER_DB の指定が無い');
+        assert.match(yml, /value:\s*\/var\/data\/poker\.db/, 'POKER_DB が永続ディスクの外を指している');
+    });
+    test('永続ディスクは有料プランでしか使えないので plan が free でない', () => {
+        if (!yml)
+            return;
+        assert.doesNotMatch(yml, /^\s*plan:\s*free\s*$/m, 'plan: free のままだとディスクを付けられない');
     });
 });
 //# sourceMappingURL=backup.test.js.map

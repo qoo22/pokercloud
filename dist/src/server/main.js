@@ -10,7 +10,7 @@
  */
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { Gateway } from './gateway.js';
 import { SqliteStore, MemoryStore } from './store.js';
 import { restoreFromGitHub, startAutoBackup, startAutoPrune, pushToGitHub, bandwidthToday } from './ghsync.js';
@@ -23,6 +23,16 @@ const staticRoot = process.env.POKER_STATIC_ROOT
     ? resolve(process.env.POKER_STATIC_ROOT)
     : resolve(here, '../../../..');
 const dbPath = process.env.POKER_DB ?? resolve(here, '../../../poker.db');
+// 永続ディスクを指した場合、そのフォルダがまだ無いことがある。無いと SQLite が開けず
+// メモリ動作に落ちて**再起動のたびに残高が消える**ので、ここで作っておく
+try {
+    const dir = dirname(dbPath);
+    if (!existsSync(dir))
+        mkdirSync(dir, { recursive: true });
+}
+catch (e) {
+    console.warn(`データベースの置き場を作れませんでした(${dbPath}):`, e.message);
+}
 // 再接続トークンの署名鍵。ファイルに永続化することで、サーバーを再起動しても
 // クライアントの resumeToken が有効なまま＝残高が引き継がれる
 const secretPath = process.env.POKER_SECRET_FILE ?? resolve(here, '../../../poker.secret');
@@ -221,6 +231,30 @@ catch (e) {
     console.warn(`SQLite を開けませんでした（${e.message}）。メモリ上で動かします。`);
     store = new MemoryStore();
 }
+/**
+ * データが残らない設定のまま動いていないかを起動時に確かめる(第166弾)。
+ *
+ * Render のファイルシステムは**デプロイのたびに作り直される**。永続ディスクにも
+ * GitHubバックアップにも繋いでいないと、push するたびに全員の残高が消える。
+ * 実際にそれで 100京以上を失ったので、二度と黙って起きないよう警告を出す
+ */
+function warnIfDataIsVolatile() {
+    const onDisk = !!process.env.POKER_DB; // 永続ディスクを指しているか
+    const ghBackup = !!(process.env.POKER_GH_TOKEN && process.env.POKER_GH_REPO);
+    const onRender = !!process.env.RENDER || !!process.env.RENDER_SERVICE_ID;
+    if (onDisk || ghBackup || !onRender)
+        return;
+    const line = '='.repeat(64);
+    console.error(`\n${line}`);
+    console.error('!! 危険: データが保存されない設定で動いています');
+    console.error('   このまま再デプロイすると、残高・アカウントがすべて消えます。');
+    console.error('   次のどちらかを設定してください:');
+    console.error('   (A) Render の Persistent Disk を付け、POKER_DB をその中のパスにする');
+    console.error('       例: ディスクを /var/data にマウントし POKER_DB=/var/data/poker.db');
+    console.error('   (B) POKER_GH_TOKEN と POKER_GH_REPO を設定して GitHub へ自動保存する');
+    console.error(`${line}\n`);
+}
+warnIfDataIsVolatile();
 const port = Number(process.env.PORT ?? 8787);
 const gateway = new Gateway({
     tables, tournaments, port, staticRoot, store, authSecret, dbPath,
