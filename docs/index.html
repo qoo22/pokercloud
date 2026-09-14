@@ -17977,6 +17977,31 @@ window.__offlineSave = PokerOffline.startOfflineServer();
     requestAnimationFrame(tick);
   }
 
+  /**
+   * トンネルの倍率抽選(第163弾)。
+   * 1台目のフリー突入演出(リングが回って 1X/2X/3X/5X を選ぶやつ)をそのまま借りる。
+   * 倍率はサーバーがもう決めているので、ここは見せ方だけ
+   */
+  function tnTunnelDraw(o, done) {
+    tnLast.freeText = "WINNING TUNNEL";
+    renderTunnel();
+    var go = function () {
+      tnLast.freeText = "TUNNEL \u00D7" + o.tunnel + "\u3000FREE GAME 5\u56DE";
+      renderTunnel();
+      done();
+    };
+    try {
+      var pr = slotFsIntro("WINNING TUNNEL", 5, o.tunnel, 3, {
+        spins: 5,
+        capText: "TUNNEL \u500D\u7387",
+        capNote: "\u3053\u306E5\u56DE\u306E\u914D\u5F53\u3068\u7A81\u5165\u6642\u306E\u914D\u5F53\u306B\u304B\u304B\u308A\u307E\u3059",
+        noUpgrade: true,
+        noScatterFlash: true
+      });
+      if (pr && typeof pr.then === "function") pr.then(go, go); else go();
+    } catch (e) { go(); }
+  }
+
   /** サーバーから返ってきた1スピンを画面に流す */
   function tnShowResult(r) {
     var o = r.outcome;
@@ -18004,6 +18029,13 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       if (o.freeEntered && o.free && o.free.length) tnPlayFree(o, r);
     };
 
+    if (o.freeEntered && !o.reverse) {
+      // 直停止でフリーに入った場合も、同じ倍率抽選を通す
+      tnBusy = true;
+      renderTunnel();
+      tnTunnelDraw(o, finish);
+      return;
+    }
     if (o.reverse) {
       // 一度「外した」ところを見せる。ここでは当たりを匂わせる文字を出さない
       var shown = o.grid0.slice();
@@ -18022,13 +18054,9 @@ window.__offlineSave = PokerOffline.startOfflineServer();
           tnLast.freeText = o.freeEntered ? "TUNNEL \u62BD\u9078\u4E2D\u2026" : "";
           renderTunnel();
           if (o.freeEntered) {
-            // 確定してから初めてトンネルへ視線を移す
-            setTimeout(function () {
-              tnLast.freeText = "TUNNEL \u00D7" + o.tunnel + "\u3000FREE GAME 5\u56DE";
-              try { bacBlip(880, 0.1, "triangle", 0.12); } catch (e) {}
-              renderTunnel();
-              setTimeout(finish, 520);
-            }, 620);
+            // 確定してから初めてトンネルへ視線を移す。
+            // 倍率抽選は GOLD RUSH の演出をそのまま借りる(第163弾)
+            setTimeout(function () { tnTunnelDraw(o, finish); }, 620);
           } else {
             finish();
           }
@@ -19421,8 +19449,14 @@ window.__offlineSave = PokerOffline.startOfflineServer();
    *   ⑥ FREE GAME START! → ゲーム数が0から回る
    * 値はすべてサーバーが決めたもの。ここは**見せ方だけ**で結果には影響しない
    */
-  async function slotFsIntro(modeName, total, wildMult, scatters) {
-    const startSpins = scatters >= 5 ? 16 : scatters === 4 ? 12 : 8;
+  async function slotFsIntro(modeName, total, wildMult, scatters, opts) {
+    // 第163弾: 2台目(WINNING TUNNEL)からも同じ演出を呼べるようにした。
+    // opts を渡さなければ GOLD RUSH の動きは今までどおり
+    const O = opts || {};
+    const startSpins = O.spins || (scatters >= 5 ? 16 : scatters === 4 ? 12 : 8);
+    const CAP = O.capText || "WILD\u914D\u5F53";
+    const CAPNOTE = O.capNote !== undefined ? O.capNote
+      : "WILD\u3092\u542B\u3080\u5F53\u9078\u30E9\u30A4\u30F3\u306B1\u56DE\u9069\u7528";
     const el = document.createElement("div");
     el.id = "sl-fsin";
     el.innerHTML = '<i class="slc-rays"></i><i class="slc-rays b"></i>'
@@ -19436,7 +19470,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
         + '<i class="wr-ring r3" data-m="3">3X</i>'
         + '<i class="wr-ring r2" data-m="2">2X</i>'
         + '<i class="wr-ring r1" data-m="1">1X</i>'
-        + '</div><div class="wr-cap" id="fsin-wcap">WILD配当を抽選</div>'
+        + '</div><div class="wr-cap" id="fsin-wcap">' + CAP + '\u3092\u62BD\u9078</div>'
         + '<button class="fsin-btn" id="fsin-go">抽選スタート</button>' : "")
       + '<div class="fsin-start" id="fsin-start" hidden>FREE GAME START!</div>'
       + '<div class="fsin-count" id="fsin-cnt" hidden><b id="fsin-n">0</b> FREE GAMES</div>'
@@ -19448,11 +19482,11 @@ window.__offlineSave = PokerOffline.startOfflineServer();
 
     // ① スキャッターを点滅させながらファンファーレ。
     //    **鳴り終わるまで次へ行かない**(重なって聞き取れなくなるため・第104弾)
-    slotFlashScatters(true);
+    if (!O.noScatterFlash) slotFlashScatters(true);
     fanfarePlay();
     slotBurstCoins(el, 18);
     await slotSleep(6900);                        // ファンファーレ 6.89秒
-    slotFlashScatters(false);
+    if (!O.noScatterFlash) slotFlashScatters(false);
 
     // ② 画面が金色に染まって「ボーナスゲーム突入」。これも鳴り終わるまで待つ
     el.classList.add("gold");
@@ -19513,11 +19547,11 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       litOf(wildMult);
       if (wrap) { wrap.classList.remove("spinning"); wrap.classList.add("done", "shine"); }
       sfx("gong");
-      if (cap) cap.innerHTML = "WILD配当 <b>×" + wildMult + "</b>";
+      if (cap) cap.innerHTML = CAP + ' <b>\u00D7' + wildMult + "</b>";
       await slotSleep(900);                       // フリーズ(結果を見せる間)
       if (wrap) wrap.classList.add("blink");      // 点滅で強調
-      if (cap) cap.innerHTML = "WILD配当 <b class=\"big\">×" + wildMult + "</b>"
-        + '<div style="font-size:10px;opacity:.75">WILDを含む当選ラインに1回適用</div>';
+      if (cap) cap.innerHTML = CAP + ' <b class="big">\u00D7' + wildMult + "</b>"
+        + (CAPNOTE ? '<div style="font-size:10px;opacity:.75">' + CAPNOTE + "</div>" : "");
       slotBurstCoins(el, 14);
       await slotSleep(1900);
       if (wrap) wrap.classList.remove("blink");
@@ -19543,7 +19577,7 @@ window.__offlineSave = PokerOffline.startOfflineServer();
       }
     };
     await countTo(0, Math.min(8, startSpins));
-    if (scatters >= 4) {
+    if (scatters >= 4 && !O.noUpgrade) {
       const up = document.getElementById("fsin-up");
       const steps = scatters >= 5 ? [[12, "UPGRADE"], [16, "SUPER UPGRADE"]] : [[12, "UPGRADE"]];
       for (const [to, label] of steps) {
