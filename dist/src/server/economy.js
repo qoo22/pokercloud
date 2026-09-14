@@ -9,6 +9,7 @@
  * という骨格だけで、Apple / Google のサーバー検証に差し替えられる形にしてあります。
  * クライアントの申告だけで付与する実装は、改造クライアントで無限にチップが増えます。
  */
+import { bszSpin } from './bsz.js';
 import { spin as spinReels, PAY_SYMBOLS, SLOT_CFG, FREE_MODES, MAX_WIN_X, TUMBLE_LADDER, SCATTER_PAY, REELS, ROWS, LINES, PAYLINES, } from './slot.js';
 import { dealBaccarat, baccaratReturn, declareHit, BAC_DECLARE_RATE, } from './baccarat.js';
 /** 恒常チップパック。単価差は最大 4.8 倍に抑えている（Zynga の約 10 倍は初回転換率を下げる） */
@@ -145,11 +146,6 @@ export const AD_REWARD_CAP = 2_000_000;
  * 下限の1,000が選択肢から消えていた
  */
 export const SLOT_CHIP_MIN_BET = 1_000;
-/**
- * 賭け金の上限(第88弾・オーナー指定)。**50兆(50T)**。
- * これ以上に上げても体験が変わらない(所持が桁で増えるだけで演出も配当表も同じ)ため、
- * 段を刻む意味が無い。所持がいくらあってもここで止める。
- */
 export const SLOT_CHIP_MAX_BET = 5_000_000_000_000_000; // 5000兆(第157弾で増額)
 /** チップ建ての1日の上限。蛇口ではないので緩めでよいが、暴走時の被害を抑える安全弁として置く */
 /**
@@ -850,6 +846,48 @@ export class Economy {
             goldLeft: 0,
             spinsLeft: SLOT_LIMIT_ENABLED ? Math.max(0, SLOT_CHIP_DAILY_SPINS - used - 1) : Number.MAX_SAFE_INTEGER,
         };
+    }
+    /**
+     * 2台目「WINNING TUNNEL」を1回まわす(第161弾)。
+     *
+     * GOLD RUSH と賭け金の決まり・分割記帳の作法はそろえてある。
+     * 違うのは抽選が bsz.ts であることと、**獲得をダブルダウンに持ち越せる**こと。
+     * 持ち越すぶんはここでは払わず、lobby が確定させたときに collectTunnel で記帳する
+     */
+    spinTunnel(userId, bet, rnd = Math.random) {
+        const u = this.store.getUser(userId);
+        if (!u)
+            return { ok: false, error: 'ユーザーが見つかりません' };
+        const day = today(this.now());
+        if (!Number.isFinite(bet) || !Number.isInteger(bet) || bet < SLOT_CHIP_MIN_BET) {
+            return { ok: false, error: `賭け金は ${SLOT_CHIP_MIN_BET.toLocaleString()} チップ以上の整数です` };
+        }
+        if (bet > SLOT_CHIP_MAX_BET) {
+            return { ok: false, error: `賭け金の上限は ${SLOT_CHIP_MAX_BET.toLocaleString()} チップです` };
+        }
+        if (bet > SAFE_POST) {
+            return { ok: false, error: `賭け金は ${SAFE_POST.toLocaleString()} チップまでです` };
+        }
+        if (u.chips < bet)
+            return { ok: false, error: 'チップが足りません' };
+        if (this.store.post(userId, 'chips', -bet, 'slot_spin', `tunnel:${day}`) === null) {
+            return { ok: false, error: 'チップが足りません' };
+        }
+        const outcome = bszSpin(rnd);
+        const won = Math.round(outcome.totalPayX * bet);
+        return { ok: true, outcome, bet, cost: bet, won };
+    }
+    /** 獲得を確定して台帳に入れる。大きい額は分割して記帳する(2^53対策) */
+    collectTunnel(userId, amount) {
+        if (!Number.isFinite(amount) || amount <= 0)
+            return;
+        let rest = Math.round(amount);
+        const day = today(this.now());
+        for (let guard = 0; rest > 0 && guard < 2000; guard++) {
+            const part = Math.min(rest, SAFE_POST);
+            this.store.post(userId, 'chips', part, 'slot_win', `tunnel:${day}`);
+            rest -= part;
+        }
     }
     // --- 広告(第66弾の土台) -----------------------------------------------
     //

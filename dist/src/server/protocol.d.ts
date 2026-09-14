@@ -130,6 +130,21 @@ export type ClientMessage =
     bet: number;
     ante?: boolean;
     mode?: 'many' | 'few';
+}
+/** 2台目「WINNING TUNNEL」(第161弾)。台を増やせるよう slot とは別のメッセージにした */
+ | {
+    t: 'tunnel.spin';
+    bet: number;
+}
+/** ダブルダウン。half=true ならハーフ(半分を確保)。pick はめくる前に選ぶリール(0〜2) */
+ | {
+    t: 'tunnel.double';
+    half?: boolean;
+    pick?: number;
+}
+/** ダブルをやめて獲得を確定する */
+ | {
+    t: 'tunnel.collect';
 } | {
     t: 'baccarat.deal';
     bets: {
@@ -543,6 +558,15 @@ export type ServerMessage = {
     t: 'slot.result';
     result: SlotResultView;
 } | {
+    t: 'tunnel.result';
+    result: TunnelResultView;
+} | {
+    t: 'tunnel.double';
+    result: TunnelDoubleView;
+} | {
+    t: 'tunnel.collected';
+    won: number;
+} | {
     t: 'baccarat.result';
     result: BaccaratResultView;
 }
@@ -643,6 +667,24 @@ export type BaccaratResultView = {
     declare: 'H' | 'L' | null;
     balance: number;
 };
+/** WINNING TUNNEL の1スピン(第161弾)。盤面と判定は bsz.ts の結果をそのまま渡す */
+export interface TunnelResultView {
+    outcome: import('./bsz.js').BszOutcome;
+    bet: number;
+    cost: number;
+    /** ダブルに行かず確定したときに支払われる額 */
+    won: number;
+    /** いま手元に持ち越している額(ダブルの元手) */
+    pending: number;
+}
+/** ダブルダウン1回の結果 */
+export interface TunnelDoubleView {
+    result: import('./bsz.js').BszDoubleResult;
+    /** このダブルの後に持ち越している額 */
+    pending: number;
+    /** 続けてダブルできるか */
+    canDouble: boolean;
+}
 export interface SlotResultView {
     /** 盤面・連鎖・フリーゲームの全記録(slot.ts の SlotOutcome をそのまま) */
     outcome: unknown;

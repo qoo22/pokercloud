@@ -196,6 +196,20 @@ export function parseClientMessage(raw) {
             const declare = m.declare === 'H' || m.declare === 'L' ? m.declare : undefined;
             return { ok: true, msg: { t: 'baccarat.deal', bets, declare } };
         }
+        case 'tunnel.spin': {
+            const bet = money('bet');
+            if (bet === null || bet === 0)
+                return { ok: false, reason: 'bet が不正です' };
+            return { ok: true, msg: { t: 'tunnel.spin', bet } };
+        }
+        case 'tunnel.double': {
+            const half = m.half === true;
+            const raw = m.pick;
+            const pick = typeof raw === 'number' && (raw === 0 || raw === 1 || raw === 2) ? raw : 0;
+            return { ok: true, msg: { t: 'tunnel.double', half, pick } };
+        }
+        case 'tunnel.collect':
+            return { ok: true, msg: { t: 'tunnel.collect' } };
         case 'slot.spin': {
             // 賭け金は整数のみ。使える額かどうかは経済側(SLOT_BETS)で最終判定する
             const bet = Math.floor(Number(m.bet));

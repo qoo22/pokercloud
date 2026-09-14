@@ -7,6 +7,7 @@
  */
 import { MemoryStore } from './store.js';
 import { Economy, CHIP_PACKS, GOLD_PACKS, PASS_PREMIUM_SKU, PASS_TIERS, SAFE_POST } from './economy.js';
+import { bszDouble, BSZ_DOUBLE_CAP_X } from './bsz.js';
 import { Room, realScheduler } from './room.js';
 import { Tournament } from './tournament.js';
 import { PROTOCOL_VERSION, parseClientMessage, } from './protocol.js';
@@ -293,6 +294,12 @@ export class Lobby {
      * (常駐プロセスのメモリリーク)。トークンは署名付きで verifyResumeToken() だけでも
      * 復帰できるので、ここは上限付きの先入れ先出しキャッシュで構わない
      */
+    /**
+     * WINNING TUNNEL のダブルダウンで持ち越している額(第161弾)。
+     * **クライアントに持たせるとダブルの元手を改竄できる**ので、
+     * 賭け金と現在額はサーバーだけが握る。切断すれば自動で確定して払う
+     */
+    tunnelHold = new Map();
     resumeTokens = new Map();
     static RESUME_CACHE_MAX = 3000;
     cfg;
@@ -671,6 +678,22 @@ export class Lobby {
                 break;
             this.resumeTokens.delete(oldest.value);
         }
+    }
+    /**
+     * 持ち越している獲得を確定して払う。払った額を返す(無ければ0)。
+     * ダブルの途中で切断されても、次の接続や次のスピンで必ずここを通る
+     */
+    tunnelCashOut(userId) {
+        const hold = this.tunnelHold.get(userId);
+        if (!hold)
+            return 0;
+        this.tunnelHold.delete(userId);
+        const won = Math.round(hold.payX * hold.bet);
+        if (won > 0) {
+            this.economy.collectTunnel(userId, won);
+            this.sendBalance(userId);
+        }
+        return won;
     }
     listRooms() {
         // プライベート卓はロビー一覧から除外（コードを知っている人だけが入れる）
@@ -1057,6 +1080,64 @@ export class Lobby {
                         declare: msg.declare ?? null, balance: r.balance,
                     },
                 });
+                return;
+            }
+            case 'tunnel.spin': {
+                // 前のダブルを畳んでいなければ、先に確定して払う(取りこぼしを作らない)
+                this.tunnelCashOut(s.userId);
+                const r = this.economy.spinTunnel(s.userId, msg.bet, Math.random);
+                if (!r.ok)
+                    return this.err(sessionId, 'ILLEGAL_ACTION', r.error ?? '回せませんでした');
+                const o = r.outcome;
+                // ダブルに行ける額なら手元に持ち越し、行けないならその場で払う
+                let won = 0;
+                let pending = 0;
+                if (o.canDouble) {
+                    this.tunnelHold.set(s.userId, { bet: r.bet, payX: o.totalPayX });
+                    pending = Math.round(o.totalPayX * r.bet);
+                }
+                else if (r.won > 0) {
+                    this.economy.collectTunnel(s.userId, r.won);
+                    won = r.won;
+                }
+                this.sendBalance(s.userId);
+                this.transport.send(sessionId, {
+                    t: 'tunnel.result',
+                    result: { outcome: o, bet: r.bet, cost: r.cost, won, pending },
+                });
+                return;
+            }
+            case 'tunnel.double': {
+                const hold = this.tunnelHold.get(s.userId);
+                if (!hold)
+                    return this.err(sessionId, 'ILLEGAL_ACTION', 'ダブルできる獲得がありません');
+                if (hold.payX > BSZ_DOUBLE_CAP_X) {
+                    // 振り切り。ここに来たら確定して払う
+                    this.tunnelCashOut(s.userId);
+                    return this.err(sessionId, 'ILLEGAL_ACTION', '上限を超えたので確定しました');
+                }
+                const keepX = msg.half ? Math.floor(hold.payX / 2) : 0;
+                const stakeX = hold.payX - keepX;
+                const r = bszDouble(stakeX, keepX, Math.random, msg.pick ?? 0);
+                if (r.payX > 0) {
+                    this.tunnelHold.set(s.userId, { bet: hold.bet, payX: r.payX });
+                }
+                else {
+                    this.tunnelHold.delete(s.userId); // 負けて全部失った
+                }
+                const canDouble = r.payX > 0 && r.payX <= BSZ_DOUBLE_CAP_X;
+                this.transport.send(sessionId, {
+                    t: 'tunnel.double',
+                    result: { result: r, pending: Math.round(r.payX * hold.bet), canDouble },
+                });
+                // 振り切ったらその場で確定して払う(実機と同じ)
+                if (r.payX > BSZ_DOUBLE_CAP_X)
+                    this.tunnelCashOut(s.userId);
+                return;
+            }
+            case 'tunnel.collect': {
+                const won = this.tunnelCashOut(s.userId);
+                this.transport.send(sessionId, { t: 'tunnel.collected', won });
                 return;
             }
             case 'slot.spin': {

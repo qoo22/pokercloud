@@ -734,4 +734,90 @@ describe('入退室を繰り返してもメモリが増え続けない', () => {
         assert.equal(cos.size, 0, `去った人のコスメが残っている: ${cos.size}`);
     });
 });
+// ---------------------------------------------------------------------------
+// 第161弾: 2台目のスロット「WINNING TUNNEL」
+// ---------------------------------------------------------------------------
+describe('WINNING TUNNEL のサーバー配線', () => {
+    const harness = () => new Harness({ tables: [TABLE], signupBonus: 100_000_000 });
+    const lastOf = (c, t) => {
+        for (let i = c.received.length - 1; i >= 0; i--) {
+            const m = c.received[i];
+            if (m.t === t)
+                return m;
+        }
+        return null;
+    };
+    test('回すと賭け金が引かれ、盤面と判定が返る', () => {
+        const h = harness();
+        const a = h.login('P', 'u_tun1');
+        const before = h.lobby.store.balance('u_tun1', 'chips');
+        a.send({ t: 'tunnel.spin', bet: 1000 });
+        const r = lastOf(a, 'tunnel.result');
+        assert.ok(r, 'tunnel.result が返っていない');
+        assert.equal(r.result.cost, 1000);
+        assert.equal(r.result.outcome.grid0.length, 9, '3×3の9マスでない');
+        // 引かれた額は、確定払い(won)と持ち越し(pending)のどちらかで説明できる
+        const after = h.lobby.store.balance('u_tun1', 'chips');
+        assert.equal(after, before - 1000 + r.result.won, '残高の増減が合わない');
+    });
+    test('賭け金の検証はGOLD RUSHと同じ(0・小数・上限超は弾く)', () => {
+        for (const v of [0, -1, 1.5, NaN, 2e19]) {
+            assert.equal(parseClientMessage({ t: 'tunnel.spin', bet: v }).ok, false, `${String(v)} が通った`);
+        }
+        assert.equal(parseClientMessage({ t: 'tunnel.spin', bet: 1000 }).ok, true);
+    });
+    test('獲得が無いのにダブルはできない', () => {
+        const h = harness();
+        const a = h.login('P', 'u_tun2');
+        a.send({ t: 'tunnel.double' });
+        const err = a.lastError();
+        assert.ok(err, 'ダブルがエラーになっていない');
+    });
+    test('持ち越しはサーバーが握る(クライアントは額を送れない)', () => {
+        // tunnel.double に額のフィールドは無い。pick と half しか受け取らない
+        const r = parseClientMessage({ t: 'tunnel.double', half: true, pick: 2, payX: 999999 });
+        assert.equal(r.ok, true);
+        const msg = r.ok ? r.msg : null;
+        assert.equal(msg?.half, true);
+        assert.equal(msg?.pick, 2);
+        assert.equal(msg.payX, undefined, '額を受け取ってしまっている');
+    });
+    test('ダブルの途中で次を回しても、前の持ち越しは取りこぼさない', () => {
+        const h = harness();
+        const a = h.login('P', 'u_tun3');
+        // 持ち越しが出るまで回す
+        let pending = 0;
+        for (let i = 0; i < 400 && pending === 0; i++) {
+            a.clear();
+            a.send({ t: 'tunnel.spin', bet: 1000 });
+            const r = lastOf(a, 'tunnel.result');
+            pending = r?.result.pending ?? 0;
+        }
+        assert.ok(pending > 0, '持ち越しが一度も出なかった');
+        const before = h.lobby.store.balance('u_tun3', 'chips');
+        // ダブルせずに次を回す → 前の持ち越しが payout されてから新しい賭け金が引かれる
+        a.send({ t: 'tunnel.spin', bet: 1000 });
+        const after = h.lobby.store.balance('u_tun3', 'chips');
+        assert.ok(after >= before + pending - 1000, `前の持ち越しが消えた: ${before} → ${after}`);
+    });
+    test('確定すると持ち越しが払われ、二重には払われない', () => {
+        const h = harness();
+        const a = h.login('P', 'u_tun4');
+        let pending = 0;
+        for (let i = 0; i < 400 && pending === 0; i++) {
+            a.clear();
+            a.send({ t: 'tunnel.spin', bet: 1000 });
+            const r = lastOf(a, 'tunnel.result');
+            pending = r?.result.pending ?? 0;
+        }
+        assert.ok(pending > 0);
+        const before = h.lobby.store.balance('u_tun4', 'chips');
+        a.send({ t: 'tunnel.collect' });
+        const mid = h.lobby.store.balance('u_tun4', 'chips');
+        assert.equal(mid, before + pending, '確定額が合わない');
+        // もう一度確定しても増えない
+        a.send({ t: 'tunnel.collect' });
+        assert.equal(h.lobby.store.balance('u_tun4', 'chips'), mid, '二重に払われた');
+    });
+});
 //# sourceMappingURL=server.test.js.map

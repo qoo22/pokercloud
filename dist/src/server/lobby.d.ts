@@ -54,6 +54,12 @@ export declare class Lobby {
      * (常駐プロセスのメモリリーク)。トークンは署名付きで verifyResumeToken() だけでも
      * 復帰できるので、ここは上限付きの先入れ先出しキャッシュで構わない
      */
+    /**
+     * WINNING TUNNEL のダブルダウンで持ち越している額(第161弾)。
+     * **クライアントに持たせるとダブルの元手を改竄できる**ので、
+     * 賭け金と現在額はサーバーだけが握る。切断すれば自動で確定して払う
+     */
+    private tunnelHold;
     private resumeTokens;
     private static readonly RESUME_CACHE_MAX;
     private cfg;
@@ -124,6 +130,11 @@ export declare class Lobby {
     getRoom(tableId: string): Room | undefined;
     /** 再接続トークンを覚える。ボットは復帰しないので覚えず、古い分から捨てる */
     private rememberResumeToken;
+    /**
+     * 持ち越している獲得を確定して払う。払った額を返す(無ければ0)。
+     * ダブルの途中で切断されても、次の接続や次のスピンで必ずここを通る
+     */
+    private tunnelCashOut;
     listRooms(): Room[];
     /**
      * 秘密卓(第150弾)を見られるか。指定額のチップを持っている人にだけ存在を明かす。

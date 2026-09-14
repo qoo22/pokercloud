@@ -10,6 +10,7 @@
  * クライアントの申告だけで付与する実装は、改造クライアントで無限にチップが増えます。
  */
 import type { Store, Currency, LedgerReason } from './store.js';
+import { type BszOutcome } from './bsz.js';
 import { type SlotOutcome, type FreeMode } from './slot.js';
 import { type BacBets, type BacHand } from './baccarat.js';
 export interface Sku {
@@ -122,6 +123,15 @@ export declare const SLOT_CHIP_MIN_BET = 1000;
  * これ以上に上げても体験が変わらない(所持が桁で増えるだけで演出も配当表も同じ)ため、
  * 段を刻む意味が無い。所持がいくらあってもここで止める。
  */
+export interface TunnelSpinResult {
+    ok: boolean;
+    error?: string;
+    outcome?: BszOutcome;
+    bet?: number;
+    cost?: number;
+    /** ダブルに行かず確定した場合に支払う額。台帳に入れるのは collectTunnel */
+    won?: number;
+}
 export declare const SLOT_CHIP_MAX_BET = 5000000000000000;
 /** チップ建ての1日の上限。蛇口ではないので緩めでよいが、暴走時の被害を抑える安全弁として置く */
 /**
@@ -463,6 +473,16 @@ export declare class Economy {
         ante?: boolean;
         mode?: FreeMode['key'];
     }): SlotSpinResult;
+    /**
+     * 2台目「WINNING TUNNEL」を1回まわす(第161弾)。
+     *
+     * GOLD RUSH と賭け金の決まり・分割記帳の作法はそろえてある。
+     * 違うのは抽選が bsz.ts であることと、**獲得をダブルダウンに持ち越せる**こと。
+     * 持ち越すぶんはここでは払わず、lobby が確定させたときに collectTunnel で記帳する
+     */
+    spinTunnel(userId: string, bet: number, rnd?: () => number): TunnelSpinResult;
+    /** 獲得を確定して台帳に入れる。大きい額は分割して記帳する(2^53対策) */
+    collectTunnel(userId: string, amount: number): void;
     /** 広告の状態。UIの出し分けに使う */
     /**
      * バカラを1ハンド配る(第117弾)。チップを賭けてチップを払い出す閉じたループ。
