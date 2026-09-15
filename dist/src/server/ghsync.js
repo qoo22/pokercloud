@@ -73,7 +73,19 @@ export async function restoreFromGitHub(dbPath) {
             return;
         }
         if (!res.ok) {
-            console.warn(`GitHubバックアップ復元失敗: HTTP ${res.status}`);
+            // ここに来たら、GitHub側に何があるのか分からない。書き込みは以後すべて止める
+            restoreBroken = `HTTP ${res.status}`;
+            const line = '='.repeat(64);
+            console.error(`\n${line}`);
+            console.error(`!! GitHubバックアップからの復元に失敗しました (HTTP ${res.status})`);
+            if (res.status === 401 || res.status === 403) {
+                console.error('   トークンが期限切れか、権限が足りません。');
+                console.error('   POKER_GH_TOKEN を作り直してください(Contents: Read and write)。');
+                console.error('   有効期限は「No expiration」にすること。切れると今回と同じことが起きます。');
+            }
+            console.error('   保存済みの残高を読めていないので、全員が新規扱いになります。');
+            console.error('   **バックアップを壊さないため、以後のプッシュは停止します。**');
+            console.error(`${line}\n`);
             return;
         }
         const buf = Buffer.from(await res.arrayBuffer());
@@ -87,6 +99,19 @@ export async function restoreFromGitHub(dbPath) {
         console.warn('GitHubバックアップ復元エラー:', e.message);
     }
 }
+/**
+ * 復元に失敗したまま上書きするのを禁じる掛け金(第167弾)。
+ *
+ * 2026-09-14、トークンの期限が切れて起動時の復元が 401 で失敗した。
+ * 当時は警告を1行出して空のDBのまま動き続けたので、全員が新規扱いになった。
+ * 運良くプッシュも同じ401で止まっていたから GitHub 側の100京は無事だったが、
+ * もし読めないのに書けていたら、最後の砦を 50,000 で塗り潰していた。
+ *
+ * だから「読めなかったときは、絶対に書かない」。
+ */
+let restoreBroken = null;
+/** 復元に失敗していないか(失敗していれば理由) */
+export function restoreFailure() { return restoreBroken; }
 let lastSha = null;
 let lastHash = '';
 let pushing = false;
@@ -95,6 +120,9 @@ export async function pushToGitHub(store, dbPath) {
     const c = cfg();
     if (!c)
         return 'POKER_GH_TOKEN / POKER_GH_REPO が未設定です';
+    // 読めなかったものを上書きしない。壊れた復元のあとのプッシュは、最後の砦を消す行為
+    if (restoreBroken)
+        return `復元に失敗しているためプッシュを停止中 (${restoreBroken})`;
     if (pushing)
         return 'busy';
     pushing = true;

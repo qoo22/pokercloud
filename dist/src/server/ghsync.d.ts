@@ -22,6 +22,8 @@ export declare function bandwidthToday(): {
 };
 /** 起動時の復元。ローカルDBが既にあれば触らない(上書き事故防止) */
 export declare function restoreFromGitHub(dbPath: string): Promise<void>;
+/** 復元に失敗していないか(失敗していれば理由) */
+export declare function restoreFailure(): string | null;
 /** スナップショットを取って GitHub へプッシュ。結果を文字列で返す(ログ/管理エンドポイント用) */
 export declare function pushToGitHub(store: Store, dbPath: string): Promise<string>;
 export declare function startAutoPrune(store: Store): void;
