@@ -28,4 +28,9 @@ export declare function restoreFailure(): string | null;
 export declare function pushToGitHub(store: Store, dbPath: string): Promise<string>;
 export declare function startAutoPrune(store: Store): void;
 /** 定期バックアップ + データ掃除 + 終了時の駆け込みプッシュ(タイマーは常に1本) */
-export declare function startAutoBackup(store: Store, dbPath: string): void;
+/** 定期バックアップを始める。戻り値のタイマーは止められる(テスト用) */
+export declare function startAutoBackup(store: Store, dbPath: string): NodeJS.Timeout | null;
+/** 終了時に「最後の状態」を保存する。最大6秒待って諦める */
+export declare function flushBeforeExit(store: Store, dbPath: string): Promise<void>;
+/** 自動バックアップが有効なら、終了前の保存処理を返す */
+export declare function exitFlusher(): (() => Promise<void>) | null;

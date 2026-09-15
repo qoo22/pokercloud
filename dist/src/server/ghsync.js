@@ -245,18 +245,19 @@ export function startAutoPrune(store) {
     t.unref?.();
 }
 /** 定期バックアップ + データ掃除 + 終了時の駆け込みプッシュ(タイマーは常に1本) */
+/** 定期バックアップを始める。戻り値のタイマーは止められる(テスト用) */
 export function startAutoBackup(store, dbPath) {
     const c = cfg();
     if (!c)
-        return;
+        return null;
     if (autoBackupArmed) {
         // 二重起動ガード: 何らかの理由で複数回呼ばれてもタイマーは1本だけにする
         console.warn('GitHub自動バックアップ: 既に起動済みのため二重登録を無視');
-        return;
+        return null;
     }
     autoBackupArmed = true;
     console.log(`GitHub自動バックアップ有効: ${c.repo}/${FILE_PATH} (${INTERVAL_MIN}分ごと・変化時のみ送信・終了時)`);
-    setInterval(async () => {
+    const timer = setInterval(async () => {
         // 2時間見ていないbotのデータとハンド履歴を掃除してDBを小さく保つ
         if (store.pruneBots) {
             const removed = store.pruneBots(2 * 3600_000);
@@ -267,17 +268,27 @@ export function startAutoBackup(store, dbPath) {
         if (r !== 'unchanged' && !r.startsWith('pushed'))
             console.warn('GitHubバックアップ:', r);
     }, INTERVAL_MIN * 60_000);
-    // 再デプロイ・停止時に最後の状態を保存(最大6秒待って諦める)
-    const flushAndExit = async () => {
-        try {
-            await Promise.race([pushToGitHub(store, dbPath), new Promise((r) => setTimeout(r, 6000))]);
-        }
-        catch {
-            /* noop */
-        }
-        process.exit(0);
-    };
-    process.on('SIGTERM', flushAndExit);
-    process.on('SIGINT', flushAndExit);
+    // 終了時の保存は main.ts の shutdown が順番を決めて呼ぶ。
+    // ここで独自に SIGTERM を握ると、卓の精算より先に送信してしまったり、
+    // 送信の途中で store.close() されたりする(第167弾で直した競合)
+    flushOnExit = () => flushBeforeExit(store, dbPath);
+    return timer;
 }
+/** main.ts の終了処理から呼ばれる、最後の1回の保存 */
+let flushOnExit = null;
+/** 終了時に「最後の状態」を保存する。最大6秒待って諦める */
+export async function flushBeforeExit(store, dbPath) {
+    try {
+        const r = await Promise.race([
+            pushToGitHub(store, dbPath),
+            new Promise((res) => setTimeout(() => res('時間切れ(6秒)'), 6000)),
+        ]);
+        console.log('終了前バックアップ:', r);
+    }
+    catch (e) {
+        console.warn('終了前バックアップに失敗:', e.message);
+    }
+}
+/** 自動バックアップが有効なら、終了前の保存処理を返す */
+export function exitFlusher() { return flushOnExit; }
 //# sourceMappingURL=ghsync.js.map

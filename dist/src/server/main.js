@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { Gateway } from './gateway.js';
 import { SqliteStore, MemoryStore } from './store.js';
-import { restoreFromGitHub, startAutoBackup, startAutoPrune, pushToGitHub, bandwidthToday } from './ghsync.js';
+import { restoreFromGitHub, startAutoBackup, startAutoPrune, pushToGitHub, bandwidthToday, exitFlusher } from './ghsync.js';
 import { checkPersistence, reportPersistence } from './persistence.js';
 const here = dirname(fileURLToPath(import.meta.url));
 // クライアント HTML の置き場。
@@ -268,7 +268,21 @@ if (process.env.POKER_BOTS !== 'off') {
         console.warn('ボットを開始できませんでした:', e.message);
     }
 }
-const shutdown = async () => {
+/**
+ * 終了処理。**順番が命**(第167弾で直した)。
+ *
+ * 以前は ghsync も自前で SIGTERM を握っていたので、二つの終了処理が競走していた。
+ * 先に ghsync が送信を終えて exit すると、そのあとの卓の精算がバックアップに乗らない。
+ * 逆に main が先に exit すると、送信そのものが途中で殺される。
+ * どちらも再デプロイのたびに静かにチップを削る。だから一本の順番にまとめる:
+ *
+ *   卓のチップを残高へ戻す → 受付を閉じる → 最後の保存 → DBを閉じる
+ */
+let shuttingDown = false;
+const shutdown = async (code = 0) => {
+    if (shuttingDown)
+        return; // 二重に走らせない(SIGTERMが連続で来ることがある)
+    shuttingDown = true;
     console.log('\n終了処理中...');
     // 卓に残っているチップを先に残高へ戻す。座席はメモリ上にしか無いので、
     // ここで精算しないと再デプロイのたびにプレイヤーのチップが卓ごと消える
@@ -278,10 +292,40 @@ const shutdown = async () => {
     catch (e) {
         console.warn('卓の精算に失敗しました:', e.message);
     }
-    await gateway.close();
-    store.close();
-    process.exit(0);
+    try {
+        await gateway.close();
+    }
+    catch (e) {
+        console.warn('受付の停止に失敗しました:', e.message);
+    }
+    // 精算まで済んだ状態を保存する。ここを飛ばすと直前の数分が消える
+    const flush = exitFlusher();
+    if (flush)
+        await flush();
+    try {
+        store.close();
+    }
+    catch { /* 閉じられなければそのまま終わる */ }
+    process.exit(code);
 };
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => { void shutdown(0); });
+process.on('SIGTERM', () => { void shutdown(0); });
+/**
+ * 想定外の例外でも、黙って死なせない(第167弾)。
+ *
+ * これまでは受け止める人がいなかったので、非同期のどこかで1つ投げられただけで
+ * プロセスが即死していた。全員が切断され、その間の残高は保存されないまま消える。
+ * ホスティングの「落ちました」通知の正体もこれの可能性が高い。
+ * 原因が後から分かるように全部書き出し、保存してから終わる。
+ */
+function crash(kind, e) {
+    const line = '='.repeat(64);
+    console.error(`\n${line}`);
+    console.error(`!! ${kind} でサーバーが停止します`);
+    console.error(e instanceof Error ? (e.stack ?? e.message) : String(e));
+    console.error(`${line}\n`);
+    void shutdown(1); // 卓の精算と最後の保存だけは必ず通す
+}
+process.on('uncaughtException', (e) => crash('想定外の例外', e));
+process.on('unhandledRejection', (e) => crash('取りこぼした非同期エラー', e));
 //# sourceMappingURL=main.js.map

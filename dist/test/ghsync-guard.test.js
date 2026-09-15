@@ -45,4 +45,29 @@ test('復元に失敗すると、空のDBを作って取り繕ったりしない
     const { existsSync } = await import('node:fs');
     assert.equal(existsSync(missing), false);
 });
+/**
+ * 終了時の保存(第167弾)。
+ *
+ * 以前は ghsync が自前で SIGTERM を握っていたので、main.ts の終了処理と競走し、
+ * 「卓の精算が保存に乗らない」「送信が途中で殺される」のどちらかが起きていた。
+ * 再デプロイのたびに静かにチップが減るので、signalハンドラを持たないことを固定する。
+ */
+test('ghsync は自分で終了シグナルを握らない', async () => {
+    const { startAutoBackup } = await import('../src/server/ghsync.js');
+    const before = process.listenerCount('SIGTERM') + process.listenerCount('SIGINT');
+    const timer = startAutoBackup(new MemoryStore(), missing);
+    const after = process.listenerCount('SIGTERM') + process.listenerCount('SIGINT');
+    if (timer)
+        clearInterval(timer); // 定期タイマーが残るとテストが終われない
+    assert.equal(after, before, '終了処理は main.ts が順番を決めて呼ぶ');
+});
+test('終了前の保存は、送信が固まっても6秒で諦める', async () => {
+    const { flushBeforeExit } = await import('../src/server/ghsync.js');
+    globalThis.fetch = (() => new Promise(() => { }));
+    const t0 = Date.now();
+    await flushBeforeExit(new MemoryStore(), missing);
+    const ms = Date.now() - t0;
+    assert.ok(ms < 7000, `${ms}ms かかった。終了が長引くと強制終了されて保存ごと失われる`);
+    globalThis.fetch = realFetch;
+});
 //# sourceMappingURL=ghsync-guard.test.js.map
