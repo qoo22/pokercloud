@@ -60,6 +60,14 @@ export declare class Lobby {
      * 賭け金と現在額はサーバーだけが握る。切断すれば自動で確定して払う
      */
     private tunnelHold;
+    /**
+     * 配り終わったが、まだ選ばれていないダブル(第168弾)。
+     *
+     * 実機はディーラーが先に止まり、それを見てから3本の中から選ぶ。
+     * だから4本ぶんを先に決めてここへ置き、ディーラーだけ返す。
+     * プレイヤー3本は選び終わるまで送らない(覗いても分からないようにする)。
+     */
+    private tunnelDeal;
     private resumeTokens;
     private static readonly RESUME_CACHE_MAX;
     private cfg;

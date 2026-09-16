@@ -142,6 +142,16 @@ export type ClientMessage =
     half?: boolean;
     pick?: number;
 }
+/** ダブル開始。ディーラーだけ先に決めて見せる(第168弾) */
+ | {
+    t: 'tunnel.double.deal';
+    half?: boolean;
+}
+/** 回っている3本から1本を選ぶ。勝敗はここで確定する */
+ | {
+    t: 'tunnel.double.pick';
+    pick?: number;
+}
 /** ダブルをやめて獲得を確定する */
  | {
     t: 'tunnel.collect';
@@ -563,6 +573,13 @@ export type ServerMessage = {
 } | {
     t: 'tunnel.double';
     result: TunnelDoubleView;
+}
+/** ディーラーだけ先に見せる。プレイヤー3本はまだ伏せたまま(第168弾) */
+ | {
+    t: 'tunnel.double.dealt';
+    dealer: string;
+    stakeX: number;
+    keepX: number;
 } | {
     t: 'tunnel.collected';
     won: number;

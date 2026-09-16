@@ -213,8 +213,17 @@ export function bszSpin(rnd = Math.random) {
  * 3つ揃いのスペシャルは勝敗と別に加算され、ジョーカーが出ればトンネル倍率が乗る。
  */
 export function bszDouble(stakeX, keepX, rnd = Math.random, pick = 0) {
+    return bszResolveDouble(bszDealDouble(rnd), stakeX, keepX, pick);
+}
+export function bszDealDouble(rnd = Math.random) {
     const dealer = pickSym(rnd);
     const player = [pickSym(rnd), pickSym(rnd), pickSym(rnd)];
+    const tunnel = player.includes('joker') ? bszPickTunnel(rnd) : 0;
+    return { dealer, player, tunnel };
+}
+/** 決めておいた4本と、プレイヤーが選んだ1本から勝敗を出す */
+export function bszResolveDouble(deal, stakeX, keepX, pick = 0) {
+    const { dealer, player } = deal;
     const idx = pick === 1 || pick === 2 ? pick : 0;
     const mine = player[idx];
     const result = BSZ_RANK[mine] > BSZ_RANK[dealer] ? 'win' : BSZ_RANK[mine] === BSZ_RANK[dealer] ? 'tie' : 'lose';
@@ -226,8 +235,8 @@ export function bszDouble(stakeX, keepX, rnd = Math.random, pick = 0) {
     else if (player.every((s) => s === 'red7' || s === 'blue7'))
         specialKey = 'any7';
     let specialX = specialKey && BSZ_SPECIAL[specialKey] ? stakeX * BSZ_SPECIAL[specialKey] : 0;
-    // ジョーカーが出たらトンネル倍率がスペシャルに乗る
-    const tunnel = player.includes('joker') ? bszPickTunnel(rnd) : 0;
+    // ジョーカーが出たらトンネル倍率がスペシャルに乗る(倍率は配り時に決めてある)
+    const tunnel = deal.tunnel;
     if (tunnel)
         specialX *= tunnel;
     const won = result === 'win' ? stakeX * 2 : result === 'tie' ? stakeX : 0;

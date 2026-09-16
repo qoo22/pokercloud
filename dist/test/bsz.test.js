@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { bszEvaluate, bszSpin, bszDouble, bszSpinGrid, BSZ_LINES, BSZ_WEIGHTS, BSZ_SYMS, BSZ_SPECIAL, BSZ_FREE_SPINS, BSZ_MAX_WIN_X, BSZ_DOUBLE_CAP_X, } from '../src/server/bsz.js';
+import { bszEvaluate, bszSpin, bszDouble, bszSpinGrid, BSZ_LINES, BSZ_WEIGHTS, BSZ_SYMS, BSZ_SPECIAL, BSZ_FREE_SPINS, BSZ_MAX_WIN_X, BSZ_DOUBLE_CAP_X, bszDealDouble, bszResolveDouble, BSZ_RANK } from '../src/server/bsz.js';
 /** 再現性のある乱数(テストが日によって落ちないように) */
 function seeded(a) {
     return () => {
@@ -326,6 +326,65 @@ describe('WINNING TUNNEL: ジョーカー戻り(リバース)', () => {
         }
         const rtp = pay / N;
         assert.ok(rtp > 0.9 && rtp < 1.1, `RTPが帯を外れた: ${(rtp * 100).toFixed(1)}%`);
+    });
+});
+/**
+ * 2段階ダブル(第168弾)。
+ *
+ * 実機はディーラーが先に止まり、それを見てからプレイヤーが3本を選ぶ。
+ * 選んでから抽選すると「選んだせいで決まった」ように見えるので、
+ * 配るのは選ばせる前。選択は**すでに決まっている3本のどれを採用するか**だけ。
+ */
+describe('2段階ダブル', () => {
+    test('配った結果は、どれを選んでも変わらない', () => {
+        const deal = bszDealDouble(seeded(7));
+        const a = bszResolveDouble(deal, 10, 0, 0);
+        const b = bszResolveDouble(deal, 10, 0, 1);
+        const c = bszResolveDouble(deal, 10, 0, 2);
+        for (const r of [a, b, c]) {
+            assert.equal(r.dealer, deal.dealer);
+            assert.deepEqual(r.player, deal.player);
+        }
+        assert.equal(a.pick, 0);
+        assert.equal(b.pick, 1);
+        assert.equal(c.pick, 2);
+    });
+    test('勝敗は「選んだ1本」だけで決まる', () => {
+        const deal = bszDealDouble(seeded(11));
+        for (let i = 0; i < 3; i++) {
+            const r = bszResolveDouble(deal, 10, 0, i);
+            const mine = deal.player[i];
+            const expect = BSZ_RANK[mine] > BSZ_RANK[deal.dealer] ? 'win'
+                : BSZ_RANK[mine] === BSZ_RANK[deal.dealer] ? 'tie' : 'lose';
+            assert.equal(r.result, expect, `${i}本目: ${mine} vs ${deal.dealer}`);
+        }
+    });
+    test('分けても、まとめて回しても同じ結果になる', () => {
+        // bszDouble は分割版の薄い包みでしかない。乱数の消費順も変えていない
+        for (let seed = 0; seed < 40; seed++) {
+            const one = bszDouble(13, 5, seeded(seed), seed % 3);
+            const two = bszResolveDouble(bszDealDouble(seeded(seed)), 13, 5, seed % 3);
+            assert.deepEqual(two, one, `seed=${seed}`);
+        }
+    });
+    test('ジョーカーの倍率は配った時点で決まっている', () => {
+        // 選び直しで倍率が変わると、選択が抽選に見えてしまう
+        for (let seed = 0; seed < 200; seed++) {
+            const deal = bszDealDouble(seeded(seed));
+            if (!deal.player.includes('joker'))
+                continue;
+            assert.ok(deal.tunnel > 0, 'ジョーカーが出たのに倍率が無い');
+            const xs = [0, 1, 2].map((i) => bszResolveDouble(deal, 10, 0, i).tunnel);
+            assert.deepEqual(xs, [deal.tunnel, deal.tunnel, deal.tunnel]);
+        }
+    });
+    test('ジョーカーが出ていなければ倍率は0', () => {
+        for (let seed = 0; seed < 100; seed++) {
+            const deal = bszDealDouble(seeded(seed));
+            if (deal.player.includes('joker'))
+                continue;
+            assert.equal(deal.tunnel, 0);
+        }
     });
 });
 //# sourceMappingURL=bsz.test.js.map

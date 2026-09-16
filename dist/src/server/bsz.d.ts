@@ -157,3 +157,20 @@ export interface BszDoubleResult {
  * 3つ揃いのスペシャルは勝敗と別に加算され、ジョーカーが出ればトンネル倍率が乗る。
  */
 export declare function bszDouble(stakeX: number, keepX: number, rnd?: () => number, pick?: number): BszDoubleResult;
+/**
+ * 実機の順番どおり、**選ばせる前に**4本ぶんの絵柄を決めておく(第168弾)。
+ *
+ * 実機はディーラーが先に止まり、それを見てからプレイヤーが3本の中から選ぶ。
+ * 選んでから抽選すると「選んだ結果で決まった」ように見えてしまうので、
+ * 先に全部決めてしまう。クライアントへはディーラーだけ先に渡し、
+ * プレイヤー3本は選び終わるまで伏せておく(覗いても分からないようにする)。
+ */
+export interface BszDoubleDeal {
+    dealer: BszSym;
+    player: [BszSym, BszSym, BszSym];
+    /** ジョーカーが出たときのトンネル倍率。出ていなければ0 */
+    tunnel: number;
+}
+export declare function bszDealDouble(rnd?: () => number): BszDoubleDeal;
+/** 決めておいた4本と、プレイヤーが選んだ1本から勝敗を出す */
+export declare function bszResolveDouble(deal: BszDoubleDeal, stakeX: number, keepX: number, pick?: number): BszDoubleResult;

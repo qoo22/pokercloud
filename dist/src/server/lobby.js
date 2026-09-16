@@ -7,7 +7,7 @@
  */
 import { MemoryStore } from './store.js';
 import { Economy, CHIP_PACKS, GOLD_PACKS, PASS_PREMIUM_SKU, PASS_TIERS, SAFE_POST } from './economy.js';
-import { bszDouble, BSZ_DOUBLE_CAP_X } from './bsz.js';
+import { bszDouble, bszDealDouble, bszResolveDouble, BSZ_DOUBLE_CAP_X } from './bsz.js';
 import { Room, realScheduler } from './room.js';
 import { Tournament } from './tournament.js';
 import { PROTOCOL_VERSION, parseClientMessage, } from './protocol.js';
@@ -300,6 +300,14 @@ export class Lobby {
      * 賭け金と現在額はサーバーだけが握る。切断すれば自動で確定して払う
      */
     tunnelHold = new Map();
+    /**
+     * 配り終わったが、まだ選ばれていないダブル(第168弾)。
+     *
+     * 実機はディーラーが先に止まり、それを見てから3本の中から選ぶ。
+     * だから4本ぶんを先に決めてここへ置き、ディーラーだけ返す。
+     * プレイヤー3本は選び終わるまで送らない(覗いても分からないようにする)。
+     */
+    tunnelDeal = new Map();
     resumeTokens = new Map();
     static RESUME_CACHE_MAX = 3000;
     cfg;
@@ -684,6 +692,7 @@ export class Lobby {
      * ダブルの途中で切断されても、次の接続や次のスピンで必ずここを通る
      */
     tunnelCashOut(userId) {
+        this.tunnelDeal.delete(userId); // 配り途中のダブルも一緒に捨てる
         const hold = this.tunnelHold.get(userId);
         if (!hold)
             return 0;
@@ -1094,6 +1103,7 @@ export class Lobby {
                 let pending = 0;
                 if (o.canDouble) {
                     this.tunnelHold.set(s.userId, { bet: r.bet, payX: o.totalPayX });
+                    this.tunnelDeal.delete(s.userId); // 前のダブルの配りは無効にする
                     pending = Math.round(o.totalPayX * r.bet);
                 }
                 else if (r.won > 0) {
@@ -1135,7 +1145,46 @@ export class Lobby {
                     this.tunnelCashOut(s.userId);
                 return;
             }
+            case 'tunnel.double.deal': {
+                const hold = this.tunnelHold.get(s.userId);
+                if (!hold)
+                    return this.err(sessionId, 'ILLEGAL_ACTION', 'ダブルできる獲得がありません');
+                if (hold.payX > BSZ_DOUBLE_CAP_X) {
+                    this.tunnelCashOut(s.userId);
+                    return this.err(sessionId, 'ILLEGAL_ACTION', '上限を超えたので確定しました');
+                }
+                const keepX = msg.half ? Math.floor(hold.payX / 2) : 0;
+                const stakeX = hold.payX - keepX;
+                const deal = bszDealDouble(Math.random);
+                this.tunnelDeal.set(s.userId, { deal, stakeX, keepX });
+                // 返すのはディーラーだけ。プレイヤー3本はまだ伏せる
+                this.transport.send(sessionId, {
+                    t: 'tunnel.double.dealt', dealer: deal.dealer, stakeX, keepX,
+                });
+                return;
+            }
+            case 'tunnel.double.pick': {
+                const hold = this.tunnelHold.get(s.userId);
+                const pending = this.tunnelDeal.get(s.userId);
+                if (!hold || !pending)
+                    return this.err(sessionId, 'ILLEGAL_ACTION', '選べるダブルがありません');
+                this.tunnelDeal.delete(s.userId);
+                const r = bszResolveDouble(pending.deal, pending.stakeX, pending.keepX, msg.pick ?? 0);
+                if (r.payX > 0)
+                    this.tunnelHold.set(s.userId, { bet: hold.bet, payX: r.payX });
+                else
+                    this.tunnelHold.delete(s.userId);
+                const canDouble = r.payX > 0 && r.payX <= BSZ_DOUBLE_CAP_X;
+                this.transport.send(sessionId, {
+                    t: 'tunnel.double',
+                    result: { result: r, pending: Math.round(r.payX * hold.bet), canDouble },
+                });
+                if (r.payX > BSZ_DOUBLE_CAP_X)
+                    this.tunnelCashOut(s.userId);
+                return;
+            }
             case 'tunnel.collect': {
+                this.tunnelDeal.delete(s.userId); // 配り途中でやめたら捨てる
                 const won = this.tunnelCashOut(s.userId);
                 this.transport.send(sessionId, { t: 'tunnel.collected', won });
                 return;

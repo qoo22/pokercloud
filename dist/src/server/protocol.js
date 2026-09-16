@@ -208,6 +208,13 @@ export function parseClientMessage(raw) {
             const pick = typeof raw === 'number' && (raw === 0 || raw === 1 || raw === 2) ? raw : 0;
             return { ok: true, msg: { t: 'tunnel.double', half, pick } };
         }
+        case 'tunnel.double.deal':
+            return { ok: true, msg: { t: 'tunnel.double.deal', half: m.half === true } };
+        case 'tunnel.double.pick': {
+            const raw = m.pick;
+            const pick = raw === 1 || raw === 2 ? raw : 0;
+            return { ok: true, msg: { t: 'tunnel.double.pick', pick } };
+        }
         case 'tunnel.collect':
             return { ok: true, msg: { t: 'tunnel.collect' } };
         case 'slot.spin': {
