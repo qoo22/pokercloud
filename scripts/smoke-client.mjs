@@ -889,6 +889,38 @@ check('ダブルダウンが実機の手順どおり（第168弾）', () => {
     throw new Error('演出中の再描画を止めていない');
 });
 
+check('2台目の音と賭け金は GOLD RUSH と同じ作り（第169弾）', () => {
+  const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
+  const css = [...A.document.querySelectorAll('style')].map((e) => e.textContent).join('\n');
+
+  // ①回転音は GOLD RUSH と同じ録音のループ。合成音を鳴らし直さない
+  if (!/function tnLoopOn\(\) \{\s*if \(tnLoop\) return;\s*try \{ reelSoundStart\(\);/.test(js))
+    throw new Error('回転音が GOLD RUSH の録音ループでない');
+  if (!/reelSoundStop\(\);/.test(js)) throw new Error('回転音を止めていない');
+  if (/play\("reelSpin"\)/.test(js.slice(js.indexOf('function tnLoopOn'), js.indexOf('function tnLoopOn') + 600)))
+    throw new Error('合成音が残っている');
+
+  // ②BET音・START音も同じボタン音
+  if (!/function tnSfxBet\(\) \{ try \{ sfx\("btn"\); \}/.test(js)) throw new Error('BET音が違う');
+  if (!/function tnSfxStart\(\) \{ try \{ sfx\("btn"\); \}/.test(js)) throw new Error('START音が違う');
+  // ボタン音が鳴り終わってから回る(GOLD RUSH と同じ間の取り方)
+  if (!/SFX_SEC\.btn \? SFX_SEC\.btn : 0\.2\) \* 1000/.test(js))
+    throw new Error('ボタン音を待たずに回している');
+
+  // ③賭け金は「段を選ぶ」方式。半分/2倍で自由に動かさない
+  if (/tnBet = Math\.max\(1000, Math\.floor\(tnBet \/ 2\)\)/.test(js))
+    throw new Error('半分/2倍の操作が残っている');
+  if (!/function tnBetList/.test(js)) throw new Error('段の一覧が無い');
+  if (!/sv\.chipBets/.test(js)) throw new Error('サーバーの刻みを使っていない');
+  if (!/\[data-tnbetstep\]/.test(js)) throw new Error('1段ずつの操作が無い');
+  if (!/b\.dataset\.tnbetop === "max"/.test(js)) throw new Error('MAX が無い');
+  if (!/\.tn-betlist\{/.test(css)) throw new Error('一覧の見た目が無い');
+
+  // 賭け金を覚えておく(開き直しても段が戻らない)
+  if (!/localStorage\.setItem\("tnBet"/.test(js)) throw new Error('賭け金を保存していない');
+  if (!/localStorage\.getItem\("tnBet"\)/.test(js)) throw new Error('賭け金を読み戻していない');
+});
+
 check('9リールの形と挙動が実機寄り（第165弾）', () => {
   const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
   const css = [...A.document.querySelectorAll('style')].map((e) => e.textContent).join('\n');

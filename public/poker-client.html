@@ -1323,8 +1323,19 @@
   .tn-hits i{font-style:normal;color:#8b97a5}
   /* 操作 */
   .tn-ctrl{display:flex;gap:8px;align-items:center;margin-top:9px}
+  /* 賭け金は GOLD RUSH と同じ「段を選ぶ」形(第169弾)。
+     −/＋ で1段ずつ動き、金額をタップすると一覧が開き、MAX で最上段へ飛ぶ */
+  .tn-betsel{display:flex;gap:6px;align-items:stretch;margin-top:9px}
+  .tn-betlist{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:6px}
+  .tn-betitem{padding:8px 4px;border-radius:9px;font-size:11.5px;font-weight:700;cursor:pointer;
+    border:1px solid rgba(120,170,255,.35);background:rgba(0,0,0,.35);color:#e8edf2;
+    font-variant-numeric:tabular-nums}
+  .tn-betitem.sel{border-color:#ffd76a;color:#ffe9a8;background:rgba(217,180,95,.16)}
+  .tn-btn.wide{font-size:11.5px;letter-spacing:.06em}
+  .tn-btn:disabled{opacity:.4;cursor:default}
   .tn-bet{flex:1;text-align:center;padding:8px;border-radius:10px;background:rgba(0,0,0,.35);
-    border:1px solid rgba(120,170,255,.35)}
+    border:1px solid rgba(120,170,255,.35);cursor:pointer;color:inherit;font:inherit}
+  .tn-bet:disabled{opacity:.55;cursor:default}
   .tn-bet span{display:block;font-size:9px;color:#8b97a5;letter-spacing:.18em}
   .tn-bet b{font-size:16px;color:#ffe9a8;font-variant-numeric:tabular-nums}
   .tn-btn{padding:10px 14px;border-radius:10px;font-size:13px;font-weight:900;cursor:pointer;
@@ -8152,6 +8163,11 @@
   };
   var TN_LINE_PAY = { joker: 100, blue7: 40, red7: 30, any7: 20, bar: 8, eight: 5, bell: 4, melon: 3, plum: 2, orange: 1, cherry: 1 };
   var tnBet = 1000, tnBusy = false, tnPending = 0, tnCanDouble = false, tnPick = 0, tnLast = null;
+  // 前回の賭け金を覚えておく(GOLD RUSH と同じく、開き直しても段が戻らない)
+  try {
+    var tnSaved = Number(localStorage.getItem("tnBet"));
+    if (isFinite(tnSaved) && tnSaved > 0) tnBet = tnSaved;
+  } catch (e) {}
   /** いま回し終えたか(結果表示を2段階に分けるための目印) */
   var tnSpun = false;
 
@@ -8172,10 +8188,10 @@
   // 実機は通常時にBGMを流さず、回転音と停止音だけでリズムを作る。
   // だから普段の音数を抑えるほど、当選時の音楽が効く
   var tnLoop = null;
-  /** BET音。短い矩形波。連打すると規則的に鳴る */
-  function tnSfxBet() { try { bacAudioInit(); bacBlip(880, 0.05, "square", 0.07); } catch (e) {} }
-  /** START音。BETより少し低く、始まりを知らせる */
-  function tnSfxStart() { try { bacAudioInit(); bacBlip(420, 0.09, "triangle", 0.10); } catch (e) {} }
+  /** BET音。GOLD RUSH のベット操作と同じボタン音(第169弾) */
+  function tnSfxBet() { try { sfx("btn"); } catch (e) {} }
+  /** START音。GOLD RUSH のスピンと同じボタン音(第169弾) */
+  function tnSfxStart() { try { sfx("btn"); } catch (e) {} }
   /**
    * 停止音(第168弾)。実機の録音から、打撃の 88ms だけを切り出したもの。
    *
@@ -8217,26 +8233,24 @@
   }
   /** 回転ループ音。細かい周期音を小さく鳴らし続ける */
   /**
-   * 回転音(第168弾)。GOLD RUSH と同じ音を、同じ 320ms 間隔で鳴らす。
+   * 回転音(第169弾)。GOLD RUSH が鳴らしているのと**同じ録音**をループさせる。
    *
-   * これまでは専用の持続音を鳴らしていたが、台ごとに回転音が違うと
-   * 同じ筐体の中の別ゲームに聞こえない。2台で同じ音にして揃えた。
-   * @param ms 間隔。減速に合わせて広げると、速度が落ちたことが耳でも分かる
+   * 第168弾では合成のカチカチ音を等間隔で鳴らしていたが、GOLD RUSH の
+   * 回転音は録音(`sfxBuf.reel`)のループだった。台ごとに音が違うと、
+   * 同じ筐体に入っている別ゲームに聞こえない。音源ごと揃える。
+   *
+   * 引数は互換のために残してあるが、録音のループなので間隔は関係ない。
+   * 減速の表現は音程ではなく、停止音の間の取り方で作る。
    */
-  function tnLoopOn(ms) {
-    var gap = ms || 320;
-    if (tnLoop && tnLoop.gap === gap) return;
-    tnLoopOff();
-    try { play("reelSpin"); } catch (e) {}
-    tnLoop = {
-      gap: gap,
-      t: setInterval(function () { try { play("reelSpin"); } catch (e) {} }, gap),
-    };
+  function tnLoopOn() {
+    if (tnLoop) return;
+    try { reelSoundStart(); } catch (e) { return; }
+    tnLoop = true;
   }
   function tnLoopOff() {
     if (!tnLoop) return;
-    clearInterval(tnLoop.t);
-    tnLoop = null;
+    tnLoop = false;
+    try { reelSoundStop(); } catch (e) {}
   }
 
   /**
@@ -8366,11 +8380,7 @@
       (hits ? '<div class="tn-hits">' + hits + "</div>" : "") +
       '<div class="tn-msg" id="tn-msg">' + (tnLast && tnLast.msg ? tnLast.msg : "") + "</div>" +
       (tnCanDouble ? tnDoubleHtml() : "") +
-      '<div class="tn-ctrl">' +
-        '<button class="tn-btn" id="tn-minus">\u2212</button>' +
-        '<div class="tn-bet"><span>\u8CDE\u3051\u91D1</span><b id="tn-betv">' + tnFmt(tnBet) + "</b></div>" +
-        '<button class="tn-btn" id="tn-plus">\uFF0B</button>' +
-      "</div>" +
+      tnBetHtml() +
       '<button class="tn-spin" id="tn-spin"' + (tnBusy || tnCanDouble ? " disabled" : "") + ">" +
         (tnCanDouble ? "\u30C0\u30D6\u30EB\u3092\u9078\u3093\u3067\u304F\u3060\u3055\u3044" : "SPIN") + "</button>" +
       tnPayHtml() +
@@ -8453,14 +8463,42 @@
 
   function tnWire() {
     var $$ = function (id) { return document.getElementById(id); };
-    var minus = $$("tn-minus"), plus = $$("tn-plus"), spin = $$("tn-spin");
-    if (minus) minus.onclick = function () { tnBet = Math.max(1000, Math.floor(tnBet / 2)); tnSfxBet(); renderTunnel(); };
-    if (plus) plus.onclick = function () { tnBet = tnBet * 2; tnSfxBet(); renderTunnel(); };
+    var spin = $$("tn-spin");
+    var each = function (sel, fn) {
+      Array.prototype.forEach.call(document.querySelectorAll("#tunnel " + sel), fn);
+    };
+    // −/+ は1段ずつ。飛び飛びの金額しか作れないのが選択式の要点(GOLD RUSH と同じ)
+    each("[data-tnbetstep]", function (b) {
+      b.onclick = function () {
+        var list = tnBetList();
+        var i = Math.max(0, Math.min(list.length - 1, tnBetIdx(list) + Number(b.dataset.tnbetstep)));
+        tnSfxBet();
+        if (list[i] != null) tnSetBet(list[i]);
+      };
+    });
+    each("[data-tnbetop]", function (b) {
+      b.onclick = function () {
+        var list = tnBetList();
+        tnSfxBet();
+        if (b.dataset.tnbetop === "max" && list.length) tnSetBet(list[list.length - 1]);
+      };
+    });
+    each("[data-tnbet]", function (b) {
+      b.onclick = function () { tnBetOpen = false; tnSfxBet(); tnSetBet(b.dataset.tnbet); };
+    });
+    var betNow = $$("tn-betnow");
+    if (betNow) betNow.onclick = function () { tnSfxBet(); tnBetOpen = !tnBetOpen; renderTunnel(); };
     if (spin) spin.onclick = function () {
       if (tnBusy || tnCanDouble) return;
+      tnBetOpen = false;
       tnBusy = true; tnLast = null; renderTunnel();
+      // GOLD RUSH と同じで、**ボタン音が鳴り終わってからリールが回る**。
+      // 送信も同じだけ遅らせる(結果が先に届いて回転が短く見えるのを防ぐ)
       tnSfxStart();
-      send({ t: "tunnel.spin", bet: tnBet });
+      setTimeout(function () {
+        if (!tnBusy) return;
+        send({ t: "tunnel.spin", bet: tnBet });
+      }, Math.round((typeof SFX_SEC !== "undefined" && SFX_SEC.btn ? SFX_SEC.btn : 0.2) * 1000));
     };
     var c = $$("tn-collect"), h = $$("tn-half"), f = $$("tn-full");
     if (c) c.onclick = function () { if (tnDD) return; tnBusy = true; send({ t: "tunnel.collect" }); };
@@ -8756,7 +8794,7 @@
     var reel = tnDDReel(d, 0);
     tnDD.dealerReel = reel;
     reel.spin();
-    tnLoopOn(320);
+    tnLoopOn();
     // ディーラーは焦らさない。約1.1秒で止める
     setTimeout(function () {
       if (!tnDD) return;
@@ -8781,7 +8819,7 @@
       setTimeout(function () { r.spin(); }, i * 35);
       return r;
     });
-    tnLoopOn(320);
+    tnLoopOn();
     setTimeout(function () {
       if (!tnDD) return;
       tnDD.stage = "picking";
@@ -8842,11 +8880,8 @@
       var teaser = r.result === "win" ? tnTeaser(r.dealer, "weak")
         : r.result === "lose" ? tnTeaser(r.dealer, "strong") : null;
       reel.setLanding(r.player[idx], teaser);
-      tnLoopOn(320);
-      reel.stop({ extra: extra }, function (stage) {
-        // 減速が耳でも分かるように、回転音の間隔を広げていく
-        tnLoopOn([320, 320, 460, 700, 980][stage] || 980);
-      }, function () {
+      tnLoopOn();
+      reel.stop({ extra: extra }, null, function () {
         tnLoopOff();
         if (r.result === "win") {
           tnSfxStop(1, 1.12);
@@ -8891,6 +8926,60 @@
     // 盤を戻したあとの見出し・WINNER!・残額はこれまでどおりの表示を使う
     if (view) { tnShowDouble(view); return; }
     tnBusy = false;
+    renderTunnel();
+  }
+
+  /**
+   * 賭け金の操作(第169弾)。GOLD RUSH とまったく同じ作りにする。
+   *
+   * 半分/2倍で自由に動かすのではなく、**1-2-5 の段を選ぶ**。
+   * 段の一覧はサーバーが所持額から作ったもの(chipBets)をそのまま使うので、
+   * 2台のあいだで刻みがずれない。金額をタップすると一覧が開き、
+   * MAX で一番上の段へ飛ぶ。
+   */
+  var tnBetOpen = false;
+  function tnBetList() {
+    var sv = (typeof slotView !== "undefined" && slotView) ? slotView : null;
+    var list = sv && sv.chipBets && sv.chipBets.length ? sv.chipBets.slice() : null;
+    if (list) return list;
+    // スロット情報がまだ届いていないときの代わり。届けば上の段に差し替わる
+    var out = [];
+    for (var k = 3; k < 9; k++) {
+      out.push(1 * Math.pow(10, k), 2 * Math.pow(10, k), 5 * Math.pow(10, k));
+    }
+    return out;
+  }
+  /** いま何段目か。一覧に無い額は、それを超えない一番近い段に寄せる */
+  function tnBetIdx(list) {
+    var i = list.indexOf(tnBet);
+    if (i >= 0) return i;
+    i = 0;
+    for (var k = 0; k < list.length; k++) if (list[k] <= tnBet) i = k;
+    return i;
+  }
+  function tnBetHtml() {
+    var list = tnBetList();
+    var i = tnBetIdx(list);
+    var lock = tnBusy || tnCanDouble;
+    return '<div class="tn-betsel">' +
+      '<button class="tn-btn" data-tnbetstep="-1"' + (lock || i <= 0 ? " disabled" : "") + ">\u2212</button>" +
+      '<button class="tn-bet" id="tn-betnow"' + (lock ? " disabled" : "") + ">" +
+        "<span>\u8CDE\u3051\u91D1</span><b id=\"tn-betv\">" + tnFmt(tnBet) + "</b></button>" +
+      '<button class="tn-btn" data-tnbetstep="1"' + (lock || i >= list.length - 1 ? " disabled" : "") + ">\uFF0B</button>" +
+      '<button class="tn-btn wide" data-tnbetop="max"' + (lock ? " disabled" : "") + ">MAX</button>" +
+      "</div>" +
+      (tnBetOpen
+        ? '<div class="tn-betlist">' + list.map(function (b) {
+            return '<button class="tn-betitem' + (b === tnBet ? " sel" : "") + '" data-tnbet="' + b + '">' +
+              "\uD83D\uDCB0 " + tnFmt(b) + "</button>";
+          }).join("") + "</div>"
+        : "");
+  }
+  function tnSetBet(v) {
+    var n = Number(v);
+    if (!isFinite(n) || n <= 0) return;
+    tnBet = n;
+    try { localStorage.setItem("tnBet", String(n)); } catch (e) {}
     renderTunnel();
   }
 
