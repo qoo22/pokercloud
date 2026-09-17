@@ -82,8 +82,21 @@ export const BSZ_ANY_PAY = {
 export const BSZ_REVERSE = {
     /** フリーのうち、戻り演出で見せる割合(残りは直停止) */
     hitRate: 0.55,
-    /** ハズレのうち、戻りガセを見せる割合 */
-    gaseRate: 0.0103,
+    /**
+     * 中央がブランクで止まったハズレのうち、戻りガセを見せる割合(第170弾)。
+     *
+     * リールはブランクの上下をジョーカーで挟んである。だから中央がブランクなら、
+     * 「さっき通り過ぎたジョーカーが戻ってくるかもしれない」が常に成り立つ。
+     * 逆に中央が果物や7で止まったときに戻り演出を出すと、リールの並びと
+     * 合わない動きになるので出さない。
+     *
+     * 以前は中央の絵柄を問わず 1.03% だったので、ほとんど出会えなかった。
+     * 中央ブランク(実測12.0%)に限ったうえで割合を上げ、実測で
+     * **37回に1回**逆回転が出るようにした(以前は約60回に1回)。
+     * 上げすぎると逆回転が当たり前になって焦らしが死ぬ。この値で
+     * 「逆回転したときに本当に当たる率」は20%に収まる。
+     */
+    gaseRate: 0.18,
 };
 /** トンネルの倍率と重み */
 export const BSZ_TUNNEL = [
@@ -192,7 +205,9 @@ export function bszSpin(rnd = Math.random) {
     // 結果が決まったあとで、中央リールの見せ方だけを選ぶ
     const reverse = freeEntered
         ? (rnd() < BSZ_REVERSE.hitRate ? { hit: true } : null)
-        : (rnd() < BSZ_REVERSE.gaseRate ? { hit: false } : null);
+        // ガセは中央がブランクのときだけ。リールの並び(ブランクの上下がジョーカー)と
+        // 合う動きにしないと、戻ってきたジョーカーが宙から湧いたように見える
+        : (grid0[4] === 'blank' && rnd() < BSZ_REVERSE.gaseRate ? { hit: false } : null);
     const capped = Math.min(sum, BSZ_MAX_WIN_X);
     return {
         grid0, base, freeEntered, tunnel, free, reverse,
