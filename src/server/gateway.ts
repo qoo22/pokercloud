@@ -1,0 +1,367 @@
+/**
+ * WebSocket ゲートウェイ（ws）
+ *
+ * この層の責務は「バイト列とセッション ID の対応づけ」だけに絞ってある。
+ * ゲームのルールも、お金も、権限判定もここには書かない。
+ * そうしておくと、Lobby 側をソケット無しでテストでき、
+ * トランスポートを差し替えたくなったとき（WebTransport など）にも波及しない。
+ *
+ * ここで面倒を見るのは、通信層でしか起きない問題だけ：
+ *   - 死んだ接続の掃除（ハートビート）
+ *   - 巨大メッセージによるメモリ枯渇の防止
+ *   - 送信キューが詰まった接続の切断
+ */
+
+import { createServer, type IncomingMessage, type Server as HttpServer } from 'node:http';
+import { readFileSync, existsSync, writeFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
+import { extname, join, normalize } from 'node:path';
+import { WebSocketServer, WebSocket } from 'ws';
+import { Lobby, type Transport, type LobbyConfig } from './lobby.js';
+import { realScheduler, type Scheduler } from './room.js';
+import { randomSeedHex } from '../fair.js';
+
+export interface GatewayOptions extends LobbyConfig {
+  /** 台帳DBのパス。指定すると /admin/backup /admin/restore が有効になる */
+  dbPath?: string;
+  /** データが実際に残っているかの実測結果(第167弾)。復元の安全装置に使う */
+  persistence?: import('./persistence.js').PersistenceStatus;
+  /** GitHubへの手動バックアップ実行(/admin/ghpush)。ghsync 参照 */
+  ghPush?: () => Promise<string>;
+  /** 当日の外部送信量(/admin/bandwidth)。ghsync.bandwidthToday 参照 */
+  bandwidthToday?: () => { day: string; bytes: number; pushes: number };
+  port?: number;
+  /** 静的ファイルを配る場合のルート（動作確認クライアント用） */
+  staticRoot?: string;
+  /** 1 メッセージの最大バイト数 */
+  maxMessageBytes?: number;
+  /** ハートビート間隔 */
+  heartbeatMs?: number;
+  /** 送信バッファがこれを超えたら切断 */
+  maxBufferedBytes?: number;
+  clock?: Scheduler;
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+};
+
+export class Gateway {
+  readonly lobby: Lobby;
+  private wss: WebSocketServer;
+  private http: HttpServer;
+  private sockets = new Map<string, WebSocket>();
+  private alive = new Map<string, boolean>();
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private readonly opts: Required<
+    Omit<GatewayOptions, 'clock' | 'staticRoot' | 'tables' | 'tournaments' | 'store'>
+  > &
+    Pick<GatewayOptions, 'staticRoot' | 'tables' | 'tournaments' | 'store'>;
+
+  constructor(options: GatewayOptions) {
+    this.opts = {
+      port: 8787,
+      maxMessageBytes: 16 * 1024,
+      heartbeatMs: 20000,
+      maxBufferedBytes: 1024 * 1024,
+      signupBonus: 50000,
+      signupGold: 100,
+      maxMessagesPerSecond: 20,
+      ...options,
+    } as typeof this.opts;
+
+    const transport: Transport = {
+      send: (sessionId, msg) => {
+        const ws = this.sockets.get(sessionId);
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        // 送信が追いつかない接続は切る。放置するとサーバーのメモリを食い潰す
+        if (ws.bufferedAmount > this.opts.maxBufferedBytes) {
+          ws.close(1013, 'send buffer overflow');
+          return;
+        }
+        ws.send(JSON.stringify(msg));
+      },
+      close: (sessionId, reason) => {
+        this.sockets.get(sessionId)?.close(1002, reason);
+      },
+    };
+
+    this.lobby = new Lobby(
+      {
+        tables: options.tables,
+        tournaments: options.tournaments,
+        store: options.store,
+        signupBonus: this.opts.signupBonus,
+        signupGold: this.opts.signupGold,
+        maxMessagesPerSecond: this.opts.maxMessagesPerSecond,
+        authSecret: options.authSecret,
+      },
+      transport,
+      options.clock ?? realScheduler,
+    );
+
+    this.http = createServer((req, res) => this.serveStatic(req, res));
+    this.wss = new WebSocketServer({ server: this.http, maxPayload: this.opts.maxMessageBytes });
+
+    this.wss.on('connection', (ws: WebSocket) => {
+      const sessionId = `s_${randomSeedHex(8)}`;
+      this.sockets.set(sessionId, ws);
+      this.alive.set(sessionId, true);
+      this.lobby.onConnect(sessionId);
+
+      ws.on('message', (data, isBinary) => {
+        if (isBinary) {
+          ws.close(1003, 'binary not supported');
+          return;
+        }
+        const text = data.toString();
+        if (text.length > this.opts.maxMessageBytes) {
+          ws.close(1009, 'message too large');
+          return;
+        }
+        try {
+          this.lobby.onRaw(sessionId, text);
+        } catch (e) {
+          // 1 人の異常系で全員を巻き込まない。ただし**黙って捨てない**。
+          // 以前ここで握りつぶしていたため、残高が2^53を超えたアカウントは
+          // hello が RangeError で落ちても客側は「接続済みのまま無反応」になり、
+          // 原因究明が本番のプローブ頼みになった。返事だけは必ず返す
+          console.error('[gateway] メッセージ処理で例外', e);
+          try {
+            ws.send(JSON.stringify({
+              t: 'error', code: 'INTERNAL',
+              message: 'サーバー内部でエラーが起きました。時間をおいて再読み込みしてください',
+            }));
+          } catch {}
+        }
+      });
+
+      ws.on('pong', () => this.alive.set(sessionId, true));
+
+      ws.on('close', () => {
+        this.sockets.delete(sessionId);
+        this.alive.delete(sessionId);
+        this.lobby.onDisconnect(sessionId);
+      });
+
+      ws.on('error', () => {
+        // close が続けて飛ぶので、ここでは握りつぶす
+      });
+    });
+  }
+
+  /**
+   * 応答の無い接続を掃除する。
+   * TCP は切断を教えてくれないことがあり、これが無いと「座ったまま反応しない幽霊」が卓に残る。
+   */
+  private startHeartbeat(): void {
+    this.heartbeat = setInterval(() => {
+      for (const [sessionId, ws] of this.sockets) {
+        if (this.alive.get(sessionId) === false) {
+          ws.terminate();
+          continue;
+        }
+        this.alive.set(sessionId, false);
+        if (ws.readyState === WebSocket.OPEN) ws.ping();
+      }
+    }, this.opts.heartbeatMs);
+    this.heartbeat.unref?.();
+  }
+
+  /**
+   * 残高台帳のバックアップ/復元(手動運用)。
+   * エフェメラルFSのクラウドで「再デプロイ前にDLして、デプロイ後に書き戻す」ための穴。
+   * 鍵は resumeToken の署名鍵(POKER_SECRET)を流用する。
+   *   バックアップ: GET  /admin/backup?key=<POKER_SECRET>   → poker.db がダウンロードされる
+   *   健康診断    : GET  /admin/health?key=<POKER_SECRET>   (データが残っているか)
+   *   復元        : POST /admin/restore?key=<POKER_SECRET>  (bodyにpoker.dbそのまま)
+   *                 → 書き戻してプロセスを終了(ホスティング側が自動再起動して読み込む)
+   */
+  private serveAdmin(req: IncomingMessage, res: import('node:http').ServerResponse, path: string): void {
+    const key = new URL(req.url ?? '/', 'http://x').searchParams.get('key') ?? '';
+    const secret = this.opts.authSecret ?? '';
+    const db = this.opts.dbPath;
+    if (!db || secret.length < 16 || key !== secret) {
+      res.writeHead(403).end('forbidden');
+      return;
+    }
+    if (path === '/admin/health' && req.method === 'GET') {
+      // データが残っているかを一目で確かめる窓口(第167弾)。
+      // デプロイのあとにここを見れば、消えているかどうかがすぐ分かる
+      const st = this.opts.persistence;
+      const body = JSON.stringify({
+        ok: st ? st.persisted || (!st.hosted && st.boots === 1) : false,
+        boots: st?.boots ?? 0,
+        persisted: st?.persisted ?? false,
+        configured: st?.configured ?? false,
+        hosted: st?.hosted ?? false,
+        dbPath: st?.dbPath ?? db,
+        summary: st?.summary ?? '不明',
+      }, null, 2);
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' }).end(body);
+      return;
+    }
+    if (path === '/admin/backup' && req.method === 'GET') {
+      try {
+        const body = readFileSync(db);
+        res.writeHead(200, {
+          'content-type': 'application/octet-stream',
+          'content-disposition': 'attachment; filename="poker.db"',
+        });
+        res.end(body);
+      } catch {
+        res.writeHead(500).end('no db');
+      }
+      return;
+    }
+    if (path === '/admin/ghpush' && req.method === 'GET') {
+      const fn = this.opts.ghPush;
+      if (!fn) { res.writeHead(500).end('ghPush 未設定'); return; }
+      fn().then((r) => res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(`GitHubバックアップ: ${r}`))
+        .catch((e) => res.writeHead(500).end(String(e)));
+      return;
+    }
+    // 当日の外部送信量(GitHubバックアップ)を確認する。秘密情報は含まない
+    if (path === '/admin/bandwidth' && req.method === 'GET') {
+      const fn = this.opts.bandwidthToday;
+      if (!fn) { res.writeHead(500).end('bandwidth 未設定'); return; }
+      const b = fn();
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+        .end(`GitHub送信量 (${b.day} UTC): ${(b.bytes / 1024).toFixed(1)}KB / ${b.pushes}回`);
+      return;
+    }
+    if (path === '/admin/restore' && req.method === 'POST') {
+      // 安全装置(第167弾)。
+      //
+      // 保存先が消える環境で書き戻しても、直後の再起動でまるごと捨てられる。
+      // 2026-09-14 はそれに気づかないまま復元を実行し、100京を二度失ったうえ
+      // 末尾の process.exit がホスティングの異常終了アラートまで鳴らした。
+      // だから「残ると確かめられない限り、書き戻さずに断る」。
+      const st = this.opts.persistence;
+      const force = new URL(req.url ?? '/', 'http://x').searchParams.get('force') === '1';
+      if (st && st.hosted && !st.persisted && !st.configured && !force) {
+        res.writeHead(409, { 'content-type': 'text/plain; charset=utf-8' }).end(
+          '復元を中止しました: 保存先が永続化されていません。\n' +
+          `  ${st.summary}\n` +
+          `  DBの置き場: ${st.dbPath}\n` +
+          'このまま書き戻しても、次の再起動で消えます。\n' +
+          '先に永続ディスク(POKER_DB)か GitHub バックアップを設定してください。\n' +
+          '設定済みで、それでも実行したい場合は ?force=1 を付けてください。\n');
+        req.resume();
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let size = 0;
+      req.on('data', (c: Buffer) => {
+        size += c.length;
+        if (size > 200 * 1024 * 1024) req.destroy();
+        else chunks.push(c);
+      });
+      req.on('end', () => {
+        try {
+          writeFileSync(db + '.restore', Buffer.concat(chunks));
+          renameSync(db + '.restore', db);
+          rmSync(db + '-wal', { force: true });
+          rmSync(db + '-shm', { force: true });
+          res.writeHead(200).end('restored — restarting server');
+          setTimeout(() => process.exit(0), 300);
+        } catch {
+          res.writeHead(500).end('restore failed');
+        }
+      });
+      return;
+    }
+    res.writeHead(405).end('method not allowed');
+  }
+
+  private serveStatic(req: IncomingMessage, res: import('node:http').ServerResponse): void {
+    const adminPath = (req.url ?? '/').split('?')[0];
+    if (adminPath.startsWith('/admin/')) {
+      this.serveAdmin(req, res, adminPath);
+      return;
+    }
+    const root = this.opts.staticRoot;
+    if (!root) {
+      res.writeHead(404).end('not found');
+      return;
+    }
+    const urlPath = (req.url ?? '/').split('?')[0];
+    const rel = urlPath === '/' ? '/poker-client.html' : urlPath;
+    // パストラバーサル対策。normalize したあとに .. が残っていたら拒否
+    const safe = normalize(rel).replace(/^(\.\.[/\\])+/, '');
+    if (safe.includes('..')) {
+      res.writeHead(400).end('bad path');
+      return;
+    }
+    const file = join(root, safe);
+    if (!file.startsWith(normalize(root)) || !existsSync(file)) {
+      res.writeHead(404).end('not found');
+      return;
+    }
+    try {
+      // クライアントHTMLは4MB超(画像埋め込み)あり、素朴に毎回全送信すると
+      // スマホ回線で開くのが目に見えて重い。次の2段で軽くする:
+      //   1. ETag: 変わっていなければ 304 を返して転送ゼロ(2回目以降はほぼ一瞬)
+      //   2. gzip: 初回もbase64部が縮む(実測 4.2MB→約3.1MB)。mtimeが変わるまでメモリに保持
+      const st = statSync(file);
+      const etag = `"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
+      if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304, { etag, 'cache-control': 'no-cache' });
+        res.end();
+        return;
+      }
+      const headers: Record<string, string> = {
+        'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+        etag,
+        // no-cache = 使う前に毎回 If-None-Match で確認(=デプロイ即反映と304の両立)
+        'cache-control': 'no-cache',
+      };
+      const acceptsGzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+      if (acceptsGzip && st.size > 10_240) {
+        const cached = this.gzipCache.get(file);
+        let gz: Buffer;
+        if (cached && cached.etag === etag) {
+          gz = cached.body;
+        } else {
+          gz = gzipSync(readFileSync(file), { level: 6 });
+          this.gzipCache.set(file, { etag, body: gz });
+        }
+        res.writeHead(200, { ...headers, 'content-encoding': 'gzip', vary: 'accept-encoding' });
+        res.end(gz);
+        return;
+      }
+      res.writeHead(200, headers);
+      res.end(readFileSync(file));
+    } catch {
+      res.writeHead(500).end('error');
+    }
+  }
+
+  /** 静的ファイルのgzip済みキャッシュ(ETagが変わったら作り直す) */
+  private gzipCache = new Map<string, { etag: string; body: Buffer }>();
+
+  listen(): Promise<number> {
+    return new Promise((resolve) => {
+      this.http.listen(this.opts.port, () => {
+        this.startHeartbeat();
+        const addr = this.http.address();
+        const port = typeof addr === 'object' && addr ? addr.port : this.opts.port;
+        resolve(port);
+      });
+    });
+  }
+
+  async close(): Promise<void> {
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    for (const ws of this.sockets.values()) ws.terminate();
+    this.lobby.dispose();
+    await new Promise<void>((r) => this.wss.close(() => r()));
+    await new Promise<void>((r) => this.http.close(() => r()));
+  }
+}

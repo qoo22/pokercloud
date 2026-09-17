@@ -8,14 +8,30 @@
  * クライアントのバグはコンパイルでは見つからないので、実際に動かすしかない。
  */
 import { parseHTML } from 'linkedom';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { Gateway } from '../dist/src/server/gateway.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const html = readFileSync(resolve(root, '../poker-client.html'), 'utf8');
+/**
+ * クライアントの置き場所を探す(第170弾)。
+ *
+ * ローカルの作業場ではエンジンの1つ上に置いてあるが、リポジトリではルート自体が
+ * エンジンなので、同じ場所は存在しない。配布用の public/ にある実体を使う。
+ * どこで動かしても同じコマンドで通るように、順に探して最初に見つかったものを読む。
+ */
+function findClient() {
+  const cands = [
+    resolve(root, '../poker-client.html'),   // ローカルの作業場
+    resolve(root, 'public/poker-client.html'),
+    resolve(root, 'docs/poker-client.html'),
+  ];
+  for (const c of cands) if (existsSync(c)) return c;
+  throw new Error('poker-client.html が見つかりません:\n  ' + cands.join('\n  '));
+}
+const html = readFileSync(findClient(), 'utf8');
 
 // クライアントの async 内で throw されると Node の unhandledRejection として出てくる。
 // 原因を推測せずに済むよう、必ず表示する
@@ -125,6 +141,27 @@ function boot(label) {
 }
 
 const click = (ctx, el) => el.dispatchEvent(new ctx.window.Event('click'));
+
+/**
+ * スロットが次のスピンを受け付けるまで待つ(第170弾)。
+ *
+ * ただ待つだけでは足りない。フリーゲームの倍率抽選は**ボタンを押すまで進まない**ので、
+ * 直前のスピンがフリーに入っていると、待っている側は永久に「回転中…」のままになる。
+ * 実際それで「SCATTERの焦らし」の検査が1回も回せずに落ちていた(回るかどうかが運任せ)。
+ * プレイヤーと同じように、待ちながら押してやる。
+ *
+ * @returns 押せるようになったボタン。時間切れなら null
+ */
+async function waitSpinReady(ctx, n = 200) {
+  for (let i = 0; i < n; i++) {
+    const b = ctx.document.getElementById('slot-spin');
+    if (b && !b.disabled) return b;
+    const go = ctx.document.getElementById('fsin-go');
+    if (go && !go.disabled) click(ctx, go);   // 倍率抽選を進める
+    await sleep(200);
+  }
+  return null;
+}
 
 console.log('実卓クライアントの E2E:');
 
@@ -921,6 +958,28 @@ check('2台目の音と賭け金は GOLD RUSH と同じ作り（第169弾）', (
   if (!/localStorage\.getItem\("tnBet"\)/.test(js)) throw new Error('賭け金を読み戻していない');
 });
 
+check('押した瞬間に絵柄が消えない（第170弾）', () => {
+  const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
+
+  // ①スピンで盤を空にしない。以前は tnLast を捨てて9マスが真っ黒になっていた
+  const spin = js.slice(js.indexOf('if (spin) spin.onclick'), js.indexOf('if (spin) spin.onclick') + 900);
+  if (/tnLast = null/.test(spin)) throw new Error('押した瞬間に盤を捨てている');
+  if (!/tnLast\.hitCells = \[\]/.test(spin)) throw new Error('前回の当たり表示を消していない');
+
+  // ②いま出ている絵柄から動き出す(帯の末尾を現在の絵柄にする)
+  if (!/var nowGrid = \(tnLast && tnLast\.grid\)/.test(js)) throw new Error('今の絵柄を引き継いでいない');
+  if (!/syms\[N - 1\] = nowGrid\[i\]/.test(js)) throw new Error('帯の入口が今の絵柄になっていない');
+
+  // ③ゆっくり動き出す(静止からいきなり最高速にしない)
+  if (!/var SPIN_UP = 260/.test(js)) throw new Error('始動の立ち上がりが無い');
+  if (!/Math\.pow\(t \/ SPIN_UP, 2\)/.test(js)) throw new Error('加速がなめらかでない');
+  if (!/k \*= up;/.test(js)) throw new Error('加速が速度に効いていない');
+
+  // ④中央がブランクなら上下はジョーカー。戻り演出がリールの並びと合う
+  if (!/if \(i === 4 && finalGrid\[i\] === "blank"\) syms\[1\] = "joker"/.test(js))
+    throw new Error('中央ブランクの隣がジョーカーになっていない');
+});
+
 check('9リールの形と挙動が実機寄り（第165弾）', () => {
   const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
   const css = [...A.document.querySelectorAll('style')].map((e) => e.textContent).join('\n');
@@ -938,7 +997,14 @@ check('9リールの形と挙動が実機寄り（第165弾）', () => {
   if (!/\.tn-cell\.s-joker img\{width:98%/.test(css)) throw new Error('ジョーカーが大きくない');
   // ④回転: ほぼ同時に始動し、左上→右下へ順次停止
   if (!/function tnSpinReels/.test(js)) throw new Error('回転処理が無い');
-  if (!/FIRST = 900, GAP = 85/.test(js)) throw new Error('停止の間隔が実機寄りでない');
+  // 最初の停止までの時間は、始動の立ち上がり(SPIN_UP)より十分あとにする。
+  // ここが近いと、加速し終わる前に1本目が止まって「回った感じ」が出ない
+  const first = js.match(/var FIRST = (\d+), GAP = (\d+);/);
+  const spinUp = js.match(/var SPIN_UP = (\d+);/);
+  if (!first || !spinUp) throw new Error('停止の間隔が実機寄りでない');
+  if (Number(first[2]) !== 85) throw new Error('1本ずつの停止間隔が変わっている');
+  if (Number(first[1]) < Number(spinUp[1]) * 3)
+    throw new Error('加速し終わる前に止まり始めている');
   if (!/var stopAt = FIRST \+ i \* GAP/.test(js)) throw new Error('順番に止めていない');
   // 停止直前だけ短く減速(長く滑らせない)
   if (!/left < 160 \? 0\.35/.test(js)) throw new Error('停止前の減速が無い');
@@ -2105,11 +2171,7 @@ check('所持の半分以上を賭けるときは初回だけ確認が出る', (
 
 // --- 第78弾: 回転中もスピンボタンは光る / 停止後の盤面は作り直さない ------------
 {
-  for (let i = 0; i < 60; i++) {
-    const b = A.document.getElementById('slot-spin');
-    if (b && !b.disabled) break;
-    await sleep(200);
-  }
+  await waitSpinReady(A, 120);
   const sb = A.document.getElementById('slot-spin');
   if (sb && !sb.disabled) click(A, sb);
   await sleep(500);
@@ -2136,11 +2198,7 @@ check('所持の半分以上を賭けるときは初回だけ確認が出る', (
   });
 
   // 停止直後の盤面で、絵柄と明るさの階層(lo/hi/sp)が食い違っていないこと
-  for (let i = 0; i < 80; i++) {
-    const b = A.document.getElementById('slot-spin');
-    if (b && !b.disabled) break;
-    await sleep(200);
-  }
+  await waitSpinReady(A, 120);
   check('停止後の絵柄と明るさの階層が一致している', () => {
     const g = A.document.getElementById('sl-grid');
     if (!g) throw new Error('盤面が無い');
@@ -2183,14 +2241,19 @@ check('所持の半分以上を賭けるときは初回だけ確認が出る', (
   const anticOrigSpins = { ...SLOT_CFG.freeSpinsByScatter };
   SLOT_CFG.freeSpinsByScatter = { 3: 1, 4: 1, 5: 1 };
   let sawAntic = false, sawLit = false, sawTarget = false, anticMissed = false;
-  for (let attempt = 0; attempt < 35 && !(sawAntic && sawLit && sawTarget && anticMissed); attempt++) {
-    for (let i = 0; i < 160; i++) {
-      const b = A.document.getElementById('slot-spin');
-      if (b && !b.disabled) break;
-      await sleep(200);
-    }
+  // 落ちたときに「何回回せて、SCATTERが何個見えたか」を言えるようにする。
+  // これが無いと、回せなかったのか出なかったのかが区別できない(第170弾)
+  let spins = 0, stopReason = '', maxScatters = 0;
+  let attempt = 0;
+  for (; attempt < 35 && !(sawAntic && sawLit && sawTarget && anticMissed); attempt++) {
+    await waitSpinReady(A, 200);
     const sb = A.document.getElementById('slot-spin');
-    if (!sb || sb.disabled) break;
+    if (!sb || sb.disabled) {
+      stopReason = sb ? 'スピンボタンが押せないまま(残高不足の疑い): ' + (sb.textContent || '').trim().slice(0, 30)
+        : 'スピンボタンが見つからない';
+      break;
+    }
+    spins++;
     click(A, sb);
     let anticThisSpin = false, enteredFs = false;
     for (let i = 0; i < 700; i++) {                       // 突入(短縮済みでも約30秒)まで待ち切る
@@ -2200,6 +2263,7 @@ check('所持の半分以上を賭けるときは初回だけ確認が出る', (
       if (A.document.body.classList.contains('sl-antic')) { sawAntic = true; anticThisSpin = true; }
       if (A.document.getElementById('sl-fsin')) enteredFs = true;
       if (g && g.querySelector('.sl-cell.sc.antic-lit')) sawLit = true;
+      if (g) maxScatters = Math.max(maxScatters, g.querySelectorAll('.sl-cell.sc').length);
       if (g && g.querySelector('.sl-reel.antic-target')) sawTarget = true;
       const b2 = A.document.getElementById('slot-spin');
       if (b2 && !b2.disabled) break;
@@ -2210,14 +2274,16 @@ check('所持の半分以上を賭けるときは初回だけ確認が出る', (
   SLOT_CFG.scatterWeight = origSc;
   SLOT_CFG.freeSpinsByScatter = anticOrigSpins;
 
+  const anticWhy = ` (${spins}回転/${attempt}試行, 見えたSCATTERの最大${maxScatters}個` +
+    (stopReason ? `, 中断: ${stopReason}` : '') + ')';
   check('SCATTER が2個見えたら焦らし演出が入る', () => {
-    if (!sawAntic) throw new Error('焦らし(外周の暗転)が発動しない');
+    if (!sawAntic) throw new Error('焦らし(外周の暗転)が発動しない' + anticWhy);
     if (!sawLit) throw new Error('見えているSCATTERが脈動していない');
     if (!sawTarget) throw new Error('最終リールが強調されていない');
   });
 
   check('外れるときも同じ条件で焦らす（結果を読まれない）', () => {
-    if (!anticMissed) throw new Error('当たったときしか焦らしていない疑いがある');
+    if (!anticMissed) throw new Error('当たったときしか焦らしていない疑いがある' + anticWhy);
   });
 
   check('焦らしが終われば画面は必ず元に戻る', () => {

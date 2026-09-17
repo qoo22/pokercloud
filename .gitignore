@@ -3,7 +3,18 @@ poker.secret
 poker.db
 poker.db-*
 *.secret
+*.db
+*.db-wal
+*.db-shm
+.poker-gh-token
 
 # 依存とOSゴミ
 node_modules/
 .DS_Store
+
+# 作業ゴミ
+*.bak*
+self_improve_*
+poker-offline.html
+assets-gen*/
+cutout*/

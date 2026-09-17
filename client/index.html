@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ポーカー</title>
+<style>
+  :root {
+    --felt:#14503c; --felt-dark:#0d3628; --bg:#0d1116; --panel:#171d25; --panel-2:#212a34;
+    --line:#2e3844; --text:#e8edf2; --muted:#8b97a5; --gold:#d9b45f; --red:#e05a5a;
+    --green:#4dbd7a; --blue:#5a9de0;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--text); height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Segoe UI",sans-serif;
+    font-size:14px; line-height:1.5; overscroll-behavior:none; }
+  button { font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel-2); color:var(--text); padding:9px 16px; transition:.12s; }
+  button:hover:not(:disabled){ border-color:var(--gold); background:#2b3542; }
+  button:disabled { opacity:.35; cursor:not-allowed; }
+  button.primary { background:var(--gold); color:#201704; border-color:var(--gold); font-weight:700; }
+  button.danger { border-color:#6a3535; }
+  input,select { font:inherit; background:var(--panel-2); color:var(--text);
+    border:1px solid var(--line); border-radius:6px; padding:8px 10px; }
+  input[type=range]{ accent-color:var(--gold); padding:0; }
+  .hidden { display:none !important; }
+
+  /* ---- ヘッダ ---- */
+  header { display:flex; align-items:center; gap:14px; padding:10px 16px;
+    border-bottom:1px solid var(--line); background:var(--panel); flex-wrap:wrap; }
+  header .brand { font-weight:700; letter-spacing:.04em; }
+  header .grow { flex:1; }
+  .chip-badge { display:flex; align-items:center; gap:6px; background:var(--panel-2);
+    border:1px solid var(--line); border-radius:99px; padding:5px 14px; font-variant-numeric:tabular-nums; }
+  .chip-badge b { color:var(--gold); }
+  .status { font-size:12px; color:var(--muted); }
+  .status.on { color:var(--green); }
+  .status.off { color:var(--red); }
+
+  /* ---- ロビー ---- */
+  #lobby { padding:22px 16px; max-width:900px; margin:0 auto; }
+  .tables { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+  .tcard { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .tcard h3 { margin:0 0 4px; font-size:15px; }
+  .tcard .blinds { color:var(--gold); font-variant-numeric:tabular-nums; font-size:13px; }
+  .tcard dl { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:12px;
+    color:var(--muted); margin:10px 0; }
+  .tcard dd { margin:0; text-align:right; color:var(--text); font-variant-numeric:tabular-nums; }
+  .tcard button { width:100%; }
+
+  /* ---- テーブル ---- */
+  #table-view { display:grid; grid-template-columns:1fr 320px; gap:14px; padding:14px;
+    max-width:1300px; margin:0 auto; }
+  @media (max-width:980px){ #table-view { grid-template-columns:1fr; } }
+
+  .felt { position:relative; width:100%; aspect-ratio:16/10; min-height:400px;
+    background:
+      radial-gradient(ellipse at 50% 42%, color-mix(in srgb, var(--felt-a) 88%, #fff) 0%, var(--felt-a) 38%, var(--felt-b) 72%, var(--felt-c) 100%),
+      repeating-linear-gradient(45deg, rgba(255,255,255,.014) 0 2px, transparent 2px 4px);
+    border:12px solid var(--rail); border-radius:200px/130px;
+    box-shadow:
+      inset 0 0 70px rgba(0,0,0,.5),
+      inset 0 0 0 3px color-mix(in srgb, var(--rail-hi) 60%, transparent),
+      0 10px 34px rgba(0,0,0,.55);
+    overflow:hidden; }
+  /* レール（縁）のハイライト。ここが無いと平面的に見える */
+  .felt::after { content:''; position:absolute; inset:-2px; border-radius:inherit; pointer-events:none;
+    box-shadow:inset 0 2px 0 color-mix(in srgb, var(--rail-hi) 45%, transparent),
+               inset 0 -3px 8px rgba(0,0,0,.5); }
+  [data-theme="neon"] .felt {
+    box-shadow:inset 0 0 90px rgba(0,0,0,.7), inset 0 0 0 2px rgba(58,209,255,.35), 0 0 40px rgba(58,209,255,.12), 0 10px 34px rgba(0,0,0,.6); }
+  .center { position:absolute; left:50%; top:38%; transform:translate(-50%,-50%); text-align:center; width:92%; }
+  .board { display:flex; gap:7px; justify-content:center; min-height:80px; align-items:center; }
+  .pot { margin-top:8px; font-size:12px; color:var(--gold); font-variant-numeric:tabular-nums; }
+  .pot b { font-size:18px; color:#fff; }
+  .street-tag { display:inline-block; margin-bottom:6px; font-size:11px; letter-spacing:.14em;
+    color:rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.22); border-radius:99px; padding:1px 10px; }
+
+  .seat { position:absolute; transform:translate(-50%,-50%); width:136px; text-align:center; }
+  .seat .cards { display:flex; gap:3px; justify-content:center; margin-bottom:4px; min-height:48px; align-items:flex-end; }
+  .seat .box { background:rgba(8,14,18,.85); border:1px solid rgba(255,255,255,.14);
+    border-radius:9px; padding:5px 6px; position:relative; overflow:hidden; }
+  .seat.acting .box { border-color:var(--gold); box-shadow:0 0 0 2px rgba(217,180,95,.35),0 0 18px rgba(217,180,95,.25); }
+  .seat.folded { opacity:.35; }
+  .seat.empty .box { border-style:dashed; opacity:.55; }
+  .seat .nm { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .seat .st { font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .seat .bet { margin-top:4px; font-size:11px; color:var(--gold); min-height:16px; font-variant-numeric:tabular-nums; }
+  /* 残り時間バー。分母は 60 秒（サーバーが送る actionTotalMs）。
+     残量で色が変わるので、数字を読まなくても切迫具合が分かる */
+  .timer { position:absolute; left:0; bottom:0; height:4px; background:var(--gold);
+    transition:width .2s linear, background-color .3s ease; border-radius:0 2px 2px 0; }
+  .timer[data-level="warn"] { background:#e8b44a; }
+  .timer[data-level="crit"] { background:var(--red); animation:timerPulse .7s ease-in-out infinite; }
+  @keyframes timerPulse { 0%,100%{opacity:1;} 50%{opacity:.45;} }
+  /* 残り秒数。手番の席にだけ出す */
+  .seat .timer-sec { position:absolute; right:5px; top:4px; font-size:10px; font-weight:700;
+    color:var(--muted); font-variant-numeric:tabular-nums; line-height:1; }
+  .seat.acting .timer-sec { color:var(--gold); }
+  /* 音量トグル（ヘッダー） */
+  #sound-toggle { cursor:pointer; user-select:none; }
+  #sound-toggle.off { opacity:.45; }
+  @media (prefers-reduced-motion: reduce) { .timer[data-level="crit"] { animation:none; } }
+
+  /* ---- ゴールドスロット ---- */
+  .slot-wrap { max-width:520px; margin:0 auto; }
+  .slot-machine { background:linear-gradient(180deg,#2a2013,#1a1410); border:2px solid var(--gold);
+    border-radius:16px; padding:18px; text-align:center;
+    box-shadow:0 0 0 1px rgba(0,0,0,.5) inset, 0 8px 28px rgba(0,0,0,.45); }
+  .reels { display:flex; gap:10px; justify-content:center; margin:14px 0; }
+  .reel { width:88px; height:104px; background:linear-gradient(180deg,#fbfaf6,#e6e2d6);
+    border-radius:12px; display:flex; align-items:center; justify-content:center;
+    font-size:46px; line-height:1; box-shadow:0 3px 10px rgba(0,0,0,.45) inset, 0 2px 6px rgba(0,0,0,.4);
+    overflow:hidden; }
+  .reel.spinning { animation:reelSpin .28s linear infinite; }
+  @keyframes reelSpin { 0%{transform:translateY(-14px);opacity:.55;} 50%{opacity:1;} 100%{transform:translateY(14px);opacity:.55;} }
+  .slot-win { min-height:30px; font-size:17px; font-weight:700; color:var(--gold); margin:6px 0; }
+  .slot-win.big { font-size:22px; animation:winPop .5s ease; }
+  .slot-win.jackpot { font-size:26px; color:#ffd76a; animation:winPop .5s ease; text-shadow:0 0 14px rgba(255,215,106,.75); }
+  @keyframes winPop { 0%{transform:scale(.6);opacity:0;} 60%{transform:scale(1.15);} 100%{transform:scale(1);opacity:1;} }
+  .bet-row { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:12px 0; }
+  .bet-btn { background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:7px 15px; cursor:pointer; font-size:13px; }
+  .bet-btn.sel { border-color:var(--gold); color:var(--gold); background:rgba(217,180,95,.14); }
+  .spin-btn { background:linear-gradient(180deg,#e0bf6a,#b8933f); color:#1a1206; border:none;
+    border-radius:11px; padding:13px 44px; font-size:17px; font-weight:800; cursor:pointer; margin-top:6px; }
+  .spin-btn:disabled { opacity:.45; cursor:not-allowed; }
+  .mult-box { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:11px 13px; margin-top:14px; font-size:12px; text-align:left; }
+  .mult-box .row { display:flex; justify-content:space-between; padding:3px 0; }
+  .mult-box .total { border-top:1px solid var(--line); margin-top:6px; padding-top:7px;
+    font-weight:700; color:var(--gold); font-size:14px; }
+  .paytable { width:100%; border-collapse:collapse; font-size:12px; margin-top:12px; }
+  .paytable th, .paytable td { padding:5px 7px; border-bottom:1px solid var(--line); text-align:right; }
+  .paytable th:first-child, .paytable td:first-child { text-align:left; }
+  .paytable th { color:var(--muted); font-weight:600; }
+  .badge { display:inline-block; font-size:9px; padding:0 5px; border-radius:99px; margin-left:3px;
+    background:var(--gold); color:#1a1206; font-weight:700; vertical-align:middle; }
+  .badge.allin{background:var(--red);color:#fff;}
+  .badge.out{background:#4a5563;color:#cfd6de;}
+  .badge.win{background:var(--green);color:#062514;}
+  .badge.you{background:var(--blue);color:#fff;}
+
+  /* ---- アクション ---- */
+  .actions { margin-top:12px; min-height:104px; }
+  .btnrow { display:flex; gap:8px; flex-wrap:wrap; }
+  .btnrow.main button { flex:1; min-width:104px; padding:14px 10px; font-size:15px; font-weight:600; }
+  button.chip { padding:5px 11px; font-size:12px; }
+  .slider-wrap { margin-top:10px; }
+  .hint { font-size:11px; color:var(--muted); margin-top:6px; }
+
+  /* ---- サイドパネル ---- */
+  .side { display:flex; flex-direction:column; gap:12px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:13px; }
+  .panel h2 { font-size:12px; margin:0 0 10px; color:var(--gold); letter-spacing:.06em; }
+  .log { height:200px; overflow-y:auto; font-size:12px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .log div { padding:2px 0; border-bottom:1px solid rgba(255,255,255,.05); }
+  .log .k { color:var(--muted); margin-right:6px; }
+  .log .hl { color:var(--gold); }
+  .log .win { color:var(--green); }
+  .kv { display:grid; grid-template-columns:104px 1fr; gap:3px 8px; font-size:11px; align-items:baseline; }
+  .kv dt { color:var(--muted); }
+  .kv dd { margin:0; font-family:ui-monospace,Menlo,monospace; word-break:break-all; }
+  .sealed { color:var(--muted); font-style:italic; font-family:inherit; }
+  .verdict { border-radius:8px; padding:8px 10px; margin:8px 0; font-weight:600; font-size:12px; }
+  .verdict.ok { background:rgba(77,189,122,.14); border:1px solid var(--green); color:var(--green); }
+  .verdict.ng { background:rgba(224,90,90,.14); border:1px solid var(--red); color:var(--red); }
+  .note { font-size:11px; color:var(--muted); margin-top:8px; line-height:1.6; }
+
+  /* ---- モーダル ---- */
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex;
+    align-items:center; justify-content:center; z-index:50; }
+  .modal { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:22px; width:min(400px,92vw); }
+  .modal h3 { margin:0 0 14px; font-size:16px; }
+  .modal label { display:block; font-size:11px; color:var(--muted); margin-bottom:4px; }
+  .modal .row { display:flex; gap:8px; margin-top:16px; }
+  .modal .row button { flex:1; }
+
+  /* ---- タブ ---- */
+  .tabs { display:flex; gap:6px; margin-bottom:16px; border-bottom:1px solid var(--line); }
+  .tab { background:none; border:none; border-bottom:2px solid transparent; border-radius:0;
+    padding:8px 14px; color:var(--muted); }
+  .tab.active { color:var(--gold); border-bottom-color:var(--gold); }
+  .tab:hover:not(.active){ color:var(--text); background:none; border-color:transparent; }
+
+  /* ---- ショップ / マイページ ---- */
+  .sec { margin-bottom:22px; }
+  .sec h3 { font-size:13px; color:var(--gold); margin:0 0 10px; letter-spacing:.05em; }
+  .packs { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); }
+  .pack { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; text-align:center; }
+  .pack .amt { font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .pack .per { font-size:11px; color:var(--muted); margin:2px 0 8px; }
+  .pack button { width:100%; }
+  .pack.offer { border-color:var(--gold); background:linear-gradient(180deg,rgba(217,180,95,.10),var(--panel)); }
+  .pack .tagline { font-size:10px; color:var(--gold); margin-bottom:4px; }
+  .bar { height:8px; background:var(--panel-2); border-radius:99px; overflow:hidden; margin:6px 0; }
+  .bar > div { height:100%; background:var(--gold); }
+  .mission { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:10px 12px; margin-bottom:8px; display:flex; align-items:center; gap:12px; }
+  .mission .grow { flex:1; }
+  .mission .nm { font-size:13px; }
+  .mission .pg { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .tour-row { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:12px; }
+  .tour-row dt { color:var(--muted); }
+  .tour-row dd { margin:0; text-align:right; font-variant-numeric:tabular-nums; }
+  .lb { font-size:11px; margin-top:8px; }
+  .lb div { display:flex; justify-content:space-between; padding:2px 0; border-bottom:1px solid rgba(255,255,255,.05); }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">♠ POKER</span>
+  <span class="status off" id="status">未接続</span>
+  <span class="grow"></span>
+  <span class="chip-badge" id="balance-badge">💰 <b id="balance">—</b></span>
+  <span class="chip-badge" id="gold-badge">🪙 <b id="gold">—</b></span>
+  <span class="chip-badge" id="vip-badge" title="VIP ティア">— </span>
+  <button class="chip" id="sound-toggle" title="手番の残り時間を音で知らせる">🔊 音</button>
+  <button class="chip" id="btn-suits">♠ 4色</button>
+  <button class="chip" id="btn-theme">🎨 クラシック</button>
+  <button class="chip" id="btn-lobby">ロビーへ</button>
+</header>
+
+<div id="lobby">
+  <div class="tabs">
+    <button class="tab active" data-tab="cash">キャッシュ</button>
+    <button class="tab" data-tab="tour">トーナメント</button>
+    <button class="tab" data-tab="slot">スロット</button>
+    <button class="tab" data-tab="shop">ショップ</button>
+    <button class="tab" data-tab="me">マイページ</button>
+  </div>
+
+  <div class="tabpage" id="tab-cash">
+    <p class="note" style="margin-top:0">テーブルを選んで着席してください。同じページを別タブでもう一つ開けば、2 人目として対戦できます。</p>
+    <div class="tables" id="tables"></div>
+  </div>
+
+  <div class="tabpage hidden" id="tab-tour">
+    <p class="note" style="margin-top:0">SNG は定員が埋まると自動で始まります。MTT は最低人数が集まると開始し、しばらく遅れて参加もできます。</p>
+    <div class="tables" id="tournaments"></div>
+  </div>
+
+  <div class="tabpage hidden" id="tab-slot">
+    <div id="slot"></div>
+  </div>
+
+  <div class="tabpage hidden" id="tab-shop">
+    <div id="shop"></div>
+  </div>
+
+  <div class="tabpage hidden" id="tab-me">
+    <div id="profile"></div>
+  </div>
+</div>
+
+<div id="table-view" class="hidden">
+  <div>
+    <div class="felt" id="felt"></div>
+    <div class="actions" id="actions"></div>
+  </div>
+  <div class="side">
+    <div class="panel hidden" id="tour-hud">
+      <h2>トーナメント</h2>
+      <div id="tour-info"></div>
+    </div>
+    <div class="panel">
+      <h2>公正性（Provably Fair）</h2>
+      <div id="fair"></div>
+    </div>
+    <div class="panel">
+      <h2>ログ</h2>
+      <div class="log" id="log"></div>
+    </div>
+    <div class="panel">
+      <h2>席の操作</h2>
+      <div class="btnrow">
+        <button class="chip hidden" id="btn-straddle">ストラドル</button>
+        <button class="chip" id="btn-sitout">休憩する</button>
+        <button class="chip" id="btn-rebuy">チップ追加</button>
+        <button class="chip danger" id="btn-stand">席を立つ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-root"></div>
+<script>%BUNDLE%</script>
+</body>
+</html>

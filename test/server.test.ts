@@ -1,0 +1,933 @@
+import { test, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { Harness } from './helpers/harness.js';
+import { PROTOCOL_VERSION, parseClientMessage, type TableStateView } from '../src/server/protocol.js';
+import { verifyHand } from '../src/fair.js';
+import { MemoryStore } from '../src/server/store.js';
+
+const TABLE = {
+  tableId: 'test-1',
+  name: 'テスト卓',
+  smallBlind: 50,
+  bigBlind: 100,
+  maxSeats: 6,
+  minBuyInBB: 20,
+  maxBuyInBB: 100,
+  rakePercent: 0.04,
+  rakeCapBB: 4,
+  actionTimeoutMs: 15000,
+  timeBankMs: 0,
+  seedWindowMs: 1000,
+  handIntervalMs: 500,
+  disconnectGraceMs: 30000,
+};
+
+const newHarness = () => new Harness({ tables: [TABLE], signupBonus: 100000 });
+
+// ---------------------------------------------------------------------------
+
+describe('メッセージの検証', () => {
+  test('オブジェクトでない入力を弾く', () => {
+    assert.equal(parseClientMessage('hello').ok, false);
+    assert.equal(parseClientMessage(null).ok, false);
+    assert.equal(parseClientMessage(42).ok, false);
+  });
+
+  test('未知のメッセージ種別を弾く', () => {
+    assert.equal(parseClientMessage({ t: 'drop.database' }).ok, false);
+  });
+
+  test('負のバイインを弾く', () => {
+    const r = parseClientMessage({ t: 'table.sit', tableId: 'a', buyIn: -100000 });
+    assert.equal(r.ok, false, '負のバイインが通るとチップが増えてしまう');
+  });
+
+  test('小数・NaN・Infinity のバイインを弾く', () => {
+    for (const v of [1.5, NaN, Infinity, -Infinity, '100']) {
+      assert.equal(parseClientMessage({ t: 'table.sit', tableId: 'a', buyIn: v }).ok, false, `${String(v)} が通った`);
+    }
+  });
+
+  test('シードに区切り文字を含められない', () => {
+    assert.equal(parseClientMessage({ t: 'fair.seed', tableId: 'a', seed: 'ab|cd' }).ok, false);
+    assert.equal(parseClientMessage({ t: 'fair.seed', tableId: 'a', seed: 'ab-cd_1.2' }).ok, true);
+  });
+
+  test('長すぎる文字列を弾く', () => {
+    assert.equal(parseClientMessage({ t: 'fair.seed', tableId: 'a', seed: 'x'.repeat(200) }).ok, false);
+  });
+
+  test('不正な action を弾く', () => {
+    const r = parseClientMessage({ t: 'hand.act', tableId: 'a', handId: 'h', action: 'win' });
+    assert.equal(r.ok, false);
+  });
+});
+
+describe('認証とセッション', () => {
+  test('hello で初期チップが付与される', () => {
+    const h = newHarness();
+    const c = h.login('Alice');
+    const ok = c.received.find((m) => m.t === 'hello.ok');
+    assert.ok(ok && ok.t === 'hello.ok');
+    assert.equal(ok.balance, 100000);
+    assert.equal(ok.resumed, false);
+    assert.ok(ok.resumeToken.length > 0);
+    h.dispose();
+  });
+
+  test('プロトコル版が違うと拒否される', () => {
+    const h = newHarness();
+    const c = h.connect();
+    c.send({ t: 'hello', v: PROTOCOL_VERSION + 99 });
+    assert.equal(c.lastError()?.code, 'VERSION_MISMATCH');
+    h.dispose();
+  });
+
+  test('hello 前のコマンドは拒否される', () => {
+    const h = newHarness();
+    const c = h.connect();
+    c.send({ t: 'table.watch', tableId: TABLE.tableId });
+    assert.equal(c.lastError()?.code, 'NOT_AUTHENTICATED');
+    h.dispose();
+  });
+
+  test('resumeToken で同じユーザーとして復帰する', () => {
+    const h = newHarness();
+    const c1 = h.login('Alice');
+    const token = c1.resumeToken;
+    const userId = c1.userId;
+    h.disconnect(c1);
+
+    const c2 = h.connect();
+    c2.send({ t: 'hello', v: PROTOCOL_VERSION, resumeToken: token });
+    const ok = c2.received.find((m) => m.t === 'hello.ok');
+    assert.ok(ok && ok.t === 'hello.ok');
+    assert.equal(ok.userId, userId);
+    assert.equal(ok.resumed, true);
+    h.dispose();
+  });
+
+  test('偽の resumeToken では他人になりすませない', () => {
+    const h = newHarness();
+    const victim = h.login('Victim', 'victim-id');
+    const c = h.connect();
+    c.send({ t: 'hello', v: PROTOCOL_VERSION, resumeToken: 'ff'.repeat(24) });
+    const ok = c.received.find((m) => m.t === 'hello.ok');
+    assert.ok(ok && ok.t === 'hello.ok');
+    assert.notEqual(ok.userId, victim.userId);
+    assert.equal(ok.resumed, false);
+    h.dispose();
+  });
+
+  test('レート制限がかかる', () => {
+    const h = new Harness({ tables: [TABLE], maxMessagesPerSecond: 5 });
+    const c = h.login('Spammer');
+    for (let i = 0; i < 20; i++) c.send({ t: 'lobby.list' });
+    assert.ok(
+      c.errors().some((e) => e.code === 'RATE_LIMITED'),
+      'レート制限が働いていない',
+    );
+    h.dispose();
+  });
+});
+
+describe('着席とバイイン', () => {
+  test('範囲外のバイインは拒否される', () => {
+    const h = newHarness();
+    const c = h.login('Alice');
+    c.send({ t: 'table.watch', tableId: TABLE.tableId });
+    c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 100 }); // 下限 2000 未満
+    assert.equal(c.lastError()?.code, 'INVALID_BUYIN');
+    c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 99999 }); // 上限 10000 超
+    assert.equal(c.lastError()?.code, 'INVALID_BUYIN');
+    h.dispose();
+  });
+
+  test('残高を超えるバイインは拒否され、残高は動かない', () => {
+    const h = new Harness({ tables: [TABLE], signupBonus: 3000 });
+    const c = h.login('Poor');
+    c.send({ t: 'table.watch', tableId: TABLE.tableId });
+    c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 10000 });
+    assert.equal(c.lastError()?.code, 'INSUFFICIENT_FUNDS');
+    assert.equal(h.lobby.store.balance(c.userId, 'chips'), 3000);
+    h.dispose();
+  });
+
+  test('同じ席には座れない', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    const b = h.login('B');
+    for (const c of [a, b]) c.send({ t: 'table.watch', tableId: TABLE.tableId });
+    a.send({ t: 'table.sit', tableId: TABLE.tableId, seat: 2, buyIn: 5000 });
+    b.send({ t: 'table.sit', tableId: TABLE.tableId, seat: 2, buyIn: 5000 });
+    assert.equal(b.lastError()?.code, 'SEAT_TAKEN');
+    h.dispose();
+  });
+
+  test('二重着席はできない', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    a.send({ t: 'table.watch', tableId: TABLE.tableId });
+    a.send({ t: 'table.sit', tableId: TABLE.tableId, seat: 0, buyIn: 5000 });
+    a.send({ t: 'table.sit', tableId: TABLE.tableId, seat: 1, buyIn: 5000 });
+    assert.equal(a.lastError()?.code, 'ALREADY_SEATED');
+    h.dispose();
+  });
+
+  test('着席するとバイイン分が残高から引かれる', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    a.send({ t: 'table.watch', tableId: TABLE.tableId });
+    a.send({ t: 'table.sit', tableId: TABLE.tableId, seat: 0, buyIn: 5000 });
+    assert.equal(h.lobby.store.balance(a.userId, 'chips'), 95000);
+    assert.equal(a.state()?.seats[0].stack, 5000);
+    h.dispose();
+  });
+});
+
+describe('Provably Fair の順序保証', () => {
+  function seatTwo(h: Harness) {
+    const a = h.login('A');
+    const b = h.login('B');
+    for (const c of [a, b]) {
+      c.send({ t: 'table.watch', tableId: TABLE.tableId });
+      c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 10000 });
+    }
+    return { a, b };
+  }
+
+  test('2 人揃うとまずコミットメントだけが公開される', () => {
+    const h = newHarness();
+    const { a } = seatTwo(h);
+    const st = a.state()!;
+    assert.ok(st.fairness.commitment, 'コミットメントが出ていない');
+    assert.equal(st.fairness.serverSeed, null, '配牌前にサーバーシードが漏れている');
+    assert.equal(st.fairness.acceptingSeeds, true);
+    assert.equal(st.street, 'waiting', 'まだカードは配られていないはず');
+    h.dispose();
+  });
+
+  test('受付窓の中ではシードを提出できる', () => {
+    const h = newHarness();
+    const { a } = seatTwo(h);
+    a.send({ t: 'fair.seed', tableId: TABLE.tableId, seed: 'alice-seed' });
+    assert.equal(a.lastError(), null);
+    h.dispose();
+  });
+
+  test('配牌後はシードを受け付けない', () => {
+    const h = newHarness();
+    const { a } = seatTwo(h);
+    h.pump(TABLE.seedWindowMs + 10); // 受付終了 → 配牌
+    assert.equal(a.state()?.street, 'preflop');
+    a.send({ t: 'fair.seed', tableId: TABLE.tableId, seed: 'too-late' });
+    assert.equal(a.lastError()?.code, 'SEED_WINDOW_CLOSED', '配牌後にシードを受け付けている');
+    h.dispose();
+  });
+
+  test('提出したシードが実際の配牌に反映される', () => {
+    const h = newHarness();
+    const { a, b } = seatTwo(h);
+    a.send({ t: 'fair.seed', tableId: TABLE.tableId, seed: 'alice-unique-seed' });
+    b.send({ t: 'fair.seed', tableId: TABLE.tableId, seed: 'bob-unique-seed' });
+    h.enableBot(a);
+    h.enableBot(b);
+    h.runHands(1, 200);
+
+    const summary = a.results()[0];
+    assert.ok(summary, 'ハンドが終わっていない');
+    assert.ok(
+      summary.fairness.clientSeed.includes('alice-unique-seed'),
+      `提出したシードが使われていない: ${summary.fairness.clientSeed}`,
+    );
+    assert.ok(summary.fairness.clientSeed.includes('bob-unique-seed'));
+    h.dispose();
+  });
+
+  test('ハンド終了後の開示が検証を通る', () => {
+    const h = newHarness();
+    const { a, b } = seatTwo(h);
+    // 配牌前に受け取ったコミットメントを控えておく
+    const committed = a.state()!.fairness.commitment!;
+    h.enableBot(a);
+    h.enableBot(b);
+    h.runHands(1, 200);
+
+    const s = a.results()[0];
+    assert.equal(s.fairness.commitment, committed, '事前公開値と開示時の値が違う');
+    const r = verifyHand({
+      serverSeed: s.fairness.serverSeed,
+      commitment: committed,
+      clientSeed: s.fairness.clientSeed,
+      nonce: s.fairness.nonce,
+      deck: s.fairness.deck,
+    });
+    assert.equal(r.passed, true, JSON.stringify(r.checks, null, 2));
+    h.dispose();
+  });
+
+  test('連続するハンドで nonce が進み、シードが使い回されない', () => {
+    const h = newHarness();
+    const { a, b } = seatTwo(h);
+    h.enableBot(a);
+    h.enableBot(b);
+    h.runHands(5, 200);
+
+    const results = a.results();
+    assert.ok(results.length >= 5, `ハンド数が足りない: ${results.length}`);
+    const seeds = new Set(results.map((r) => r.fairness.serverSeed));
+    assert.equal(seeds.size, results.length, 'serverSeed が使い回されている');
+    const nonces = results.map((r) => r.fairness.nonce);
+    for (let i = 1; i < nonces.length; i++) {
+      assert.ok(nonces[i] > nonces[i - 1], `nonce が進んでいない: ${nonces.join(',')}`);
+    }
+    h.dispose();
+  });
+});
+
+describe('情報の隠蔽', () => {
+  test('他人のホールカードがどのメッセージにも含まれない', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    const b = h.login('B');
+    for (const c of [a, b]) {
+      c.send({ t: 'table.watch', tableId: TABLE.tableId });
+      c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 10000 });
+    }
+    h.enableBot(a);
+    h.enableBot(b);
+    h.runHands(3, 200);
+
+    // A が受け取った全メッセージから、A 以外の席の手札が見えていないことを確認する。
+    // ショーダウンで公開された場合だけは許可。
+    for (const msg of a.received) {
+      if (msg.t !== 'table.state') continue;
+      const st = msg.state;
+      const showdownOver = st.street === 'complete';
+      for (const seat of st.seats) {
+        if (seat.seat === st.yourSeat) continue;
+        if (seat.holeCards === null) continue;
+        assert.ok(showdownOver, `ショーダウン前に席 ${seat.seat} の手札が見えている（street=${st.street}）`);
+      }
+    }
+    h.dispose();
+  });
+
+  test('配布イベントにカードが載っていない', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    const b = h.login('B');
+    for (const c of [a, b]) {
+      c.send({ t: 'table.watch', tableId: TABLE.tableId });
+      c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 10000 });
+    }
+    h.enableBot(a);
+    h.enableBot(b);
+    h.runHands(2, 200);
+
+    for (const msg of a.received) {
+      if (msg.t !== 'table.events') continue;
+      for (const e of msg.events) {
+        if (e.type === 'deal_hole') {
+          assert.equal(e.cards.length, 0, '配布イベントにカードが載っている');
+        }
+      }
+    }
+    h.dispose();
+  });
+
+  test('観戦者には誰の手札も見えない', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    const b = h.login('B');
+    const watcher = h.login('Watcher');
+    for (const c of [a, b]) {
+      c.send({ t: 'table.watch', tableId: TABLE.tableId });
+      c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 10000 });
+    }
+    watcher.send({ t: 'table.watch', tableId: TABLE.tableId });
+    h.enableBot(a);
+    h.enableBot(b);
+    h.runHands(2, 200);
+
+    for (const msg of watcher.received) {
+      if (msg.t !== 'table.state') continue;
+      const st = msg.state;
+      assert.equal(st.yourSeat, null);
+      if (st.street === 'complete') continue; // ショーダウン公開は許可
+      for (const seat of st.seats) {
+        assert.equal(seat.holeCards, null, `観戦者に席 ${seat.seat} の手札が見えている`);
+      }
+    }
+    h.dispose();
+  });
+});
+
+describe('オールインのネタバレ防止', () => {
+  test('段階公開（場札を1枚ずつ開く）の間は、勝敗＝チップの受け渡しが先に漏れない', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    const b = h.login('B');
+    for (const c of [a, b]) {
+      c.send({ t: 'table.watch', tableId: TABLE.tableId });
+      c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 10000 });
+    }
+    h.pump(TABLE.seedWindowMs + 10);
+
+    // プリフロップで両者オールイン（＝場札が一気に配られ、1枚ずつ開く演出に入る）
+    const st0 = a.state()!;
+    const first = st0.actingSeat === st0.yourSeat ? a : b;
+    const second = first === a ? b : a;
+    const raise = first.state()!.legalActions.find((l) => l.type === 'raise' || l.type === 'bet');
+    assert.ok(raise?.max, 'オールインできるレイズがない');
+    first.send({ t: 'hand.act', tableId: TABLE.tableId, handId: st0.handId!, action: raise!.type, toAmount: raise!.max });
+    h.pump(50);
+    const st1 = second.state()!;
+    const call = second.state()!.legalActions.find((l) => l.type === 'call');
+    assert.ok(call, '相手がコール（＝オールインに応じる）できない');
+    second.send({ t: 'hand.act', tableId: TABLE.tableId, handId: st1.handId!, action: 'call' });
+
+    // ここから段階公開。少しずつ時間を進めて、公開中の全 state を集める
+    a.clear();
+    const revealFrames: TableStateView[] = [];
+    let sawResult = false;
+    for (let i = 0; i < 200 && !sawResult; i++) {
+      h.pump(300);
+      for (const m of a.received) {
+        if (m.t === 'table.state' && m.state.revealStats && m.state.revealStats.length > 0) {
+          revealFrames.push(m.state);
+        }
+        if (m.t === 'hand.result') sawResult = true;
+      }
+      if (!sawResult) a.clear(); // 結果を見たフレームは消さない（最終スタックを読むため）
+    }
+    assert.ok(sawResult, '段階公開が終わらなかった（hand.result 未到達）');
+
+    assert.ok(revealFrames.length > 0, '段階公開のフレームが観測できなかった');
+    // 公開中はポットがまだ渡っていない＝両オールイン者のスタックは 0（ペイアウト前）のまま。
+    // どのフレームでも「勝者に約20000が入っている」ような残高は出てはいけない。
+    for (const st of revealFrames) {
+      const stacks = st.seats.filter((s) => s.userId).map((s) => s.stack);
+      for (const s of stacks) {
+        assert.ok(s < 5000, `公開中に受け渡し済みの残高が見えている（${s}）＝ネタバレ`);
+      }
+    }
+    // フレーム間でスタックが一切動かない（チップは中央で止まっている）
+    const sig = (st: TableStateView) => st.seats.map((s) => `${s.seat}:${s.stack}`).join(',');
+    const firstSig = sig(revealFrames[0]);
+    for (const st of revealFrames) {
+      assert.equal(sig(st), firstSig, '公開の途中でスタックが動いている（ネタバレ）');
+    }
+
+    // 公開が終われば結果が反映される：勝者はポットを得て、敗者は 0
+    h.pump(2000);
+    const done = a.state()!;
+    const settled = done.seats.filter((s) => s.userId).map((s) => s.stack).sort((x, y) => y - x);
+    assert.ok(settled[0] > 15000, `決着後、勝者にポットが渡っていない（${settled[0]}）`);
+    assert.equal(settled[1], 0, '決着後、敗者のスタックが 0 でない');
+    h.dispose();
+  });
+});
+
+describe('アクションの権限と鮮度', () => {
+  function startedHand(h: Harness) {
+    const a = h.login('A');
+    const b = h.login('B');
+    for (const c of [a, b]) {
+      c.send({ t: 'table.watch', tableId: TABLE.tableId });
+      c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 10000 });
+    }
+    h.pump(TABLE.seedWindowMs + 10);
+    return { a, b };
+  }
+
+  test('手番でない席のアクションは拒否される', () => {
+    const h = newHarness();
+    const { a, b } = startedHand(h);
+    const st = a.state()!;
+    const notActing = st.actingSeat === st.yourSeat ? b : a;
+    notActing.send({ t: 'hand.act', tableId: TABLE.tableId, handId: st.handId!, action: 'fold' });
+    assert.equal(notActing.lastError()?.code, 'NOT_YOUR_TURN');
+    h.dispose();
+  });
+
+  test('古い handId のアクションは拒否される', () => {
+    const h = newHarness();
+    const { a, b } = startedHand(h);
+    const st = a.state()!;
+    const acting = st.actingSeat === st.yourSeat ? a : b;
+    acting.send({ t: 'hand.act', tableId: TABLE.tableId, handId: 'test-1#999', action: 'fold' });
+    assert.equal(acting.lastError()?.code, 'STALE_HAND', '古いハンドへのアクションが通っている');
+    h.dispose();
+  });
+
+  test('合法でないアクションは拒否される', () => {
+    const h = newHarness();
+    const { a, b } = startedHand(h);
+    const st = a.state()!;
+    const acting = st.actingSeat === st.yourSeat ? a : b;
+    // プリフロップでコールが必要な状況ならチェックはできない
+    const canCheck = acting.state()!.legalActions.some((l) => l.type === 'check');
+    if (!canCheck) {
+      acting.send({ t: 'hand.act', tableId: TABLE.tableId, handId: st.handId!, action: 'check' });
+      assert.equal(acting.lastError()?.code, 'ILLEGAL_ACTION');
+    }
+    // 最小レイズ未満のレイズ
+    const raise = acting.state()!.legalActions.find((l) => l.type === 'raise');
+    if (raise) {
+      acting.send({
+        t: 'hand.act',
+        tableId: TABLE.tableId,
+        handId: st.handId!,
+        action: 'raise',
+        toAmount: Math.max(1, raise.min! - 1),
+      });
+      assert.equal(acting.lastError()?.code, 'ILLEGAL_ACTION');
+    }
+    h.dispose();
+  });
+
+  test('タイムバンクが大きくても1アクション最大60秒で強制進行(ハードキャップ)', () => {
+    const T2 = { ...TABLE, tableId: 'test-cap', timeBankMs: 120000 };
+    const h = new Harness({ tables: [T2], signupBonus: 100000 });
+    const a = h.login('A');
+    const b = h.login('B');
+    for (const c of [a, b]) {
+      c.send({ t: 'table.watch', tableId: T2.tableId });
+      c.send({ t: 'table.sit', tableId: T2.tableId, buyIn: 10000 });
+    }
+    h.pump(T2.seedWindowMs + 10);
+    const st = a.state()!;
+    const acting = st.actingSeat;
+    assert.ok(acting !== null, 'ハンドが始まっていない');
+    // キャップが無ければ 15s + 120s = 135s 待つはず。61秒で必ず手番が進むこと
+    h.pump(61_000);
+    const after = a.state()!;
+    assert.ok(
+      after.actingSeat !== acting || after.handNumber !== st.handNumber,
+      '60秒を超えても手番が進んでいない（ハードキャップが効いていない）',
+    );
+    h.dispose();
+  });
+
+  test('時間切れで自動的にチェックかフォールドになり、Sit Out にされる', () => {
+    const h = newHarness();
+    const { a, b } = startedHand(h);
+    const st = a.state()!;
+    const actingSeat = st.actingSeat!;
+    const before = st.handNumber;
+
+    h.pump(TABLE.actionTimeoutMs + 100);
+
+    const after = a.state()!;
+    // 手番が進んでいるか、ハンドが終わっている
+    assert.ok(
+      after.actingSeat !== actingSeat || after.handNumber !== before,
+      'タイムアウトしても何も起きていない',
+    );
+    h.dispose();
+  });
+});
+
+describe('チップの保存', () => {
+  test('多数のハンドを通じてチップ総量が変わらない', () => {
+    const h = newHarness();
+    const clients = [];
+    for (let i = 0; i < 4; i++) {
+      const c = h.login(`P${i}`);
+      c.send({ t: 'table.watch', tableId: TABLE.tableId });
+      c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 10000 });
+      h.enableBot(c, i % 2 === 0 ? 'aggressive' : 'passive');
+      clients.push(c);
+    }
+    const initialTotal = h.lobby.totalChips();
+
+    const played = h.runHands(30, 200);
+    assert.ok(played >= 10, `ハンドが進んでいない: ${played}`);
+
+    // レーキで消えた分を足し戻せば総量は一致するはず
+    let rake = 0;
+    for (const s of clients[0].results()) rake += s.pots.reduce((x, p) => x + p.rake, 0);
+    assert.equal(h.lobby.totalChips() + rake, initialTotal, 'チップの総量が変わっている');
+
+    const audit = h.lobby.store.audit();
+    assert.equal(audit.ok, true, audit.problems.join('\n'));
+    h.dispose();
+  });
+
+  test('席を立つとチップが残高に戻る', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    a.send({ t: 'table.watch', tableId: TABLE.tableId });
+    a.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 6000 });
+    assert.equal(h.lobby.store.balance(a.userId, 'chips'), 94000);
+    a.send({ t: 'table.stand', tableId: TABLE.tableId });
+    assert.equal(h.lobby.store.balance(a.userId, 'chips'), 100000);
+    h.dispose();
+  });
+
+  test('ハンド中の離席は次のハンドまで保留される', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    const b = h.login('B');
+    for (const c of [a, b]) {
+      c.send({ t: 'table.watch', tableId: TABLE.tableId });
+      c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 10000 });
+    }
+    h.pump(TABLE.seedWindowMs + 10);
+    const balanceDuring = h.lobby.store.balance(a.userId, 'chips');
+
+    a.send({ t: 'table.stand', tableId: TABLE.tableId });
+    assert.equal(
+      h.lobby.store.balance(a.userId, 'chips'),
+      balanceDuring,
+      'ハンド中にチップを引き上げられてしまっている',
+    );
+
+    h.enableBot(a);
+    h.enableBot(b);
+    h.runHands(1, 200);
+    h.pump(TABLE.handIntervalMs + 100);
+
+    assert.ok(h.lobby.store.balance(a.userId, 'chips') > balanceDuring, 'ハンド後に精算されていない');
+    h.dispose();
+  });
+});
+
+describe('切断と再接続', () => {
+  test('ハンド中に切断しても席は残り、卓は止まらない', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    const b = h.login('B');
+    for (const c of [a, b]) {
+      c.send({ t: 'table.watch', tableId: TABLE.tableId });
+      c.send({ t: 'table.sit', tableId: TABLE.tableId, buyIn: 10000 });
+    }
+    h.pump(TABLE.seedWindowMs + 10);
+    const seatOfA = a.state()!.yourSeat!;
+
+    h.disconnect(a);
+    h.enableBot(b);
+    h.pump(5000);
+
+    const room = h.lobby.getRoom(TABLE.tableId)!;
+    assert.ok(room.seatedCount >= 1, '切断で席が消えている');
+
+    // 切断者は短いタイムアウトで自動処理され、卓が固まらない
+    h.pump(20000);
+    assert.notEqual(b.state()?.actingSeat, seatOfA, '切断者の手番で卓が止まっている');
+    h.dispose();
+  });
+
+  test('再接続すると同じ席に戻れる', () => {
+    const h = newHarness();
+    const a = h.login('A');
+    a.send({ t: 'table.watch', tableId: TABLE.tableId });
+    a.send({ t: 'table.sit', tableId: TABLE.tableId, seat: 3, buyIn: 8000 });
+    const token = a.resumeToken;
+    h.disconnect(a);
+
+    // 進行中のハンドが無いので席は解放される（チップは残高に戻る）
+    assert.equal(h.lobby.store.balance(a.userId, 'chips'), 100000);
+
+    const a2 = h.connect();
+    a2.send({ t: 'hello', v: PROTOCOL_VERSION, resumeToken: token });
+    a2.send({ t: 'table.watch', tableId: TABLE.tableId });
+    a2.send({ t: 'table.sit', tableId: TABLE.tableId, seat: 3, buyIn: 8000 });
+    assert.equal(a2.lastError(), null);
+    assert.equal(a2.state()?.yourSeat, 3);
+    h.dispose();
+  });
+});
+
+describe('台帳', () => {
+  test('残高不足の引き出しは記録されない', () => {
+    const l = new MemoryStore();
+    l.createUser('u1', 'u1');
+    l.post('u1', 'chips', 1000, 'signup_bonus');
+    assert.equal(l.post('u1', 'chips', -2000, 'table_buyin'), null);
+    assert.equal(l.balance('u1', 'chips'), 1000);
+    assert.equal(l.history('u1').length, 1, '失敗した取引が台帳に残っている');
+  });
+
+  test('残高は取引の集計と一致する', () => {
+    const l = new MemoryStore();
+    l.createUser('u1', 'u1');
+    l.post('u1', 'chips', 10000, 'signup_bonus');
+    l.post('u1', 'chips', -3000, 'table_buyin');
+    l.post('u1', 'chips', 4500, 'table_cashout');
+    assert.equal(l.balance('u1', 'chips'), 11500);
+    assert.equal(l.audit().ok, true);
+  });
+
+  test('チップとゴールドは別勘定として扱われる', () => {
+    const l = new MemoryStore();
+    l.createUser('u1', 'u1');
+    l.post('u1', 'chips', 1000, 'signup_bonus');
+    l.post('u1', 'gold', 50, 'signup_bonus');
+    assert.equal(l.balance('u1', 'chips'), 1000);
+    assert.equal(l.balance('u1', 'gold'), 50);
+    assert.equal(l.audit().ok, true);
+  });
+
+  test('小数を弾く', () => {
+    const l = new MemoryStore();
+    assert.throws(() => l.post('u1', 'chips', 1.5, 'adjustment'), /整数ではありません/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 第150弾: 秘密卓(貯めた人にだけ存在が見える高額卓)
+// ---------------------------------------------------------------------------
+describe('秘密卓', () => {
+  const SECRET = {
+    ...TABLE,
+    tableId: 'secret-1',
+    name: '秘密の卓',
+    smallBlind: 2_500_000_000_000_000,
+    bigBlind: 5_000_000_000_000_000, // 5000兆 → バイインは 10京〜50京
+    secretUnlockAt: 100_000_000_000_000_000, // 10京
+  };
+  const harness = () => new Harness({ tables: [TABLE, SECRET], signupBonus: 100000 });
+  const tablesSeenBy = (c: { received: unknown[] }) => {
+    for (let i = c.received.length - 1; i >= 0; i--) {
+      const m = c.received[i] as { t: string; tables?: Array<{ tableId: string }> };
+      if (m.t === 'lobby.tables') return m.tables ?? [];
+    }
+    return null;
+  };
+
+  test('バイイン上限が 50京 になる', () => {
+    assert.equal(SECRET.maxBuyInBB * SECRET.bigBlind, 500_000_000_000_000_000);
+  });
+
+  test('50京のバイインはプロトコル検証を通る(2^53超でも整数なら可)', () => {
+    assert.equal(
+      parseClientMessage({ t: 'table.sit', tableId: 'a', buyIn: 500_000_000_000_000_000 }).ok,
+      true,
+      '50京のバイインが弾かれている',
+    );
+    // 桁違いのゴミはやはり弾く(上限は1000京)
+    for (const v of [2e19, 1e30, NaN, Infinity, -1, 1.5]) {
+      assert.equal(parseClientMessage({ t: 'table.sit', tableId: 'a', buyIn: v }).ok, false, `${String(v)} が通った`);
+    }
+  });
+
+  test('最大ポット(300京)を勝った人でもオールインできる', () => {
+    // 極卓の最大ポットは 6人 × 50京 = 300京。それを勝つとスタックが 3e18 になる。
+    // ここが弾かれるとその人は二度とオールインできなくなる(第150弾の落とし穴)
+    const r = parseClientMessage({
+      t: 'hand.act', tableId: 'a', handId: 'h', action: 'raise', toAmount: 3e18,
+    });
+    assert.equal(r.ok, true, '300京のオールインが弾かれている');
+    assert.equal(r.ok && r.msg.t === 'hand.act' ? r.msg.toAmount : null, 3e18, '額が落ちている');
+  });
+
+  test('残高が足りない人のロビーには存在すら出ない', () => {
+    const h = harness();
+    const a = h.login('a');
+    a.send({ t: 'lobby.list' });
+    const tables = tablesSeenBy(a);
+    assert.ok(tables, 'lobby.tables が来ていない');
+    assert.equal(tables.some((t) => t.tableId === 'secret-1'), false, '解禁前なのに秘密卓が見えている');
+    assert.equal(tables.some((t) => t.tableId === 'test-1'), true, '通常卓まで消えている');
+  });
+
+  test('卓IDを知っていても解禁前は観戦できない', () => {
+    const h = harness();
+    const a = h.login('a');
+    a.send({ t: 'table.watch', tableId: 'secret-1' });
+    const err = a.lastError();
+    assert.ok(err, '解禁前の観戦がエラーになっていない');
+    assert.equal(err.code, 'NO_SUCH_TABLE', '存在を悟らせない応答になっていない');
+  });
+
+  test('CPU(ボット)は秘密卓が見えて、実際に着席できる', () => {
+    // ボットは台帳を持たない「ハウスのNPC」(第152弾)。
+    // 200京を配る方式だと1人223行の台帳が積まれ、3〜6分で入れ替わるボットが
+    // DBを膨らませて切断の原因になっていた。入出金を素通しして行を増やさない
+    const h = harness();
+    const b = h.login('CPU', 'bot_test01');
+    // 秘密卓が見えている
+    b.send({ t: 'lobby.list' });
+    const seen = (tablesSeenBy(b) ?? []).find((t) => t.tableId === 'secret-1') as
+      | { tableId: string; minBuyIn: number; maxBuyIn: number }
+      | undefined;
+    assert.ok(seen, 'ボットに秘密卓が見えていない(持ち金が足りない)');
+    assert.equal(seen.minBuyIn, 100_000_000_000_000_000, '最低バイインが10京でない');
+    assert.equal(seen.maxBuyIn, 500_000_000_000_000_000, '最大バイインが50京でない');
+    // 実際に座れる
+    b.send({ t: 'table.watch', tableId: 'secret-1' });
+    b.send({ t: 'table.sit', tableId: 'secret-1', seat: 0, buyIn: seen.maxBuyIn });
+    assert.equal(b.lastError(), null, `着席に失敗した: ${JSON.stringify(b.lastError())}`);
+    const st = b.state();
+    assert.ok(st, 'テーブル状態が来ていない');
+    const seat0 = st.seats.find((x) => x && x.seat === 0);
+    assert.ok(seat0 && seat0.userId, 'ボットが座っていない');
+    assert.equal(seat0.stack, 500_000_000_000_000_000, '50京のスタックで座れていない');
+    // 台帳には1行も積まれない(これが切断の原因だった)
+    assert.equal(h.lobby.store.balance('bot_test01', 'chips'), 0, 'ボットが残高を持ってしまっている');
+    assert.equal(
+      h.lobby.store.history('bot_test01', 50).length,
+      0,
+      'ボットで台帳が増えている(3〜6分で入れ替わるのでDBが膨らむ)',
+    );
+    // 人間は従来どおり初回ボーナスを受け取る
+    const human = h.login('人間', 'u_human01');
+    assert.equal(h.lobby.store.balance('u_human01', 'chips'), 100000, '人間のボーナスが消えている');
+    assert.ok(human.userId);
+  });
+
+  test('必要額を貯めると見えるようになり、減っても見え続ける', () => {
+    const h = harness();
+    const a = h.login('a');
+    // 10京ぶん積む(台帳1回の記帳上限があるので分割)
+    for (let i = 0; i < 12; i++) {
+      h.lobby.store.post(a.userId, 'chips', 9_000_000_000_000_000, 'adjustment', `test:${i}`);
+    }
+    a.send({ t: 'lobby.list' });
+    assert.equal(
+      (tablesSeenBy(a) ?? []).some((t) => t.tableId === 'secret-1'),
+      true,
+      '貯めたのに見えない',
+    );
+    // 使い切っても一度見えた卓は消えない
+    h.lobby.store.post(a.userId, 'chips', -9_000_000_000_000_000, 'adjustment', 'test:spend');
+    a.clear();
+    a.send({ t: 'lobby.list' });
+    assert.equal(
+      (tablesSeenBy(a) ?? []).some((t) => t.tableId === 'secret-1'),
+      true,
+      '減ったら消えてしまった',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 第152弾: 常駐プロセスのメモリリーク(切断の原因)
+// ---------------------------------------------------------------------------
+describe('入退室を繰り返してもメモリが増え続けない', () => {
+  test('再接続トークンのキャッシュに上限がある', () => {
+    const h = new Harness({ tables: [TABLE], signupBonus: 100000 });
+    // 人間が何度もログインしてもキャッシュは上限で頭打ちになる
+    for (let i = 0; i < 3200; i++) h.login('P' + i, 'u_leak' + i);
+    const cache = (h.lobby as unknown as { resumeTokens: Map<string, unknown> }).resumeTokens;
+    assert.ok(cache.size <= 3000, `キャッシュが上限を超えている: ${cache.size}`);
+  });
+
+  test('ボットは再接続しないのでキャッシュに載せない', () => {
+    const h = new Harness({ tables: [TABLE], signupBonus: 100000 });
+    for (let i = 0; i < 500; i++) h.login('CPU' + i, 'bot_leak' + i);
+    const cache = (h.lobby as unknown as { resumeTokens: Map<string, unknown> }).resumeTokens;
+    assert.equal(cache.size, 0, `ボットでキャッシュが増えている: ${cache.size}`);
+  });
+
+  test('卓を去った人のコスメ設定は残さない', () => {
+    const h = new Harness({ tables: [TABLE], signupBonus: 100000 });
+    const room = h.lobby.getRoom('test-1');
+    assert.ok(room);
+    const cos = (room as unknown as { cosmetics: Map<string, unknown> }).cosmetics;
+    for (let i = 0; i < 200; i++) {
+      const c = h.login('P' + i, 'u_cos' + i);
+      c.send({ t: 'table.watch', tableId: 'test-1' });
+      c.send({ t: 'user.style', bracelet: 'b1' });
+      c.send({ t: 'table.leave', tableId: 'test-1' });
+    }
+    assert.equal(cos.size, 0, `去った人のコスメが残っている: ${cos.size}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 第161弾: 2台目のスロット「WINNING TUNNEL」
+// ---------------------------------------------------------------------------
+describe('WINNING TUNNEL のサーバー配線', () => {
+  const harness = () => new Harness({ tables: [TABLE], signupBonus: 100_000_000 });
+  const lastOf = (c: { received: unknown[] }, t: string) => {
+    for (let i = c.received.length - 1; i >= 0; i--) {
+      const m = c.received[i] as { t: string };
+      if (m.t === t) return m as never;
+    }
+    return null;
+  };
+
+  test('回すと賭け金が引かれ、盤面と判定が返る', () => {
+    const h = harness();
+    const a = h.login('P', 'u_tun1');
+    const before = h.lobby.store.balance('u_tun1', 'chips');
+    a.send({ t: 'tunnel.spin', bet: 1000 });
+    const r = lastOf(a, 'tunnel.result') as unknown as
+      { result: { outcome: { grid0: string[] }; cost: number; won: number; pending: number } } | null;
+    assert.ok(r, 'tunnel.result が返っていない');
+    assert.equal(r.result.cost, 1000);
+    assert.equal(r.result.outcome.grid0.length, 9, '3×3の9マスでない');
+    // 引かれた額は、確定払い(won)と持ち越し(pending)のどちらかで説明できる
+    const after = h.lobby.store.balance('u_tun1', 'chips');
+    assert.equal(after, before - 1000 + r.result.won, '残高の増減が合わない');
+  });
+
+  test('賭け金の検証はGOLD RUSHと同じ(0・小数・上限超は弾く)', () => {
+    for (const v of [0, -1, 1.5, NaN, 2e19]) {
+      assert.equal(
+        parseClientMessage({ t: 'tunnel.spin', bet: v }).ok, false, `${String(v)} が通った`,
+      );
+    }
+    assert.equal(parseClientMessage({ t: 'tunnel.spin', bet: 1000 }).ok, true);
+  });
+
+  test('獲得が無いのにダブルはできない', () => {
+    const h = harness();
+    const a = h.login('P', 'u_tun2');
+    a.send({ t: 'tunnel.double' });
+    const err = a.lastError();
+    assert.ok(err, 'ダブルがエラーになっていない');
+  });
+
+  test('持ち越しはサーバーが握る(クライアントは額を送れない)', () => {
+    // tunnel.double に額のフィールドは無い。pick と half しか受け取らない
+    const r = parseClientMessage({ t: 'tunnel.double', half: true, pick: 2, payX: 999999 });
+    assert.equal(r.ok, true);
+    const msg = r.ok ? (r.msg as { t: string; half?: boolean; pick?: number }) : null;
+    assert.equal(msg?.half, true);
+    assert.equal(msg?.pick, 2);
+    assert.equal((msg as Record<string, unknown>).payX, undefined, '額を受け取ってしまっている');
+  });
+
+  test('ダブルの途中で次を回しても、前の持ち越しは取りこぼさない', () => {
+    const h = harness();
+    const a = h.login('P', 'u_tun3');
+    // 持ち越しが出るまで回す
+    let pending = 0;
+    for (let i = 0; i < 400 && pending === 0; i++) {
+      a.clear();
+      a.send({ t: 'tunnel.spin', bet: 1000 });
+      const r = lastOf(a, 'tunnel.result') as unknown as { result: { pending: number } } | null;
+      pending = r?.result.pending ?? 0;
+    }
+    assert.ok(pending > 0, '持ち越しが一度も出なかった');
+    const before = h.lobby.store.balance('u_tun3', 'chips');
+    // ダブルせずに次を回す → 前の持ち越しが payout されてから新しい賭け金が引かれる
+    a.send({ t: 'tunnel.spin', bet: 1000 });
+    const after = h.lobby.store.balance('u_tun3', 'chips');
+    assert.ok(after >= before + pending - 1000, `前の持ち越しが消えた: ${before} → ${after}`);
+  });
+
+  test('確定すると持ち越しが払われ、二重には払われない', () => {
+    const h = harness();
+    const a = h.login('P', 'u_tun4');
+    let pending = 0;
+    for (let i = 0; i < 400 && pending === 0; i++) {
+      a.clear();
+      a.send({ t: 'tunnel.spin', bet: 1000 });
+      const r = lastOf(a, 'tunnel.result') as unknown as { result: { pending: number } } | null;
+      pending = r?.result.pending ?? 0;
+    }
+    assert.ok(pending > 0);
+    const before = h.lobby.store.balance('u_tun4', 'chips');
+    a.send({ t: 'tunnel.collect' });
+    const mid = h.lobby.store.balance('u_tun4', 'chips');
+    assert.equal(mid, before + pending, '確定額が合わない');
+    // もう一度確定しても増えない
+    a.send({ t: 'tunnel.collect' });
+    assert.equal(h.lobby.store.balance('u_tun4', 'chips'), mid, '二重に払われた');
+  });
+});
