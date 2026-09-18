@@ -141,6 +141,15 @@ function boot(label) {
 }
 
 const click = (ctx, el) => el.dispatchEvent(new ctx.window.Event('click'));
+/**
+ * 親でまとめて受けているボタン用のクリック。
+ *
+ * 素の Event は**上に伝わらない**ので、`host.addEventListener('click', ...)` の
+ * ように親で受けている作りには届かない。台えらびがこの形なので、
+ * bubbles を立てたイベントを投げる
+ */
+const clickUp = (ctx, el) =>
+  el.dispatchEvent(new ctx.window.Event('click', { bubbles: true }));
 
 /**
  * スロットが次のスピンを受け付けるまで待つ(第170弾)。
@@ -877,6 +886,80 @@ check('斜め(角)絞り: ボタン・対角クリップ・署名の一致（第
   if (!/\(e\.clientX - e\.clientY\) \* 0\.7071/.test(js)) throw new Error('対角射影が無い');
 });
 
+check('ダブルは負けるまで続き、当選音とANY配当が出る（第175-176弾）', () => {
+  const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
+  const css = [...A.document.querySelectorAll('style')].map((e) => e.textContent).join('\n');
+
+  // ①勝ったら画面を閉じず、同じ盤で続けられる
+  if (!/if \(tnDD && view\.canDouble\)/.test(js)) throw new Error('勝っても画面を閉じている');
+  if (!/tnDD\.stage = "again"/.test(js)) throw new Error('続けられる状態が無い');
+  if (!/function tnDDResetStage/.test(js)) throw new Error('盤を作り直さずに戻す処理が無い');
+  // 勝った額がそのまま次の賭け金になる
+  if (!/tnDD\.origin = tnPending;/.test(js)) throw new Error('勝った額が次の賭け金になっていない');
+  // 演出中は押させない。勝って待っている間は押せる
+  if (!/\(tnDD && tnDD\.stage !== "again"\) \? " disabled" : ""/.test(js))
+    throw new Error('続けるときにボタンが押せない');
+  if (!/if \(tnDD && tnDD\.stage !== "again"\) return;/.test(js))
+    throw new Error('演出中に確定できてしまう');
+
+  // ②当選音は GOLD RUSH の録音を流用。額で3段階に分ける
+  if (!/function tnSfxWin/.test(js)) throw new Error('当選音が無い');
+  if (!/sfx\("bonusin"\)/.test(js)) throw new Error('フリー突入音が無い');
+  if (!/sfx\("gong"\)/.test(js) || !/play\("bigwin"\)/.test(js))
+    throw new Error('高額の音が GOLD RUSH のものでない');
+  if (!/sfx\("smallwin"\)/.test(js) || !/sfx\("winsure"\)/.test(js))
+    throw new Error('小役と中位の音が分かれていない');
+  // 戻り演出の最中に鳴らすと結果が割れる
+  if (!/if \(!o\.reverse\) tnSfxWin/.test(js)) throw new Error('焦らしの最中に当選音が鳴る');
+
+  // ③ANY配当も表に出す(ラインに乗らなくても個数で付くので、無いと配当が読めない)
+  if (!/var TN_ANY_PAY = \{/.test(js)) throw new Error('ANY配当の表が無い');
+  if (!/\.tn-pay\.any\{/.test(css)) throw new Error('ANY配当の見た目が無い');
+  // 2台目は台を選ばないと描かれない。実際に切り替えてから中身を見る
+  const tab = [...A.document.querySelectorAll('#mc-bar .mc-btn')]
+    .find((b) => b.dataset.m === 'tunnel');
+  if (!tab) throw new Error('台えらびに WINNING TUNNEL が無い');
+  clickUp(A, tab);   // 台えらびは親でまとめて受けているので、上へ伝わるクリックが要る
+  const anyTbl = A.document.querySelector('#tunnel .tn-pay.any table');
+  if (!anyTbl) throw new Error('ANY配当の表が描かれていない');
+  const head = [...anyTbl.querySelectorAll('tr:first-child th')].map((e) => e.textContent.trim());
+  for (const n of ['3', '4', '5', '6', '7', '8', '9']) {
+    if (!head.includes(n)) throw new Error(`ANY配当に${n}個の列が無い`);
+  }
+  const rows = anyTbl.querySelectorAll('tr').length;
+  if (rows < 9) throw new Error(`ANY配当の行が足りない: ${rows}`);
+});
+
+check('2台目のオートとディーラーの大きさ（第174弾）', () => {
+  const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
+  const css = [...A.document.querySelectorAll('style')].map((e) => e.textContent).join('\n');
+
+  // ①オートはフリーゲームを挟んでも止まらない。止まる条件は3つだけ
+  if (!/function tnAutoTick/.test(js)) throw new Error('オートの本体が無い');
+  if (!/if \(tnCredits < tnBet\)/.test(js)) throw new Error('チップ不足で止まらない');
+  if (!/if \(tnAuto > 0\) tnAuto--;/.test(js)) throw new Error('回数を減らしていない');
+  // 当たると選択待ちで永久に止まるので、オート中は自動で確定する
+  if (!/if \(tnCanDouble\) \{[^}]*tunnel\.collect/s.test(js))
+    throw new Error('当たったときに自動で確定していない(そこで止まってしまう)');
+  // ダブルは賭けるかどうかの判断。勝手に賭けさせない
+  if (/tnAutoTick[\s\S]{0,600}tunnel\.double/.test(js))
+    throw new Error('オートが勝手にダブルしている');
+  // 台を離れたら止める
+  if (!/el\.style\.display === "none"/.test(js)) throw new Error('台を離れても回り続ける');
+
+  // ②スピンの中身はボタンとオートで同じ道を通る(別々に書くと食い違う)
+  if (!/function tnDoSpin/.test(js)) throw new Error('スピンが切り出されていない');
+  if (!/if \(tnAutoRunning\(\)\) \{ tnAutoStop\(\); return; \}/.test(js))
+    throw new Error('オート中にタップで止められない');
+
+  // ③ディーラーはプレイヤー1本と同じ大きさ(第174弾)。
+  //   以前は左右の表と説明文に押し潰されて細くなっていた
+  if (!/\.tn-ddmid\{display:grid;grid-template-columns:repeat\(3,1fr\)/.test(css))
+    throw new Error('中段が3分割になっていない(ディーラーが潰れる)');
+  const one = /\.tn-ddone \.tn-cell\{([^}]*)\}/.exec(css);
+  if (!one || !/width:100%/.test(one[1])) throw new Error('ディーラーが列いっぱいでない');
+});
+
 check('ダブルダウンが実機の手順どおり（第168弾）', () => {
   const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
   const css = [...A.document.querySelectorAll('style')].map((e) => e.textContent).join('\n');
@@ -929,6 +1012,13 @@ check('ダブルダウンが実機の手順どおり（第168弾）', () => {
 check('2台目の音と賭け金は GOLD RUSH と同じ作り（第169弾）', () => {
   const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
   const css = [...A.document.querySelectorAll('style')].map((e) => e.textContent).join('\n');
+  // ④賭け金の上限が2台で揃っている(第172弾)。
+  //   GOLD RUSH の情報が届く前に使う代わりの一覧が 5億で止まっていて、
+  //   こちらだけ MAX が低いままだった
+  if (!/var TN_MIN_BET = 1000, TN_MAX_BET = 5000000000000000;/.test(js))
+    throw new Error('賭け金の上下限がサーバーと揃っていない');
+  if (/for \(var k = 3; k < 9; k\+\+\)/.test(js)) throw new Error('代わりの一覧が5億で止まっている');
+  if (!/v <= tnCredits/.test(js)) throw new Error('所持額を超える段を出している');
 
   // ①回転音は GOLD RUSH と同じ録音のループ。合成音を鳴らし直さない
   if (!/function tnLoopOn\(\) \{\s*if \(tnLoop\) return;\s*try \{ reelSoundStart\(\);/.test(js))
@@ -962,7 +1052,10 @@ check('押した瞬間に絵柄が消えない（第170弾）', () => {
   const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
 
   // ①スピンで盤を空にしない。以前は tnLast を捨てて9マスが真っ黒になっていた
-  const spin = js.slice(js.indexOf('if (spin) spin.onclick'), js.indexOf('if (spin) spin.onclick') + 900);
+  // スピンの中身は tnDoSpin に切り出してある(第174弾)。ボタンもオートもここを通る
+  const i0 = js.indexOf('function tnDoSpin');
+  if (i0 < 0) throw new Error('スピンの処理が見つからない');
+  const spin = js.slice(i0, i0 + 1200);
   if (/tnLast = null/.test(spin)) throw new Error('押した瞬間に盤を捨てている');
   if (!/tnLast\.hitCells = \[\]/.test(spin)) throw new Error('前回の当たり表示を消していない');
 
@@ -986,15 +1079,35 @@ check('9リールの形と挙動が実機寄り（第165弾）', () => {
   // ①1マスは正方形でなく横長(約1.9:1)
   if (!/\.tn-cell\{[^}]*aspect-ratio:150\/78/.test(css))
     throw new Error('マスが横長になっていない(実機は約1.9:1)');
-  // ②上下の覗きは出さない(第168弾で撤去)。
-  //    小さい絵が散らかって、肝心の停止図柄が読みにくかった
-  if (/\.tn-peek\{/.test(css)) throw new Error('上下の覗きが残っている');
+  // ②全マスに小さく縮めた隣の絵柄を並べるのはやめた(第168弾で撤去)
+  if (/\.tn-peek\{/.test(css)) throw new Error('縮めた覗きが残っている');
   if (/function tnPeekSym/.test(js)) throw new Error('覗く絵柄の決め方が残っている');
+  // ②-2 ただし中央がブランクのときだけ、隣のジョーカーを覗かせる(第173弾)。
+  //      ブランクの上下はジョーカーで挟んであるので、見えているのが正しい。
+  //      **縮めない**のが肝。通常と同じ大きさのまま枠の外へ押し出して切り取る
+  if (!/\.tn-jpeek\{/.test(css)) throw new Error('ジョーカーの覗きが無い');
+  const jp = /\.tn-jpeek img\{([^}]*)\}/.exec(css);
+  if (!jp || !/width:100%/.test(jp[1]) || !/height:100%/.test(jp[1]))
+    throw new Error('覗くジョーカーが縮んでいる(通常と同じ大きさで押し出すこと)');
+  if (!/\.tn-jpeek\.t\{top:-/.test(css) || !/\.tn-jpeek\.b\{bottom:-/.test(css))
+    throw new Error('上下どちらから覗くかが無い');
+  if (!/idx === 4 && sym === "blank"/.test(js)) throw new Error('中央のブランク以外にも出している');
+  if (!/tnPeekSide = Math\.random\(\) < 0\.5;/.test(js))
+    throw new Error('覗く側を1スピンごとに決めていない');
   // ③横長の窓を絵柄で埋める(第168弾)。素材が正方形なので、縦を目一杯まで上げ、
   //    わずかに横へ引き伸ばして実機の「横長のリール絵」に見せる
   if (!/\.tn-cell img\{[^}]*height:94%/.test(css)) throw new Error('絵柄が小さいまま');
   if (!/\.tn-cell img\{[^}]*transform:scaleX\(1\.14\)/.test(css)) throw new Error('横に伸ばしていない');
-  if (!/\.tn-cell\.s-joker img\{width:98%/.test(css)) throw new Error('ジョーカーが大きくない');
+  // ジョーカーだけは窓と同じ 150:78 で描かれた本物の絵(第171弾)。
+  // 窓いっぱいに敷き、正方形素材のための横伸ばしは当てない(当てると顔が潰れる)
+  const jk = /\.tn-cell\.s-joker img[^{]*\{([^}]*)\}/.exec(css);
+  if (!jk) throw new Error('ジョーカーの敷き方が無い');
+  if (!/width:100%/.test(jk[1]) || !/height:100%/.test(jk[1]))
+    throw new Error('ジョーカーが窓いっぱいになっていない');
+  if (!/transform:none/.test(jk[1])) throw new Error('ジョーカーに横伸ばしが当たっている');
+  // 回転中と戻り演出の帯にも同じ扱いが要る(付けないと回っている間だけ歪む)
+  if (!/\.tn-strip div\.s-joker img/.test(css)) throw new Error('回転中の帯でジョーカーが歪む');
+  if (!/\.tn-revstrip div\.s-joker img/.test(css)) throw new Error('戻り演出でジョーカーが歪む');
   // ④回転: ほぼ同時に始動し、左上→右下へ順次停止
   if (!/function tnSpinReels/.test(js)) throw new Error('回転処理が無い');
   // 最初の停止までの時間は、始動の立ち上がり(SPIN_UP)より十分あとにする。
