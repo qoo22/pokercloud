@@ -928,6 +928,39 @@ check('ダブルは負けるまで続き、当選音とANY配当が出る（第1
   }
   const rows = anyTbl.querySelectorAll('tr').length;
   if (rows < 9) throw new Error(`ANY配当の行が足りない: ${rows}`);
+
+  // **台を元に戻す**。戻さないと以降の GOLD RUSH の検査が1回も回せなくなる
+  // (実際それで「SCATTERの焦らし」が落ちた)
+  const back = [...A.document.querySelectorAll('#mc-bar .mc-btn')]
+    .find((b) => b.dataset.m === 'gold');
+  if (!back) throw new Error('台えらびに GOLD RUSH が無い');
+  clickUp(A, back);
+  if (!A.document.getElementById('slot-spin')) throw new Error('GOLD RUSH に戻れていない');
+});
+
+check('ジョーカーは止まった瞬間に動く（第177弾）', () => {
+  const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
+  const css = [...A.document.querySelectorAll('style')].map((e) => e.textContent).join('\n');
+
+  // ①8コマの帯を持っている(静止画1枚では光を走らせられない)
+  if (!/var TN_JOKER_SHEET = "data:image\/webp;base64,/.test(js)) throw new Error('スプライトが無い');
+  if (!/var TN_JOKER_FRAMES = 8;/.test(js)) throw new Error('コマ数が合っていない');
+  // ②コマ送りで再生する。補間されると実機らしさが消える
+  const an = /\.tn-jokeranim\{([^}]*)\}/.exec(css);
+  if (!an) throw new Error('再生用の重ねが無い');
+  if (!/background-size:800% 100%/.test(an[1])) throw new Error('8コマぶんの帯になっていない');
+  if (!/steps\(8\)/.test(an[1])) throw new Error('コマ送りになっていない(補間されている)');
+  if (!/@keyframes tnJokerRun/.test(css)) throw new Error('送りの定義が無い');
+
+  // ③止まった瞬間に走らせ、終わったら必ず外す(残すと次のスピンまで居座る)
+  if (!/function tnJokerLand/.test(js)) throw new Error('再生の本体が無い');
+  if (!/if \(finalGrid\[i\] === "joker"\) tnJokerLand\(c\);/.test(js))
+    throw new Error('停止時に走らせていない');
+  if (!/tnJokerLand\(cell\);\s*\/\/ 戻ってきて/.test(js))
+    throw new Error('戻り演出で当たったときに走らせていない');
+  const body = js.slice(js.indexOf('function tnJokerLand'), js.indexOf('function tnJokerLand') + 700);
+  if (!/el\.remove\(\);/.test(body)) throw new Error('再生後に重ねを外していない');
+  if (!/classList\.remove\("jokerlit"\)/.test(body)) throw new Error('枠の発光が消えない');
 });
 
 check('2台目のオートとディーラーの大きさ（第174弾）', () => {
