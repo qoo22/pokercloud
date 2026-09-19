@@ -81,7 +81,7 @@ export const BSZ_ANY_PAY = {
  */
 export const BSZ_REVERSE = {
     /** フリーのうち、戻り演出で見せる割合(残りは直停止) */
-    hitRate: 0.55,
+    hitRate: 0.75,
     /**
      * 中央がブランクで止まったハズレのうち、戻りガセを見せる割合(第170弾)。
      *
@@ -91,12 +91,13 @@ export const BSZ_REVERSE = {
      * 合わない動きになるので出さない。
      *
      * 以前は中央の絵柄を問わず 1.03% だったので、ほとんど出会えなかった。
-     * 中央ブランク(実測12.0%)に限ったうえで割合を上げ、実測で
-     * **37回に1回**逆回転が出るようにした(以前は約60回に1回)。
-     * 上げすぎると逆回転が当たり前になって焦らしが死ぬ。この値で
-     * 「逆回転したときに本当に当たる率」は20%に収まる。
+     * 中央ブランク(実測12.0%)に限ったうえで割合を上げた。
+     * 第178弾で「戻ってくる演出が全然見れない」との指摘を受け、さらに上げて
+     * **実測で23回に1回**まで増やした(当初は約60回に1回)。
+     * hitRate も上げてあるので、逆回転したときに本当に当たる率は17%。
+     * これ以上増やすと逆回転が当たり前になって焦らしが死ぬ。
      */
-    gaseRate: 0.18,
+    gaseRate: 0.30,
 };
 /** トンネルの倍率と重み */
 export const BSZ_TUNNEL = [
@@ -152,20 +153,48 @@ export function bszEvaluate(g) {
     const lines = [];
     BSZ_LINES.forEach((cells, i) => {
         const w = lineWin(g[cells[0]], g[cells[1]], g[cells[2]]);
+        // 中央がジョーカーで、そのラインが中央を通っていれば「ワイルドで作った役」。
+        // トンネル倍率はここにだけ掛かる(第179弾)
         if (w)
-            lines.push({ line: i, key: w.key, x: w.x, cells });
+            lines.push({ line: i, key: w.key, x: w.x, cells, wild: g[4] === 'joker' && cells.includes(4) });
     });
     // ANY は画面内の個数で数える。7は赤青をまとめる。
-    // **ジョーカーはここでは数えない**(WILDはライン専用)。数えると同じ1枚で
-    // ライン配当と全種のANYを二重取りしてしまい、配当が跳ね上がる
+    //
+    // ジョーカーはワイルドなので ANY にも関与する(第180弾で修正)。
+    // ただし**1枚のジョーカーを全種類に同時に足してはいけない**。
+    // それをやると1枚で8種類すべての ANY が押し上がり、配当が跳ね上がる。
+    // 実機と同じく「一番得になる1種類の代わりとして使う」ことにして、
+    // ジョーカーは**まとめて1種類にだけ**充てる。
+    const jokers = g.filter((s) => s === 'joker').length;
+    const rawCount = (key) => (key === 'any7'
+        ? g.filter((s) => s === 'red7' || s === 'blue7').length
+        : g.filter((s) => s === key).length);
+    const payOf = (key, n) => (n >= 3 ? (BSZ_ANY_PAY[key][Math.min(9, n)] ?? 0) : 0);
+    // どの種類に充てると一番増えるかを選ぶ
+    let bestKey = null;
+    let bestGain = 0;
+    if (jokers > 0) {
+        for (const key of Object.keys(BSZ_ANY_PAY)) {
+            const base = rawCount(key);
+            // **本物が1枚も無い種類には充てない**。ワイルドは「何かの代わり」なので、
+            // 代わりになる相手がいないのに成立するのはおかしい
+            // (ジョーカー3枚だけで「ベル3個」になっていた)
+            if (base === 0)
+                continue;
+            const gain = payOf(key, base + jokers) - payOf(key, base);
+            if (gain > bestGain) {
+                bestGain = gain;
+                bestKey = key;
+            }
+        }
+    }
     const anys = [];
     for (const key of Object.keys(BSZ_ANY_PAY)) {
-        const n = key === 'any7'
-            ? g.filter((s) => s === 'red7' || s === 'blue7').length
-            : g.filter((s) => s === key).length;
-        const x = BSZ_ANY_PAY[key][Math.min(9, n)];
-        if (n >= 3 && x)
-            anys.push({ key, count: n, x });
+        const used = key === bestKey ? jokers : 0;
+        const n = rawCount(key) + used;
+        const x = payOf(key, n);
+        if (x)
+            anys.push({ key, count: n, x, wilds: used || undefined });
     }
     const payX = lines.reduce((a, l) => a + l.x, 0) + anys.reduce((a, b) => a + b.x, 0);
     return { lines, anys, payX };
@@ -200,7 +229,19 @@ export function bszSpin(rnd = Math.random) {
             free.push({ grid: g, lines: e.lines, anys: e.anys, payX: e.payX });
             sum += e.payX;
         }
-        sum *= tunnel; // 突入時の配当にも倍率がかかる
+        // トンネル倍率は**ワイルドを通って出来た役にだけ**掛かる(第179弾で修正)。
+        //
+        // 以前は合計に最後から掛けていたので、中央のワイルドと無関係な
+        // 端のラインや ANY 配当まで倍になっていた。実機は「ワイルドが участ した役が
+        // その倍率で支払われる」なので、倍率の付く役と付かない役が混ざる。
+        // 中央を通るラインは8本中4本(横中段・縦中央・斜め2本)なので、
+        // 倍率が効く場面は減るが、そのぶん倍率を引いたときの意味がはっきりする。
+        if (tunnel > 1) {
+            const boost = (st) => st.lines.reduce((a, l) => a + (l.wild ? l.x * (tunnel - 1) : 0), 0);
+            sum += boost(base);
+            for (const st of free)
+                sum += boost(st);
+        }
     }
     // 結果が決まったあとで、中央リールの見せ方だけを選ぶ
     const reverse = freeEntered

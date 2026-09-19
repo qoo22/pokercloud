@@ -2,6 +2,15 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { bszEvaluate, bszSpin, bszDouble, bszSpinGrid, BSZ_LINES, BSZ_WEIGHTS, BSZ_SYMS, BSZ_SPECIAL, BSZ_FREE_SPINS, BSZ_MAX_WIN_X, BSZ_DOUBLE_CAP_X, bszDealDouble, bszResolveDouble, BSZ_RANK } from '../src/server/bsz.js';
 /** 再現性のある乱数(テストが日によって落ちないように) */
+/**
+ * RTPの許容帯(第180弾)。
+ *
+ * オーナー方針で **RTP > 100% は許容**(歯止めは1日の回転数上限)。
+ * ワイルドを ANY にも関与させた結果、実測 112.7% になった。
+ * 勝手に配当を下げて戻さないこと。ここを動かすのはオーナーの判断。
+ */
+const RTP_LO = 1.00;
+const RTP_HI = 1.25;
 function seeded(a) {
     return () => {
         a |= 0;
@@ -60,13 +69,31 @@ describe('WINNING TUNNEL: 盤面の判定', () => {
         assert.equal(any.count, 5);
         assert.equal(any.x, 8);
     });
-    test('ANYにジョーカーは数えない(ラインと二重取りさせない)', () => {
+    test('ジョーカーはANYにも関与する(第180弾)', () => {
+        // 7・7・ジョーカー → ANY 7 が3個で成立する。
+        // 以前はジョーカーをANYに数えておらず、これが配当にならなかった
+        const g = G(`red7 red7 joker  cherry plum melon  bell bar orange`);
+        const r = bszEvaluate(g);
+        const a7 = r.anys.find((a) => a.key === 'any7');
+        assert.ok(a7, 'ジョーカーがANYに関与していない');
+        assert.equal(a7.count, 3);
+        assert.equal(a7.wilds, 1, 'ジョーカーを使った印が付いていない');
+    });
+    test('1枚のジョーカーを全種類に同時に足さない(第180弾)', () => {
+        // ここを緩めると、1枚で8種類すべての ANY が押し上がって配当が跳ね上がる。
+        // 一番得になる1種類の代わりとしてだけ使う
+        const g = G(`red7 red7 joker  cherry cherry blank  plum plum blank`);
+        const r = bszEvaluate(g);
+        const used = r.anys.filter((a) => a.wilds);
+        assert.equal(used.length, 1, `ジョーカーが${used.length}種類に使われている`);
+        assert.equal(used[0].key, 'any7');
+    });
+    test('ジョーカー3つはラインで成立する', () => {
         const g = G(`joker joker joker  blank blank blank  blank blank blank`);
         const r = bszEvaluate(g);
-        // ラインはジョーカー3つで成立する
         assert.equal(r.lines[0].key, 'joker');
-        // ANYには1件も乗らない
-        assert.equal(r.anys.length, 0, 'ジョーカーがANYに数えられている');
+        // ジョーカー自身のANYは配当表に無い
+        assert.equal(r.anys.length, 0);
     });
     test('ラインとANYは両方とも足される', () => {
         // ベル9個 = 8ライン全部(4×8=32)＋ANY9個(4000)
@@ -113,19 +140,27 @@ describe('WINNING TUNNEL: フリーゲーム', () => {
         }
         assert.ok(found > 0, 'フリーが1度も出ていない');
     });
-    test('突入時の配当にもトンネル倍率がかかる', () => {
-        // 中央ジョーカーで、フリーが全部ハズレでも (突入配当×倍率) は残る
+    test('トンネル倍率はワイルドを通った役にだけ掛かる(第179弾)', () => {
+        // 以前は合計に最後から掛けていたので、中央のワイルドと無関係な
+        // 端のラインや ANY まで倍になっていた。実機は「ワイルドが関与した役が
+        // その倍率で支払われる」なので、倍率の付く役と付かない役が混ざる
         const rnd = seeded(11);
-        for (let i = 0; i < 60000; i++) {
+        let checked = 0;
+        for (let i = 0; i < 120000 && checked < 20; i++) {
             const o = bszSpin(rnd);
-            if (!o.freeEntered)
+            if (!o.freeEntered || o.tunnel <= 1)
                 continue;
-            const raw = o.base.payX + o.free.reduce((a, f) => a + f.payX, 0);
-            const want = Math.min(raw * o.tunnel, BSZ_MAX_WIN_X);
-            assert.equal(o.totalPayX, want, '合計が (ベース+フリー)×倍率 になっていない');
-            return;
+            let want = 0;
+            for (const st of [o.base, ...o.free]) {
+                for (const l of st.lines)
+                    want += l.wild ? l.x * o.tunnel : l.x;
+                for (const a of st.anys)
+                    want += a.x; // ANY には倍率を掛けない
+            }
+            assert.equal(o.totalPayX, Math.min(want, BSZ_MAX_WIN_X), '倍率がワイルドの役以外にも掛かっている');
+            checked++;
         }
-        assert.fail('フリーが出なかった');
+        assert.ok(checked > 0, '倍率つきのフリーが出なかった');
     });
     test('1スピンの払い出しは上限で止まる', () => {
         const rnd = seeded(3);
@@ -257,7 +292,7 @@ describe('WINNING TUNNEL: 抽選の健全性', () => {
             }
         }
         const rtp = pay / N;
-        assert.ok(rtp > 0.9 && rtp < 1.1, `RTPが帯を外れた: ${(rtp * 100).toFixed(1)}%`);
+        assert.ok(rtp > RTP_LO && rtp < RTP_HI, `RTPが帯を外れた: ${(rtp * 100).toFixed(1)}%`);
         // フリーは 1/80〜1/130 くらい
         const rate = N / free;
         assert.ok(rate > 70 && rate < 140, `フリー突入が帯を外れた: 1/${rate.toFixed(0)}`);
@@ -325,7 +360,7 @@ describe('WINNING TUNNEL: ジョーカー戻り(リバース)', () => {
                 pay += bszSpin(rnd).totalPayX;
         }
         const rtp = pay / N;
-        assert.ok(rtp > 0.9 && rtp < 1.1, `RTPが帯を外れた: ${(rtp * 100).toFixed(1)}%`);
+        assert.ok(rtp > RTP_LO && rtp < RTP_HI, `RTPが帯を外れた: ${(rtp * 100).toFixed(1)}%`);
     });
 });
 /**

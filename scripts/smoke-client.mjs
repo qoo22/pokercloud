@@ -938,6 +938,45 @@ check('ダブルは負けるまで続き、当選音とANY配当が出る（第1
   if (!A.document.getElementById('slot-spin')) throw new Error('GOLD RUSH に戻れていない');
 });
 
+check('フリーは倍率が決まってから1回ずつゆっくり回す（第178-181弾）', () => {
+  const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
+  const css = [...A.document.querySelectorAll('style')].map((e) => e.textContent).join('\n');
+
+  // ①倍率が決まるまでフリーを始めない
+  if (!/var fired = false;/.test(js)) throw new Error('抽選の完了を1回に絞っていない');
+  if (!/setTimeout\(done, 900\)/.test(js)) throw new Error('倍率を読む間が無い');
+  if (!/else setTimeout\(go, 1600\);/.test(js))
+    throw new Error('演出が使えないとき、倍率を見せずにフリーへ進んでしまう');
+
+  // ②フリーは中央を据え置いたまま、通常の3倍ゆっくり回す
+  if (!/\{ hold: \[4\], slow: 3 \}/.test(js)) throw new Error('フリーで1回ずつ回していない');
+  if (!/var HOLD = opt\.hold \|\| \[\];/.test(js)) throw new Error('据え置きの仕組みが無い');
+  if (!/if \(HOLD\.indexOf\(i\) >= 0\) return null;/.test(js)) throw new Error('据え置きマスを回している');
+  if (!/var SPEED = H \* 8 \/ 1000 \/ SLOW;/.test(js)) throw new Error('ゆっくり回す指定が効いていない');
+
+  // ②-2 フリー中は GOLD RUSH と**同じBGM**が流れる(第182弾)。
+  //      開始音を1回鳴らすだけでは「音楽が同じ」にならない
+  if (!/fsBgmStart\(\);/.test(js)) throw new Error('フリー中にBGMが流れない');
+  if (!/fsBgmStop\(\);/.test(js)) throw new Error('フリー終了でBGMが止まらない');
+  const stopAuto = js.slice(js.indexOf('function tnAutoStop'), js.indexOf('function tnAutoStop') + 400);
+  if (!/fsBgmStop/.test(stopAuto)) throw new Error('オートを止めてもBGMが鳴りっぱなしになる');
+
+  // ③中央にジョーカーが止まっただけでファンファーレ(額に関係なく)
+  const win = js.slice(js.indexOf('function tnSfxWin'), js.indexOf('function tnSfxWin') + 900);
+  if (!/sfx\("gong"\)/.test(win.slice(0, win.indexOf('payX >= TN_BIG_X'))))
+    throw new Error('フリー突入でファンファーレが鳴らない');
+  if (!/play\("applause"\)/.test(win)) throw new Error('GOLD RUSH と同じ拍手が無い');
+
+  // ④拡大はしない(盤面が伸び縮みして見えるため)
+  if (/@keyframes tnRevHit\{[^}]*scale\(/.test(css)) throw new Error('収まる瞬間に拡大している');
+
+  // ⑤当選マスは速く点滅する
+  if (!/@keyframes tnHitBlink/.test(css)) throw new Error('当選マスが点滅しない');
+  const hit = /\.tn-cell\.hit\{([^}]*)\}/.exec(css);
+  if (!hit || !/animation:tnHitBlink/.test(hit[1])) throw new Error('当選マスに点滅が付いていない');
+  if (/scale\(/.test(hit[1])) throw new Error('当選マスで大きさを変えている');
+});
+
 check('ジョーカーは止まった瞬間に動く（第177弾）', () => {
   const js = [...A.document.querySelectorAll('script')].map((e) => e.textContent).join('\n');
   const css = [...A.document.querySelectorAll('style')].map((e) => e.textContent).join('\n');
@@ -1145,8 +1184,9 @@ check('9リールの形と挙動が実機寄り（第165弾）', () => {
   if (!/function tnSpinReels/.test(js)) throw new Error('回転処理が無い');
   // 最初の停止までの時間は、始動の立ち上がり(SPIN_UP)より十分あとにする。
   // ここが近いと、加速し終わる前に1本目が止まって「回った感じ」が出ない
-  const first = js.match(/var FIRST = (\d+), GAP = (\d+);/);
-  const spinUp = js.match(/var SPIN_UP = (\d+);/);
+  // フリー中はゆっくり回すので SLOW 倍が掛かる(第181弾)。素の値を見る
+  const first = js.match(/var FIRST = (\d+) \* SLOW, GAP = (\d+) \* SLOW;/);
+  const spinUp = js.match(/var SPIN_UP = (\d+) \* SLOW;/);
   if (!first || !spinUp) throw new Error('停止の間隔が実機寄りでない');
   if (Number(first[2]) !== 85) throw new Error('1本ずつの停止間隔が変わっている');
   if (Number(first[1]) < Number(spinUp[1]) * 3)
