@@ -10,14 +10,15 @@
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test dist/test/*.test.js",
     "demo": "npm run typecheck && node scripts/build-demo.mjs && node scripts/smoke-demo.mjs && node scripts/smoke-verifier.mjs",
-    "server": "npm run build && node scripts/build-client.mjs && node dist/src/server/main.js",
-    "client": "node scripts/build-client.mjs",
-    "e2e": "npm run build && node scripts/build-client.mjs && node scripts/smoke-client.mjs",
+    "server": "npm run build && npm run client && node dist/src/server/main.js",
+    "client": "node scripts/build-client.mjs && node scripts/externalize-assets.mjs",
+    "assets:split": "node scripts/externalize-assets.mjs",
+    "e2e": "npm run build && npm run client && node scripts/smoke-client.mjs",
     "verify": "npm run test && npm run demo && npm run e2e && npm run solo",
     "assets:fetch": "node scripts/fetch-assets.mjs",
     "assets:build": "python3 scripts/build-assets.py && npm run client",
     "assets": "node scripts/fetch-assets.mjs --build",
-    "solo": "node scripts/build-client.mjs && node scripts/smoke-solo.mjs"
+    "solo": "npm run client && node scripts/smoke-solo.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

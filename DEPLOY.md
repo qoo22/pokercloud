@@ -30,7 +30,12 @@
 ## 仕組み（参考）
 - `render.yaml` … Render がこの内容で自動構築（Node、`public` を配信フォルダに指定、Node 22）。
 - `dist/` … ビルド済みサーバー（`node dist/src/server/main.js` で起動）。
-- `public/` … ブラウザで開くクライアント（poker-client.html）。
+- `public/` … ブラウザで開くクライアント（poker-client.html）と、その画像（`public/assets/`）。
+  画像は HTML に埋め込まず別ファイルにしてある（HTML は 5MB → 420KB。スマホで開いたときに
+  「全部届くまで真っ暗」にならない）。ファイル名に中身のハッシュが入っているので、
+  サーバーは1年間のキャッシュを指示でき、2回目以降は画像を取りに行かない。
+  クライアントを作り直したら `npm run client`（`scripts/externalize-assets.mjs` まで走る）を使うこと。
+  アップロードするときは `public/assets/` ごと上げる。
 
 ## 残高を消さない運用（バックアップ＆復元）
 

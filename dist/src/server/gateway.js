@@ -26,8 +26,21 @@ const MIME = {
     '.json': 'application/json; charset=utf-8',
     '.svg': 'image/svg+xml',
     '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.woff2': 'font/woff2',
     '.ico': 'image/x-icon',
 };
+/** 既に圧縮済みの形式。gzip を掛けても縮まないので CPU の無駄 */
+const ALREADY_COMPRESSED = new Set(['.webp', '.png', '.jpg', '.jpeg', '.gif', '.woff2', '.ico']);
+/**
+ * 中身のハッシュ付きで切り出した画像（scripts/externalize-assets.mjs が作る
+ * assets/xxx-1a2b3c4d.webp）は、中身が変われば名前も変わる。
+ * だから「一年間、問い合わせ無しで使い回してよい」と言い切れる。
+ */
+const HASHED_ASSET = /^\/assets\/[^/]+-[0-9a-f]{8}\.[a-z0-9]+$/;
 export class Gateway {
     lobby;
     wss;
@@ -230,25 +243,34 @@ export class Gateway {
             return;
         }
         try {
-            // クライアントHTMLは4MB超(画像埋め込み)あり、素朴に毎回全送信すると
-            // スマホ回線で開くのが目に見えて重い。次の2段で軽くする:
-            //   1. ETag: 変わっていなければ 304 を返して転送ゼロ(2回目以降はほぼ一瞬)
-            //   2. gzip: 初回もbase64部が縮む(実測 4.2MB→約3.1MB)。mtimeが変わるまでメモリに保持
+            // スマホ回線でも軽く開けるように3段で効かせる:
+            //   1. ETag: 変わっていなければ 304 を返して転送ゼロ
+            //   2. gzip: テキスト系だけ圧縮し、mtimeが変わるまでメモリに保持
+            //      (画像は既に圧縮済みなので掛けない)
+            //   3. immutable: ハッシュ付きで切り出した画像は問い合わせ自体を省く
+            // 画像を data URI で埋めていた頃はHTMLだけで5MB超あり、CSSが描画を
+            // 止めるせいで「全部届くまで真っ暗」だった。今は画像を外に出してある
+            // (scripts/externalize-assets.mjs)。
             const st = statSync(file);
             const etag = `"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
+            // ハッシュ付きの画像だけは恒久キャッシュ。毎回の問い合わせ(304)すら省ける
+            const cacheControl = HASHED_ASSET.test(urlPath)
+                ? 'public, max-age=31536000, immutable'
+                : // no-cache = 使う前に毎回 If-None-Match で確認(=デプロイ即反映と304の両立)
+                    'no-cache';
             if (req.headers['if-none-match'] === etag) {
-                res.writeHead(304, { etag, 'cache-control': 'no-cache' });
+                res.writeHead(304, { etag, 'cache-control': cacheControl });
                 res.end();
                 return;
             }
+            const ext = extname(file);
             const headers = {
-                'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+                'content-type': MIME[ext] ?? 'application/octet-stream',
                 etag,
-                // no-cache = 使う前に毎回 If-None-Match で確認(=デプロイ即反映と304の両立)
-                'cache-control': 'no-cache',
+                'cache-control': cacheControl,
             };
             const acceptsGzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
-            if (acceptsGzip && st.size > 10_240) {
+            if (acceptsGzip && st.size > 10_240 && !ALREADY_COMPRESSED.has(ext)) {
                 const cached = this.gzipCache.get(file);
                 let gz;
                 if (cached && cached.etag === etag) {
