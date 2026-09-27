@@ -909,8 +909,20 @@ check('ダブルは負けるまで続き、当選音とANY配当が出る（第1
     throw new Error('高額の音が GOLD RUSH のものでない');
   if (!/sfx\("smallwin"\)/.test(js) || !/sfx\("winsure"\)/.test(js))
     throw new Error('小役と中位の音が分かれていない');
-  // 戻り演出の最中に鳴らすと結果が割れる
-  if (!/if \(!o\.reverse\) tnSfxWin/.test(js)) throw new Error('焦らしの最中に当選音が鳴る');
+  // 戻り演出の最中に鳴らすと結果が割れる。
+  // 当選音は「ため」や戻り演出が**終わったあとの折り返し**からだけ呼ぶこと。
+  // 書き方が変わっても意図が守られているか、位置関係で確かめる(第185弾)
+  const res = js.slice(js.indexOf('function tnShowResult'));
+  const revAt = res.indexOf('if (o.reverse) {');
+  if (revAt < 0) throw new Error('戻り演出の分岐が見つからない');
+  // 戻り演出のブロックの中で、tnReverse を呼ぶ前に当選音を鳴らしていないこと。
+  // 先に鳴らすと、動き出した時点で当たりかハズレか分かってしまう
+  const revBlock = res.slice(revAt, revAt + 2000);
+  const callAt = revBlock.indexOf('tnReverse(');
+  const soundAt = revBlock.indexOf('tnSfxWin(');
+  if (callAt < 0) throw new Error('戻り演出の呼び出しが無い');
+  if (soundAt >= 0 && soundAt < callAt)
+    throw new Error('戻り演出が始まる前に当選音を鳴らしている(結果が割れる)');
 
   // ③ANY配当も表に出す(ラインに乗らなくても個数で付くので、無いと配当が読めない)
   if (!/var TN_ANY_PAY = \{/.test(js)) throw new Error('ANY配当の表が無い');
@@ -962,10 +974,55 @@ check('フリーは倍率が決まってから1回ずつゆっくり回す（第
   if (!/fsBgmStop/.test(stopAuto)) throw new Error('オートを止めてもBGMが鳴りっぱなしになる');
 
   // ③中央にジョーカーが止まっただけでファンファーレ(額に関係なく)
-  const win = js.slice(js.indexOf('function tnSfxWin'), js.indexOf('function tnSfxWin') + 900);
-  if (!/sfx\("gong"\)/.test(win.slice(0, win.indexOf('payX >= TN_BIG_X'))))
-    throw new Error('フリー突入でファンファーレが鳴らない');
-  if (!/play\("applause"\)/.test(win)) throw new Error('GOLD RUSH と同じ拍手が無い');
+  const win = js.slice(js.indexOf('function tnSfxWin'), js.indexOf('function tnSfxWin') + 1400);
+  // 5倍以上は**この台専用の**ファンファーレ(第186弾でオーナー提供の音源に差し替え)
+  if (!/tnFanfare\(\)/.test(win)) throw new Error('高額でファンファーレが鳴らない');
+  // gong は「WILDの倍率が決まる瞬間のドラ」。当選音として使ってはいけない(第183弾)
+  if (/sfx\("gong"\)/.test(win)) throw new Error('倍率決定のドラを当選音に使っている');
+  if (!/var TN_BIG_X = 5;/.test(js))
+    throw new Error('高額の基準が GOLD RUSH(5倍)と揃っていない');
+  if (!/sfx\("smallwin"\)/.test(win) || !/sfx\("winsure"\)/.test(win))
+    throw new Error('小役と中位の音が分かれていない');
+
+  // ③-2 止まってから当選額が出るまでの「ため」(第184弾)。
+  //      高額のときだけ溜めると、溜まった瞬間に高額が確定して察する楽しみが消える。
+  //      外れのときもたまに溜めることで、期待はするが確定はしない状態を作る
+  if (!/function tnHold/.test(js)) throw new Error('ためが無い');
+  // 焦らしではなく「高額を計算しているように見せる間」なので、外れでは入れない
+  if (!/if \(payX < TN_BIG_X\) \{ done\(\); return; \}/.test(js))
+    throw new Error('当たっていないのに溜めている');
+  if (/TN_HOLD_GASE/.test(js)) throw new Error('外れで溜める仕組みが残っている');
+  // 溜めている間は当たった印も金額も出さない。出すと溜める意味がない
+  if (!/hitCells: \[\], hits: \[\], tunnel: o\.tunnel,\s*\n\s*heldCenter: false, cap: "", winner: false/.test(js))
+    throw new Error('ための最中に結果を見せている');
+  if (!/\.tn-hold \.tn-info/.test(css)) throw new Error('ための見た目が無い');
+
+  // ③-3 フリー中の配当はゆっくり数え上げ、数え終わってから次の回転へ(第185弾)
+  if (!/function tnCountUp/.test(js)) throw new Error('カウントアップが無い');
+  // フリー中は毎回ファンファーレを鳴らさない。鳴らすのは総額が確定したとき1回だけ。
+  // 毎回鳴らすと、総額が出たときの山が消える(第186弾)
+  const freeFn = js.slice(js.indexOf('function tnPlayFree'), js.indexOf('function tnPlayFree') + 3200);
+  const totalAt = freeFn.indexOf('TOTAL WIN');
+  const fanAt = freeFn.indexOf('tnFanfare()');
+  if (fanAt < 0) throw new Error('総額確定のファンファーレが無い');
+  if (totalAt < 0 || fanAt < totalAt) throw new Error('フリー中に毎回ファンファーレを鳴らしている');
+  // 総額を数え上げてから確定する
+  if (!/tnCountUp\(total, function \(\) \{/.test(freeFn)) throw new Error('総配当を数え上げていない');
+  // 数え終わったあと、その総配当でダブルに挑める
+  if (!/tnCanDouble = r\.pending > 0;[\s\S]{0,80}tnBusy = false;/.test(freeFn))
+    throw new Error('フリー後に総配当でダブルできない');
+  if (!/var TN_FANFARE_B64 = "data:audio\/mp4;base64,/.test(js))
+    throw new Error('専用のファンファーレ音源が無い');
+  if (!/tnCountUp\(got, function \(\) \{/.test(js))
+    throw new Error('フリーで数え上げていない');
+  if (!/var TN_COUNT_B64 = "data:audio\/wav;base64,/.test(js))
+    throw new Error('カウント中の音が無い');
+  if (!/src\.loop = true;[\s\S]{0,200}playbackRate/.test(js))
+    throw new Error('音をループさせていない(単発だと途切れて聞こえる)');
+  if (!/function tnCountStop/.test(js)) throw new Error('数え終わっても音が止まらない');
+  // 表示額はワイルドの倍率込み。生の payX だと実際の払いとずれる
+  if (!/stepX \+= l\.wild \? l\.x \* \(o\.tunnel \|\| 1\) : l\.x;/.test(js))
+    throw new Error('フリーの表示額に倍率が乗っていない');
 
   // ④拡大はしない(盤面が伸び縮みして見えるため)
   if (/@keyframes tnRevHit\{[^}]*scale\(/.test(css)) throw new Error('収まる瞬間に拡大している');
