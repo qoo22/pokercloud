@@ -1234,6 +1234,12 @@ check('9リールの形と挙動が実機寄り（第165弾）', () => {
   if (!/width:100%/.test(jk[1]) || !/height:100%/.test(jk[1]))
     throw new Error('ジョーカーが窓いっぱいになっていない');
   if (!/transform:none/.test(jk[1])) throw new Error('ジョーカーに横伸ばしが当たっている');
+  // 紋章は切らずに全体を収める(第188弾)。cover だと金の飾り枠が両端で断ち切られる
+  if (!/object-fit:contain/.test(jk[1]))
+    throw new Error('ジョーカーの紋章が切り取られている(contain で収めること)');
+  // 絵柄そのものに WILD と描かれているので、重ねる WILD タグは出さない
+  if (/tag === "tunnel" \? "TUNNEL" : "WILD"/.test(js))
+    throw new Error('WILD が絵とタグで二重に出ている');
   // 回転中と戻り演出の帯にも同じ扱いが要る(付けないと回っている間だけ歪む)
   if (!/\.tn-strip div\.s-joker img/.test(css)) throw new Error('回転中の帯でジョーカーが歪む');
   if (!/\.tn-revstrip div\.s-joker img/.test(css)) throw new Error('戻り演出でジョーカーが歪む');
